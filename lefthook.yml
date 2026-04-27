@@ -25,5 +25,19 @@ pre-commit:
 
 pre-push:
   commands:
+    branch-name:
+      # Enforce branch naming convention. Allowed:
+      #   - main
+      #   - <type>/<slug> where type is one of:
+      #     feat, fix, chore, docs, refactor, test, perf, ci, build, revert, hotfix
+      #   - slug must start with [a-z0-9] and may contain [a-z0-9._-]
+      run: |
+        branch=$(git rev-parse --abbrev-ref HEAD)
+        if ! printf '%s' "$branch" | grep -Eq '^(main|(feat|fix|chore|docs|refactor|test|perf|ci|build|revert|hotfix)/[a-z0-9][a-z0-9._-]*)$'; then
+          echo "✖ Branch name '$branch' does not match required pattern."
+          echo "  Use: <type>/<slug>  where type ∈ feat|fix|chore|docs|refactor|test|perf|ci|build|revert|hotfix"
+          echo "  slug: lowercase alphanumerics plus . _ -  (must start with [a-z0-9])"
+          exit 1
+        fi
     test:
       run: pnpm test

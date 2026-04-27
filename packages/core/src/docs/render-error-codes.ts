@@ -25,7 +25,7 @@ export function renderErrorCodesDoc(): string {
   lines.push('| Code | Description |');
   lines.push('| --- | --- |');
   for (const code of ERROR_CODES) {
-    const description = ERROR_CODE_DESCRIPTIONS[code].replace(/\|/g, '\\|');
+    const description = ERROR_CODE_DESCRIPTIONS[code].replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
     lines.push(`| \`${code}\` | ${description} |`);
   }
   lines.push('');
