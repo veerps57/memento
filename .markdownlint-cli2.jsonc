@@ -1,0 +1,50 @@
+{
+  // markdownlint-cli2 configuration for Memento.
+  //
+  // Memento documentation is prose-heavy: architecture notes, ADRs,
+  // and design rationale read like essays, not like reference cards.
+  // The defaults that fight that style are disabled here; the rules
+  // that catch real structural mistakes are kept on.
+  //
+  // See https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+  // for the full rule list.
+  "config": {
+    "default": true,
+
+    // Long prose lines are intentional. Hard-wrapping at 80 columns
+    // makes diffs noisier and discourages writing in paragraphs. We
+    // rely on editor soft-wrap instead.
+    "MD013": false,
+
+    // Inline HTML is occasionally needed for callouts, <details>
+    // blocks, and tables that exceed plain Markdown's expressiveness.
+    "MD033": false,
+
+    // Bare URLs are acceptable in design notes where the link text
+    // *is* the URL (e.g., references to RFCs, GitHub issues).
+    "MD034": false,
+
+    // Many docs are fragments included from other docs and have no
+    // top-level heading; the parent doc owns the heading.
+    "MD041": false,
+
+    // We deliberately use **bold paragraphs** as visually distinct
+    // call-outs in places where a heading would over-segment the
+    // page. Real headings are still required for top-level structure.
+    "MD036": false,
+
+    // "Descriptive link text" flags constructs like [docs](docs/) when
+    // the path *is* the description; we use those throughout.
+    "MD059": false,
+
+    // Table-pipe alignment is checked across every row, but our
+    // tables are hand-aligned for readability and the rule's
+    // perfect-alignment heuristic flags rows whose right edge does
+    // not match the header even when the table is visually clean.
+    // The content of the tables is what matters; we disable the
+    // pixel-perfect column check.
+    "MD060": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": ["**/node_modules/**", "**/CHANGELOG.md", "**/dist/**", "**/coverage/**"]
+}

@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  # Releases are gated to manual dispatch. Memento publishes to
+  # a private Verdaccio registry today; the changesets/action npm
+  # publish path is not configured for that, so triggering on
+  # every push to main produces noisy 404s against npmjs.org.
+  workflow_dispatch:
+
+# Concurrency limits to one release run at a time, queued by ref,
+# so two quick merges can't race the version PR.
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write # required for npm provenance
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Changesets needs full history to determine which packages
+          # have pending changes.
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: pnpm
+          # Setting registry-url here makes setup-node configure
+          # auth-token wiring for npm publish.
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Create release PR or publish
+        id: changesets
+        # The action does both jobs:
+        #  - if there are pending changesets, opens/updates a
+        #    "Version Packages" PR that bumps versions and
+        #    consumes the changesets.
+        #  - if the previous "Version Packages" PR was just merged,
+        #    runs `pnpm release` (build + changeset publish).
+        uses: changesets/action@v1
+        with:
+          publish: pnpm release
+          version: pnpm version-packages
+          commit: "chore(release): version packages"
+          title: "chore(release): version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag umbrella release
+        # changesets/action publishes per-package git tags
+        # (e.g. @psraghuveer/memento@0.1.0). For humans we also
+        # want a single `vX.Y.Z` tag on the release commit, keyed
+        # off the CLI package version (what `memento --version`
+        # prints). Skipped when nothing was published. Idempotent:
+        # silently skips if the tag already exists.
+        if: steps.changesets.outputs.published == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./packages/cli/package.json').version")
+          TAG="v${VERSION}"
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists; skipping."
+            exit 0
+          fi
+          git tag "${TAG}"
+          git push origin "${TAG}"

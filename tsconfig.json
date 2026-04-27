@@ -1,0 +1,19 @@
+{
+  // Solution-style root tsconfig.
+  //
+  // This file does not compile any code itself. It exists so that
+  // `tsc -b` and editors can resolve the package graph and so that
+  // `pnpm typecheck` has a single entry point.
+  //
+  // Each package added in commit 6 of this milestone gets its own
+  // tsconfig.json that extends tsconfig.base.json, and its path is
+  // appended to the references array below.
+  "include": [],
+  "references": [
+    { "path": "./packages/schema" },
+    { "path": "./packages/core" },
+    { "path": "./packages/server" },
+    { "path": "./packages/embedder-local" },
+    { "path": "./packages/cli" }
+  ]
+}

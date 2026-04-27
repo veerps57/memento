@@ -1,0 +1,37 @@
+{
+  "name": "@psraghuveer/memento-server",
+  "version": "0.1.0",
+  "description": "MCP server adapter for Memento. Translates MCP tool calls into command-registry invocations.",
+  "license": "Apache-2.0",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod-to-json-schema": "3.25.2",
+    "@psraghuveer/memento-core": "workspace:^",
+    "@psraghuveer/memento-schema": "workspace:^"
+  },
+  "devDependencies": {
+    "tsup": "8.3.5",
+    "typescript": "5.7.2",
+    "vitest": "2.1.8",
+    "zod": "3.25.76"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo",
+    "test": "vitest run"
+  }
+}

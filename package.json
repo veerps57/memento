@@ -1,0 +1,47 @@
+{
+  "name": "memento",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Persistent memory for AI assistants. Local-first, LLM-agnostic, MCP-native.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "packageManager": "pnpm@10.30.2",
+  "scripts": {
+    "build": "pnpm -r --workspace-concurrency=1 run build",
+    "clean": "pnpm -r run clean && rm -rf node_modules",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && vitest run --config vitest.e2e.config.ts",
+    "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm test:e2e && pnpm docs:lint && pnpm docs:check",
+    "prepare": "lefthook install",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish",
+    "dev:server": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node packages/cli/dist/cli.js serve",
+    "docs:generate": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node scripts/docs.mjs --write",
+    "docs:check": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node scripts/docs.mjs --check",
+    "docs:lint": "markdownlint-cli2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@changesets/cli": "2.27.11",
+    "@types/node": "20.17.10",
+    "@vitest/coverage-v8": "2.1.8",
+    "lefthook": "1.10.0",
+    "markdownlint-cli2": "0.18.1",
+    "tsup": "8.3.5",
+    "typescript": "5.7.2",
+    "vitest": "2.1.8"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["lefthook", "better-sqlite3"]
+  }
+}

@@ -1,0 +1,22 @@
+# Default owners for everything in the repo.
+
+# Update once the project has more than one maintainer.
+
+-       @raghuveer
+
+# Architectural docs and ADRs require maintainer review specifically.
+
+/docs/architecture/ @raghuveer
+/docs/adr/ @raghuveer
+/AGENTS.md @raghuveer
+/ARCHITECTURE.md @raghuveer
+/SECURITY.md @raghuveer
+
+# License and project metadata.
+
+/LICENSE @raghuveer
+/NOTICE @raghuveer
+
+# CI and repository configuration.
+
+/.github/ @raghuveer

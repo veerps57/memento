@@ -1,0 +1,53 @@
+name: Feature request
+description: A small, well-scoped feature that does not change architecture. For larger changes, use the Design Proposal template instead.
+title: "[feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for features that are clearly within the existing architecture and do not require an ADR.
+
+        If your idea changes the data model, the public surface, the config schema, or any load-bearing default — use the [Design Proposal](?template=design_proposal.yml) template instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete problem does this solve? Whose problem is it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed feature
+      description: What would Memento do that it does not today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else could solve this? Why is the proposal preferable?
+    validations:
+      required: true
+
+  - type: textarea
+    id: principles
+    attributes:
+      label: How does this honor the four principles?
+      description: First principles, modular, extensible, config-driven. Brief is fine.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope_check
+    attributes:
+      label: Scope check
+      options:
+        - label: This change does not require an ADR (otherwise I would have used the Design Proposal template).
+          required: true
+        - label: I have searched existing issues and this is not a duplicate.
+          required: true

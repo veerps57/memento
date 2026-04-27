@@ -1,0 +1,29 @@
+# Lefthook git hooks for Memento.
+#
+# Two pre-commit checks against staged files only, both run in
+# parallel for speed:
+#
+#   1. Biome — formatting + linting. Auto-fixed files are re-staged
+#      so the commit reflects the formatter's output.
+#   2. Typecheck — `tsc -b` runs on the whole project graph, not
+#      just staged files, because TypeScript errors can be triggered
+#      by changes elsewhere in the dependency graph.
+#
+# Pre-push runs the full test suite to keep broken tests off main.
+# Local-only contributors can bypass with `--no-verify` if needed,
+# but CI is the authoritative gate.
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      glob: '*.{ts,tsx,js,jsx,json,jsonc}'
+      run: pnpm exec biome check --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+    typecheck:
+      glob: '*.{ts,tsx}'
+      run: pnpm exec tsc -b
+
+pre-push:
+  commands:
+    test:
+      run: pnpm test

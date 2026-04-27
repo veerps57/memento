@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Memento — strict base",
+  "compilerOptions": {
+    // Target & module
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+
+    // Strictness — everything on
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "useUnknownInCatchVariables": true,
+
+    // Module-shape correctness
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+
+    // Emit
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "removeComments": false,
+    "newLine": "lf",
+
+    // Project-references friendly
+    "composite": true,
+    "incremental": true,
+
+    // Disallow ambient JS leakage
+    "allowJs": false,
+    "checkJs": false,
+
+    // Skip lib check is a deliberate trade-off: third-party .d.ts files
+    // sometimes ship with strict-mode-incompatible types, and we will not
+    // be the ones to fix them. Our own code is strict-checked.
+    "skipLibCheck": true
+  }
+}

@@ -1,0 +1,49 @@
+# Architecture
+
+This file is the entry point to Memento's architecture. It is intentionally short. The deeper documents live in [`docs/architecture/`](docs/architecture/) and [`docs/adr/`](docs/adr/).
+
+## Reading order
+
+1. **[Overview](docs/architecture/overview.md)** — what Memento is, the runtime topology, and the major modules.
+2. **[Data model](docs/architecture/data-model.md)** — `Memory`, `MemoryEvent`, `OwnerRef`, `Scope`, and how they relate.
+3. **[Scope semantics](docs/architecture/scope-semantics.md)** — how scopes are resolved, layered, and queried.
+4. **[Retrieval](docs/architecture/retrieval.md)** — FTS, optional vector search, ranking, and re-ranking.
+5. **[Decay and supersession](docs/architecture/decay-and-supersession.md)** — how memories age and how new memories replace old ones.
+6. **[Conflict detection](docs/architecture/conflict-detection.md)** — the post-write hook and conflict surfacing.
+7. **[Configuration](docs/architecture/config.md)** — `ConfigKey`, layering, validation, and dynamic update.
+8. **[Scrubber](docs/architecture/scrubber.md)** — secret redaction and PII reduction at the boundary.
+9. **[ADRs](docs/adr/)** — the why behind every load-bearing decision.
+
+## The shape, in one paragraph
+
+A user runs `npx memento serve` and their AI client launches it as an MCP server. The server exposes a small set of typed commands (`memory.write`, `memory.search`, `memory.supersede`, etc.) over stdio. Commands are defined once in a registry and projected to both MCP and the human-facing CLI by adapters; parity is structural. State lives in a local SQLite database with FTS5 (and an optional brute-force vector backend). Every state-changing operation writes an audit event. Behavior — decay half-lives, retrieval weights, conflict thresholds, scrubber rules — is shaped by configuration, not code. There are no outbound network calls by default; the only optional remote interaction is downloading the local embedding model on first use.
+
+## The four guiding principles
+
+These shape every decision below. They are repeated here for emphasis. Long-form discussion is in [`AGENTS.md`](AGENTS.md).
+
+1. First principles.
+2. Modular.
+3. Extensible.
+4. Config-driven by the user.
+
+## Module map
+
+```text
+packages/
+├── schema/           Shared Zod schemas → TS types via z.infer
+├── core/             Domain logic: data model, command registry,
+│                     repositories, decay, retrieval, conflict
+├── server/           MCP adapter; thin projection of the registry
+├── cli/              CLI adapter; thin projection of the registry,
+│                     plus the npx entry point and lifecycle commands
+│                     (`serve`, `context`, `doctor`, `store migrate`)
+└── embedder-local/   Optional: transformers.js + bge-small-en
+                      Lazy-loaded only when vector search is enabled
+```
+
+The dependency graph is acyclic and one-way: `cli` and `server` depend on `core`; `core` depends on `schema`; `embedder-local` is loaded by `core` only at runtime through a typed interface, never imported statically.
+
+## Status
+
+See [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) for the current list of out-of-scope features and active limitations.

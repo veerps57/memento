@@ -1,0 +1,32 @@
+{
+  "name": "@psraghuveer/memento-embedder-local",
+  "version": "0.1.0",
+  "description": "Local-only embedding provider for Memento, backed by transformers.js (bge-small-en-v1.5). Lazy-loaded.",
+  "license": "Apache-2.0",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "dependencies": {
+    "@psraghuveer/memento-core": "workspace:^",
+    "@psraghuveer/memento-schema": "workspace:^"
+  },
+  "devDependencies": {
+    "tsup": "8.3.5",
+    "typescript": "5.7.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  }
+}

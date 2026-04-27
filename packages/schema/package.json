@@ -1,0 +1,33 @@
+{
+  "name": "@psraghuveer/memento-schema",
+  "version": "0.1.0",
+  "description": "Zod schemas and TypeScript types shared across all Memento packages. The single source of truth for data shapes and config keys.",
+  "license": "Apache-2.0",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "dependencies": {
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "fast-check": "3.23.2",
+    "tsup": "8.3.5",
+    "typescript": "5.7.2",
+    "vitest": "2.1.8"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  }
+}

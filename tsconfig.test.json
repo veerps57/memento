@@ -1,0 +1,20 @@
+{
+  // Typecheck-only project for test files. The composite per-package
+  // configs (used by `tsc -b`) deliberately exclude `test/**/*` so that
+  // the build artifacts in `dist/` only contain production code.
+  //
+  // This sibling config picks up the same source plus the test files
+  // and runs them through the type checker without emitting anything.
+  // It is invoked by the root `pnpm typecheck:tests` script.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false,
+    "rootDir": "."
+  },
+  "include": ["packages/*/src/**/*", "packages/*/test/**/*"],
+  "exclude": ["**/node_modules", "**/dist"]
+}

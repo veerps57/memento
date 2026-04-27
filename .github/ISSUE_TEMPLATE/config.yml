@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or general discussion
+    url: https://github.com/veerps57/memento/discussions
+    about: Please ask and answer questions in Discussions, not Issues.
+  - name: Security vulnerability
+    url: https://github.com/veerps57/memento/security/advisories/new
+    about: Report security issues privately via GitHub Security Advisories. Do not open a public issue.

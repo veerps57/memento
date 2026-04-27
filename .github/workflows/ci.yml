@@ -1,0 +1,187 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref. The latest push wins.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (Biome)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Biome
+        run: pnpm lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tsc
+        run: pnpm typecheck
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+  test:
+    name: Test (${{ matrix.os }} / Node ${{ matrix.node }})
+    # Test runs on the OS × Node-version matrix because Memento ships
+    # via npx on macOS, Linux, and Windows. better-sqlite3 (added in
+    # M2) is a native module, so OS coverage matters more here than
+    # in most JS projects.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ["20", "22"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Ensure better-sqlite3 native binary
+        # better-sqlite3's pnpm install lifecycle reports "Done"
+        # but its prebuild-install silently no-ops in CI's pnpm 10
+        # environment, leaving the .node binary absent. Force the
+        # prebuild fetch directly inside the resolved package dir.
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_DIR=$(find node_modules/.pnpm -maxdepth 3 -type d -path '*/better-sqlite3@*/node_modules/better-sqlite3' | head -n1)
+          if [ -z "$PKG_DIR" ]; then
+            echo "could not locate better-sqlite3 package" >&2
+            exit 1
+          fi
+          echo "better-sqlite3 dir: $PKG_DIR"
+          if [ ! -f "$PKG_DIR/build/Release/better_sqlite3.node" ]; then
+            (cd "$PKG_DIR" && npx --yes prebuild-install --runtime=node)
+          fi
+          ls -1 "$PKG_DIR/build/Release/"
+
+      - name: Build packages
+        # Tests import the published package names (e.g.
+        # `@psraghuveer/memento-core`) which resolve via the
+        # workspace symlink to `packages/core`. Its `exports`
+        # entry points at `./dist/index.js`, so dist/ must exist
+        # before vitest runs.
+        run: pnpm build
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Run end-to-end tests
+        # E2E tests spawn the built `memento` CLI as a child
+        # process and drive it over MCP stdio. Running them on the
+        # full OS x Node matrix is the whole point: the failures
+        # they catch (better-sqlite3 native-module issues, bundler
+        # drops, MCP schema desyncs) are platform-specific.
+        # `pnpm test:e2e` chains the build itself.
+        run: pnpm test:e2e
+
+  docs-lint:
+    name: Markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint markdown
+        run: pnpm docs:lint
+
+  link-check:
+    name: Internal link check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check internal markdown links
+        run: |
+          npx --yes markdown-link-check \
+            --config .github/markdown-link-check.json \
+            $(git ls-files '*.md')
+        # The config file is added when the first link rules need
+        # tuning; until then, the action runs with defaults.
+        continue-on-error: true

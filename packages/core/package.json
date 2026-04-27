@@ -1,0 +1,35 @@
+{
+  "name": "@psraghuveer/memento-core",
+  "version": "0.1.0",
+  "description": "The Memento engine: storage, repositories, scope resolver, scrubber, decay, conflict detection, embedding hook, and the command registry. Transport-agnostic.",
+  "license": "Apache-2.0",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "dependencies": {
+    "better-sqlite3": "12.9.0",
+    "kysely": "0.28.16",
+    "zod": "3.25.76",
+    "@psraghuveer/memento-schema": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "tsup": "8.3.5",
+    "typescript": "5.7.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  }
+}

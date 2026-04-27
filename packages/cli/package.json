@@ -1,0 +1,54 @@
+{
+  "name": "@psraghuveer/memento",
+  "version": "0.1.0",
+  "description": "Local-first, LLM-agnostic memory layer for AI coding assistants. Run via npx @psraghuveer/memento.",
+  "license": "Apache-2.0",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "memento": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "scripts", "README.md"],
+  "dependencies": {
+    "@psraghuveer/memento-core": "workspace:^",
+    "@psraghuveer/memento-schema": "workspace:^",
+    "@psraghuveer/memento-server": "workspace:^"
+  },
+  "peerDependencies": {
+    "@huggingface/transformers": "^3.0.0",
+    "@psraghuveer/memento-embedder-local": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "@psraghuveer/memento-embedder-local": {
+      "optional": true
+    },
+    "@huggingface/transformers": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "tsup": "8.3.5",
+    "typescript": "5.7.2",
+    "vitest": "2.1.8",
+    "zod": "3.25.76",
+    "@psraghuveer/memento-embedder-local": "workspace:^"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo",
+    "test": "vitest run",
+    "postinstall": "node ./scripts/postinstall.mjs"
+  }
+}

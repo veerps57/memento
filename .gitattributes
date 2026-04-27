@@ -1,0 +1,17 @@
+# Enforce LF line endings for all text files
+* text=auto eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+
+# Generated files (no diffs in PRs)
+docs/reference/*.generated.md linguist-generated=true
+*.lock linguist-generated=true
+pnpm-lock.yaml linguist-generated=true

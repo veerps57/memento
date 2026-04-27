@@ -1,0 +1,102 @@
+name: Design proposal
+description: A non-trivial change that affects architecture, the public surface, or load-bearing defaults. Required reading before opening a PR for changes of this kind.
+title: "[design] "
+labels: ["design", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for changes that warrant ADR-level thinking. Fill out every section. Vague proposals will be asked to fill in the gaps before review.
+
+        Before submitting, read [`AGENTS.md`](../AGENTS.md), [`ARCHITECTURE.md`](../ARCHITECTURE.md), and any relevant ADRs in [`docs/adr/`](../docs/adr/).
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What forces, constraints, or observations make this change worth considering? Avoid jumping to the answer.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed decision
+      description: One paragraph. Be precise. The decision should be implementable from this paragraph alone.
+    validations:
+      required: true
+
+  - type: textarea
+    id: positive
+    attributes:
+      label: Positive consequences
+    validations:
+      required: true
+
+  - type: textarea
+    id: negative
+    attributes:
+      label: Negative consequences and risks
+      description: What does this cost or constrain? What could go wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: "For each: short description, why it was attractive, why it was rejected. Empty list is a smell."
+    validations:
+      required: true
+
+  - type: textarea
+    id: principle_first
+    attributes:
+      label: First principles — why this construct exists
+    validations:
+      required: true
+
+  - type: textarea
+    id: principle_modular
+    attributes:
+      label: Modular — what can replace this without rewriting the rest
+    validations:
+      required: true
+
+  - type: textarea
+    id: principle_extensible
+    attributes:
+      label: Extensible — how new variants are added later without breaking changes
+    validations:
+      required: true
+
+  - type: textarea
+    id: principle_config
+    attributes:
+      label: Config-driven — which behaviors will be exposed as ConfigKey
+    validations:
+      required: true
+
+  - type: textarea
+    id: migration
+    attributes:
+      label: Migration plan
+      description: If this changes data shape, config defaults, or the public surface — how do existing users move?
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Related ADRs, issues, prior art, external links.
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I have read AGENTS.md, ARCHITECTURE.md, and the relevant ADRs.
+          required: true
+        - label: I understand this proposal will be discussed before any PR is opened.
+          required: true
