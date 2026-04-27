@@ -15,6 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  branch-name:
+    name: Branch name
+    # Only meaningful on PRs (push events on main are always allowed).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch name
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          if ! printf '%s' "$BRANCH" | grep -Eq '^(feat|fix|chore|docs|refactor|test|perf|ci|build|revert|hotfix)/[a-z0-9][a-z0-9._-]*$'; then
+            echo "::error::Branch '$BRANCH' does not match required pattern."
+            echo "Allowed: <type>/<slug>  where type ∈ feat|fix|chore|docs|refactor|test|perf|ci|build|revert|hotfix"
+            echo "Slug: lowercase alphanumerics plus . _ -  (must start with [a-z0-9])"
+            exit 1
+          fi
+          echo "Branch '$BRANCH' OK."
+
   lint:
     name: Lint (Biome)
     runs-on: ubuntu-latest
