@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           # Changesets needs full history to determine which packages
           # have pending changes.
@@ -51,7 +51,7 @@ jobs:
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version-file: ".nvmrc"
           cache: pnpm
@@ -68,6 +68,16 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Upgrade npm CLI for OIDC trusted publishing
+        # `changeset publish` shells out to `npm publish` per
+        # package. OIDC trusted publishing (no NPM_TOKEN, exchange
+        # the GitHub-issued ID token for a short-lived publish
+        # token) was added in npm 11.5.1. The npm bundled with
+        # Node 20.x is 10.x, which doesn't know about OIDC and
+        # fails with `ENEEDAUTH` because no `_authToken` is set
+        # in `.npmrc` either. Pin a known-good npm here.
+        run: npm install -g npm@11.5.1
 
       - name: Build packages
         run: pnpm build
