@@ -1,4 +1,4 @@
-# @memento/embedder-local
+# @psraghuveer/memento-embedder-local
 
 Local-only `EmbeddingProvider` implementation backed by [transformers.js](https://github.com/huggingface/transformers.js) using `bge-small-en-v1.5`.
 
@@ -9,7 +9,7 @@ This is the only embedder shipped in v1 — see ADR [0006 — Local embeddings o
 ## Install
 
 ```bash
-pnpm add @memento/embedder-local @huggingface/transformers
+pnpm add @psraghuveer/memento-embedder-local @huggingface/transformers
 ```
 
 `@huggingface/transformers` is **not** declared as a dependency of this package. The runtime is large (~100 MB once the model is cached) and is only needed when a consumer opts in to vector retrieval (off by default — see [`docs/architecture/retrieval.md`](../../docs/architecture/retrieval.md)). Listing it would force every Memento install to pay that cost. Consumers install it explicitly when they wire vector retrieval.
@@ -19,8 +19,8 @@ If `embed()` is called without `@huggingface/transformers` on the resolution pat
 ## Usage
 
 ```ts
-import { createLocalEmbedder } from "@memento/embedder-local";
-import { createMementoApp } from "@memento/core";
+import { createLocalEmbedder } from "@psraghuveer/memento-embedder-local";
+import { createMementoApp } from "@psraghuveer/memento-core";
 
 const app = await createMementoApp({
   dbPath: "./memento.db",
@@ -37,7 +37,7 @@ The factory returns an `EmbeddingProvider` whose `model` and `dimension` are sur
 
 ## Defaults
 
-The defaults below come from the canonical config registry — `embedder.local.model` and `embedder.local.dimension` in [`@memento/schema/config-keys`](../schema/src/config-keys.ts). Both keys are immutable at runtime: changing them mid-session would silently mix incompatible vector spaces. Operators flip them at startup and run `embedding rebuild` to migrate stored vectors (ADR 0006, Rule 14).
+The defaults below come from the canonical config registry — `embedder.local.model` and `embedder.local.dimension` in [`@psraghuveer/memento-schema/config-keys`](../schema/src/config-keys.ts). Both keys are immutable at runtime: changing them mid-session would silently mix incompatible vector spaces. Operators flip them at startup and run `embedding rebuild` to migrate stored vectors (ADR 0006, Rule 14).
 
 | Option      | Default                 | Notes                                                                                                       |
 | :---------- | :---------------------- | :---------------------------------------------------------------------------------------------------------- |
@@ -61,7 +61,7 @@ The vitest suite for this package is hermetic by design — it injects a fake lo
 # manual smoke check
 pnpm add -w @huggingface/transformers
 node --input-type=module -e "
-  import { createLocalEmbedder } from '@memento/embedder-local';
+  import { createLocalEmbedder } from '@psraghuveer/memento-embedder-local';
   const e = createLocalEmbedder();
   const v = await e.embed('hello world');
   console.log(e.model, e.dimension, v.length, v.slice(0, 3));

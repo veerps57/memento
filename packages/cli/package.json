@@ -2,7 +2,18 @@
   "name": "@psraghuveer/memento",
   "version": "0.1.0",
   "description": "Local-first, LLM-agnostic memory layer for AI coding assistants. Run via npx @psraghuveer/memento.",
+  "keywords": ["memento", "memory", "ai", "assistant", "mcp", "local-first", "sqlite"],
   "license": "Apache-2.0",
+  "author": "veerps57",
+  "homepage": "https://github.com/veerps57/memento#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/veerps57/memento.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/veerps57/memento/issues"
+  },
   "private": false,
   "type": "module",
   "main": "./dist/index.js",

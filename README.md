@@ -115,7 +115,7 @@ Contributions are welcome from both human and AI-assisted authors. We treat them
 - **Open a [design proposal issue](.github/ISSUE_TEMPLATE/design_proposal.yml)** before any non-trivial change.
 - **Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md).** It asks you to justify, not just describe, the change.
 
-We use [GitHub Discussions](https://github.com/) for questions and ideas; the issue tracker is for bugs and accepted work.
+We use [GitHub Discussions](https://github.com/veerps57/memento/discussions) for questions and ideas; the [issue tracker](https://github.com/veerps57/memento/issues) is for bugs and accepted work.
 
 ## License
 

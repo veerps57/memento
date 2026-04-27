@@ -23,7 +23,7 @@ When you edit files in these areas, the canonical reference is:
 
 These live as concise checklists rather than executable prompt files:
 
-- **Add a command:** define schemas in `@memento/schema`, register the command in `packages/core/src/commands/`, add tests, run `pnpm docs:generate` to refresh `docs/reference/cli.md` and `docs/reference/mcp-tools.md`. ADR-0003 is the contract.
+- **Add a command:** define schemas in `@psraghuveer/memento-schema`, register the command in `packages/core/src/commands/`, add tests, run `pnpm docs:generate` to refresh `docs/reference/cli.md` and `docs/reference/mcp-tools.md`. ADR-0003 is the contract.
 - **Add a config key:** add a `defineKey` entry to `packages/schema/src/config-keys.ts`, follow the JSDoc-style guidance at the top of that file, then `pnpm docs:generate` to refresh `docs/reference/config-keys.md`.
 - **Add a migration:** add the next-numbered migration under `packages/core/src/storage/migrations/` with a matching test under `packages/core/test/storage/migrations/`. Migrations are forward-only.
 

@@ -42,7 +42,7 @@ interface ScrubberRule {
 
 Rules are evaluated in order. The first match for a region wins; subsequent rules cannot re-match an already-scrubbed region. Order matters and is part of the configuration.
 
-The default rule set ships in `@memento/core/scrubber/defaults.ts` and covers:
+The default rule set ships in `@psraghuveer/memento-core/scrubber/defaults.ts` and covers:
 
 - Generic API keys (high-entropy strings prefixed by common conventions: `sk-`, `xoxb-`, `ghp_`, etc.).
 - AWS access keys (`AKIA[0-9A-Z]{16}`) and secret keys (heuristic).

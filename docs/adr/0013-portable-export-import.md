@@ -88,7 +88,7 @@ adversary can recompute the digest, but a truncated download or a
 mid-write power loss is caught up front.
 
 `memory`, `memory_event`, `conflict`, and `conflict_event` records carry
-the **canonical entity shape from `@memento/schema`** under `data`, not
+the **canonical entity shape from `@psraghuveer/memento-schema`** under `data`, not
 the SQL row shape. The importer parses each `data` payload through the
 appropriate Zod schema; importing is therefore symmetric with writing
 through the repository.
@@ -111,7 +111,7 @@ consistent. Output:
 - `embeddings` — only if `--include-embeddings` was passed.
 
 `--scope <selector>` accepts the same scope serialisation the registry
-already uses (e.g. `repo:git@github.com:psraghuveer57/memento.git`) and
+already uses (e.g. `repo:git@github.com:psraghuveer/memento.git`) and
 filters the snapshot. The default is "every scope present in the
 store"; the README example will use `--scope` for partial backups.
 

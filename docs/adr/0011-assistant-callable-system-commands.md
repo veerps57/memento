@@ -141,7 +141,7 @@ state.
 ### Alternative C: Filesystem checks inside `system.info`
 
 Tempting to fold "is the database file writable" or "does
-`@memento/embedder-local` resolve" into `system.info` so the
+`@psraghuveer/memento-embedder-local` resolve" into `system.info` so the
 assistant gets a single answer. Rejected because:
 
 - It mixes the registry layer with host-level probes.

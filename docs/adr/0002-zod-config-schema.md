@@ -22,7 +22,7 @@ Options:
 
 ## Decision
 
-Use a single Zod schema in `@memento/schema/config` as the source of truth. Derive TypeScript types via `z.infer`. Generate user-facing reference docs from the schema (`docs/reference/config-keys.md`).
+Use a single Zod schema in `@psraghuveer/memento-schema/config` as the source of truth. Derive TypeScript types via `z.infer`. Generate user-facing reference docs from the schema (`docs/reference/config-keys.md`).
 
 ## Consequences
 
@@ -39,7 +39,7 @@ Use a single Zod schema in `@memento/schema/config` as the source of truth. Deri
 
 ### Risks
 
-- Zod major version churn. Mitigation: pinned in `@memento/schema`, exposed via a thin re-export.
+- Zod major version churn. Mitigation: pinned in `@psraghuveer/memento-schema`, exposed via a thin re-export.
 
 ## Alternatives considered
 
