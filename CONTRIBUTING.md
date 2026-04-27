@@ -180,6 +180,14 @@ For PRs that warrant a changelog entry, add a [Changeset](https://github.com/cha
 pnpm changeset
 ```
 
+Then **rename the generated file** so it sorts chronologically:
+
+```text
+.changeset/<UTC-timestamp>-<slug>.md     # YYYY-MM-DDTHHMM-<slug>.md
+```
+
+Get the timestamp with `date -u +"%Y-%m-%dT%H%M"`. Example: `.changeset/2026-04-27T1949-fix-init-creates-db-parent-dir.md`. The default whimsical names (`funny-foxes-dance.md`) make "what's the latest changeset?" unanswerable; the timestamp prefix fixes that. The CLI doesn't care about the filename — it reads any `*.md` in `.changeset/`.
+
 ## Releasing
 
 Releases are automated end-to-end. You should never need to run `npm publish`, `git tag`, or `pnpm publish` by hand.

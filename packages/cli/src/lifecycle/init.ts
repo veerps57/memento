@@ -68,7 +68,7 @@
 //   - `--client foo` with an unknown id surfaces as
 //     `INVALID_INPUT` before the database is opened.
 
-import { constants, access } from 'node:fs/promises';
+import { constants, access, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
 import { type Result, err, ok } from '@psraghuveer/memento-schema';
@@ -266,6 +266,23 @@ async function checkDbPathWritable(dbPath: string): Promise<InitCheck> {
     };
   }
   const dir = path.dirname(path.resolve(dbPath));
+  // `init` is the lifecycle point where creating the data
+  // directory is expected and visible — `db-path.ts` defaults
+  // to platform-standard locations (XDG / %LOCALAPPDATA%) that
+  // exist on most hosts but are not guaranteed on a fresh
+  // user account. Without this `mkdir -p`, the first run on a
+  // brand-new laptop fails the writability check below before
+  // `openAppForSurface` can create the DB file.
+  //
+  // Idempotent (`recursive: true`), and any failure (permission
+  // denied on a parent component, EACCES, etc.) falls through
+  // to the access() probe so the user sees a single,
+  // descriptive `not writable` message rather than two.
+  try {
+    await mkdir(dir, { recursive: true });
+  } catch {
+    // Intentionally swallowed — surfaced via the access() probe.
+  }
   try {
     await access(dir, constants.W_OK);
     return {
