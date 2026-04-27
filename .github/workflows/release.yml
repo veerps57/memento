@@ -55,9 +55,16 @@ jobs:
         with:
           node-version-file: ".nvmrc"
           cache: pnpm
-          # Setting registry-url here makes setup-node configure
-          # auth-token wiring for npm publish.
-          registry-url: "https://registry.npmjs.org"
+          # Intentionally NOT setting `registry-url`. With it set,
+          # setup-node writes `.npmrc` with
+          # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`,
+          # and because we have no `NPM_TOKEN` secret (we use OIDC
+          # trusted publishing), it substitutes a literal
+          # `XXXXX-XXXXX-XXXXX-XXXXX` placeholder. npm publish then
+          # uses that bogus token instead of the OIDC flow, and the
+          # registry replies 404 on the scoped package PUT.
+          # Leaving `.npmrc` untouched lets the npm CLI take the
+          # trusted-publishing path on its own.
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
