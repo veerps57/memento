@@ -1,10 +1,14 @@
 name: Release
 
 on:
-  # Releases are gated to manual dispatch. Memento publishes to
-  # a private Verdaccio registry today; the changesets/action npm
-  # publish path is not configured for that, so triggering on
-  # every push to main produces noisy 404s against npmjs.org.
+  # Auto-run on every push to main: changesets/action either
+  # opens/updates a "Version Packages" PR (when pending changeset
+  # files exist) or, when the previous Version Packages PR was
+  # just merged, runs `pnpm release` to publish via OIDC.
+  # workflow_dispatch is retained for ad-hoc reruns (e.g. to
+  # retry after a transient publish failure).
+  push:
+    branches: [main]
   workflow_dispatch:
 
 # Concurrency limits to one release run at a time, queued by ref,
@@ -17,6 +21,19 @@ permissions:
   contents: write
   pull-requests: write
   id-token: write # required for npm provenance
+
+# Disable lefthook on the runner. The `prepare` script in
+# package.json installs git hooks via `lefthook install`, which
+# means changesets/action's `git commit` + `git push` would
+# trigger our pre-commit and pre-push hooks. Two of those hooks
+# fail on CI: the `branch-name` check rejects the action's
+# `changeset-release/main` branch (it doesn't match the
+# `<type>/<slug>` regex), and `pnpm test` fails because the
+# better-sqlite3 prebuilt isn't installed in this minimal job.
+# CI is itself the authoritative test gate — re-running hooks
+# on the runner is redundant and now actively harmful.
+env:
+  LEFTHOOK: "0"
 
 jobs:
   release:
