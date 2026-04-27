@@ -23,7 +23,7 @@
     "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm test:e2e && pnpm docs:lint && pnpm docs:check",
     "prepare": "lefthook install",
     "changeset": "changeset",
-    "version-packages": "changeset version",
+    "version-packages": "changeset version && biome format --write .",
     "release": "pnpm build && changeset publish",
     "dev:server": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node packages/cli/dist/cli.js serve",
     "docs:generate": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node scripts/docs.mjs --write",
