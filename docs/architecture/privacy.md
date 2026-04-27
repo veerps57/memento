@@ -72,7 +72,7 @@ later asks for it by id.
 If your threat model requires that sensitive content never
 reach the embedding provider at all (for example: the provider
 is a third-party HTTP API), the supported mitigation is to
-**not wire that provider** — `@memento/core` runs without an
+**not wire that provider** — `@psraghuveer/memento-core` runs without an
 embedder, and `embedding.rebuild` is simply absent from the
 registry (`packages/core/src/bootstrap.ts`). Per-row provider
 selection is not a v1 capability and is intentionally out of

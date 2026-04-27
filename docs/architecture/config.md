@@ -6,7 +6,7 @@ The principle: **behavior is shaped by configuration, not by code.** Every magic
 
 ## The shape
 
-Configuration is a single typed schema (`@memento/schema/config`). It is a Zod schema; the TypeScript type is derived via `z.infer`. There is no separate type definition to drift.
+Configuration is a single typed schema (`@psraghuveer/memento-schema/config`). It is a Zod schema; the TypeScript type is derived via `z.infer`. There is no separate type definition to drift.
 
 ```ts
 type ConfigKey =
@@ -75,7 +75,7 @@ The full list with types and defaults is generated into [`docs/reference/config-
 
 Configuration is resolved from two layers, lowest precedence first:
 
-1. **Built-in defaults.** Compiled into `@memento/schema/config`.
+1. **Built-in defaults.** Compiled into `@psraghuveer/memento-schema/config`.
 2. **MCP runtime config.** `config.set` calls during a server session. The CLI also surfaces `config.set` / `config.unset` and writes `ConfigEvent`s to the same audit log; events from CLI calls record `source: 'cli'`, events from MCP calls record `source: 'mcp'`.
 
 Higher precedence wins per-key. Operators that need startup-time overrides pass them programmatically as `configOverrides` to `createMementoApp`; these are recorded in the runtime view as `source: 'cli'`.

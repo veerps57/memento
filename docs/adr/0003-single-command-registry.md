@@ -11,7 +11,7 @@ Memento exposes operations on two surfaces today (MCP and CLI) and may add more 
 
 ## Decision
 
-Define every command exactly once in a typed command registry in `@memento/core/commands`. Each entry has a Zod input schema, a Zod output schema, a handler, and metadata. The MCP server and CLI are thin adapters that project the registry. A contract test asserts that for every registered command, both adapters expose it.
+Define every command exactly once in a typed command registry in `@psraghuveer/memento-core/commands`. Each entry has a Zod input schema, a Zod output schema, a handler, and metadata. The MCP server and CLI are thin adapters that project the registry. A contract test asserts that for every registered command, both adapters expose it.
 
 ## Consequences
 

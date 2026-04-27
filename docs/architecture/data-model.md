@@ -1,6 +1,6 @@
 # Architecture: Data Model
 
-This document defines the entities Memento persists, their fields, their invariants, and their relationships. The Zod schemas in `@memento/schema` are the single source of truth; this file explains intent.
+This document defines the entities Memento persists, their fields, their invariants, and their relationships. The Zod schemas in `@psraghuveer/memento-schema` are the single source of truth; this file explains intent.
 
 ## The four entities
 

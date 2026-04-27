@@ -2,7 +2,18 @@
   "name": "@psraghuveer/memento-embedder-local",
   "version": "0.1.0",
   "description": "Local-only embedding provider for Memento, backed by transformers.js (bge-small-en-v1.5). Lazy-loaded.",
+  "keywords": ["memento", "memory", "ai", "assistant", "mcp", "local-first", "sqlite"],
   "license": "Apache-2.0",
+  "author": "veerps57",
+  "homepage": "https://github.com/veerps57/memento#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/veerps57/memento.git",
+    "directory": "packages/embedder-local"
+  },
+  "bugs": {
+    "url": "https://github.com/veerps57/memento/issues"
+  },
   "private": false,
   "type": "module",
   "main": "./dist/index.js",

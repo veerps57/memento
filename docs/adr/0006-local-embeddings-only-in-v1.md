@@ -17,7 +17,7 @@ Memento's positioning is local-first, with privacy as a load-bearing property. S
 
 ## Decision
 
-Ship `@memento/embedder-local` (transformers.js + `bge-small-en-v1.5`) as the only embedding option. Vector search is **off by default**; users opt in via `retrieval.vector.enabled = true`. Cloud embedders are deliberately out of scope.
+Ship `@psraghuveer/memento-embedder-local` (transformers.js + `bge-small-en-v1.5`) as the only embedding option. Vector search is **off by default**; users opt in via `retrieval.vector.enabled = true`. Cloud embedders are deliberately out of scope.
 
 The embedder is exposed behind an `EmbeddingProvider` interface. Adding cloud providers later is a new package, not a refactor.
 

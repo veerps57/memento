@@ -6,10 +6,10 @@ This directory contains user-facing reference documentation. Most files here are
 
 | File                               | Generated from                      |
 | ---------------------------------- | ----------------------------------- |
-| [`mcp-tools.md`](mcp-tools.md)     | `@memento/core/commands` registry   |
-| [`cli.md`](cli.md)                 | `@memento/core/commands` registry   |
-| [`config-keys.md`](config-keys.md) | `@memento/schema/config` Zod schema |
-| [`error-codes.md`](error-codes.md) | `@memento/core/errors`              |
+| [`mcp-tools.md`](mcp-tools.md)     | `@psraghuveer/memento-core/commands` registry   |
+| [`cli.md`](cli.md)                 | `@psraghuveer/memento-core/commands` registry   |
+| [`config-keys.md`](config-keys.md) | `@psraghuveer/memento-schema/config` Zod schema |
+| [`error-codes.md`](error-codes.md) | `@psraghuveer/memento-core/errors`              |
 
 To regenerate, run:
 
