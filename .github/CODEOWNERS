@@ -2,21 +2,21 @@
 
 # Update once the project has more than one maintainer.
 
--       @raghuveer
+*       @veerps57
 
 # Architectural docs and ADRs require maintainer review specifically.
 
-/docs/architecture/ @raghuveer
-/docs/adr/ @raghuveer
-/AGENTS.md @raghuveer
-/ARCHITECTURE.md @raghuveer
-/SECURITY.md @raghuveer
+/docs/architecture/ @veerps57
+/docs/adr/ @veerps57
+/AGENTS.md @veerps57
+/ARCHITECTURE.md @veerps57
+/SECURITY.md @veerps57
 
 # License and project metadata.
 
-/LICENSE @raghuveer
-/NOTICE @raghuveer
+/LICENSE @veerps57
+/NOTICE @veerps57
 
 # CI and repository configuration.
 
-/.github/ @raghuveer
+/.github/ @veerps57

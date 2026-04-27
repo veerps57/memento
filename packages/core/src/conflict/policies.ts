@@ -101,7 +101,11 @@ const factPolicy: ConflictPolicy = (next, candidate, config) => {
 // detectable key never conflict — Memento prefers silence to
 // guessing.
 
-const PREFERENCE_KV_REGEX = /^\s*([^:=]{1,80}?)\s*[:=]\s*(.+?)\s*$/;
+// Anchored greedy split on the first `:` or `=`. The captured groups are
+// trimmed in `parseKeyValue`, so we do not need ambiguous `\s*` runs in the
+// pattern itself — those caused polynomial backtracking on whitespace-heavy
+// inputs (CodeQL js/polynomial-redos).
+const PREFERENCE_KV_REGEX = /^\s*([^:=]{1,80})[:=](.*)$/;
 
 const preferencePolicy: ConflictPolicy = (next, candidate) => {
   const a = parseKeyValue(next.content);

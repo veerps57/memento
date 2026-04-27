@@ -81,7 +81,7 @@ export function renderConfigKeysDoc(
     if (bucket === undefined) continue;
     for (const [name, def] of bucket) {
       const mutable = def.mutable ? 'yes' : 'no';
-      const description = def.description.replace(/\|/g, '\\|');
+      const description = def.description.replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
       lines.push(`| \`${name}\` | ${renderDefault(def.default)} | ${mutable} | ${description} |`);
     }
     lines.push('');
