@@ -1,6 +1,7 @@
 // Wire-shape input schema for the `embedding.*` command set.
 
 import { z } from 'zod';
+import { confirmGate } from '../confirm-gate.js';
 
 /**
  * `embedding.rebuild`. Mirrors `ReembedOptions` minus `actor`
@@ -20,10 +21,6 @@ export const EmbeddingRebuildInputSchema = z
      * embedding row and can take minutes on large stores;
      * the gate is invariant (AGENTS.md rule 12).
      */
-    confirm: z.literal(true, {
-      errorMap: () => ({
-        message: 'this operation is destructive; pass { confirm: true } to proceed',
-      }),
-    }),
+    confirm: confirmGate(),
   })
   .strict();
