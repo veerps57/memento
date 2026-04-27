@@ -12,14 +12,30 @@ This directory drives Memento's release process. Every change that affects a pub
 
    You'll be prompted to pick affected packages and bump types (`patch` / `minor` / `major`), then write a one-line summary. The result is a markdown file in this directory.
 
-2. Commit the generated `.changeset/*.md` file alongside your change in the same PR.
+2. Rename the generated file so it sorts chronologically.
 
-3. When the PR merges to `main`, the **Release** GitHub Action opens (or updates) a "Version Packages" PR that:
+   Changesets defaults to whimsical names (`funny-foxes-dance.md`), which makes "what's the latest changeset?" impossible to answer at a glance. Rename to:
+
+   ```text
+   .changeset/<UTC-timestamp>-<slug>.md
+   ```
+
+   where `<UTC-timestamp>` is `YYYY-MM-DDTHHMM` (minute precision is enough — multiple changesets in a single minute are rare, and the slug disambiguates anyway). Get it with:
+
+   ```bash
+   date -u +"%Y-%m-%dT%H%M"
+   ```
+
+   Example: `.changeset/2026-04-27T1949-fix-init-creates-db-parent-dir.md`. Lexicographic sort = chronological, so `ls .changeset/` and the VS Code explorer both put the newest entry last. The `changeset` CLI doesn't care about the filename — it reads any `*.md` in this directory.
+
+3. Commit the renamed `.changeset/*.md` file alongside your change in the same PR.
+
+4. When the PR merges to `main`, the **Release** GitHub Action opens (or updates) a "Version Packages" PR that:
    - bumps `version` fields across affected packages
    - regenerates each package's `CHANGELOG.md`
    - deletes the consumed changeset files
 
-4. Merging the "Version Packages" PR triggers `changeset publish`, which publishes the bumped packages to npm and creates GitHub releases.
+5. Merging the "Version Packages" PR triggers `changeset publish`, which publishes the bumped packages to npm and creates GitHub releases.
 
 ## Configuration
 

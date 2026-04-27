@@ -8,6 +8,8 @@
 //   - the open+migrate path calls through to `createApp`,
 //   - storage failures bubble through as Result errors.
 
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { createMementoApp } from '@psraghuveer/memento-core';
@@ -161,5 +163,33 @@ describe('runInit', () => {
     );
     expect(result.ok).toBe(true);
     expect(closed).toBe(true);
+  });
+
+  it("creates the parent directory when it doesn't exist", async () => {
+    // Regression test for the fresh-install bug: on a brand-new
+    // host the XDG default (~/.local/share/memento/) does not
+    // exist, and the writability check used to fail before
+    // openAppForSurface had a chance to create the DB file.
+    const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'memento-init-mkdir-'));
+    try {
+      const dbPath = path.join(tmpRoot, 'nested', 'subdir', 'memento.db');
+      const parent = path.dirname(dbPath);
+      expect(existsSync(parent)).toBe(false);
+      const result = await runInit(
+        {
+          createApp: createMementoApp,
+          migrateStore: rejectMigrateStore,
+          serveStdio: rejectServeStdio,
+        },
+        { env: cliEnv({ dbPath }), subargs: [], io: NULL_IO },
+      );
+      expect(result.ok).toBe(true);
+      expect(existsSync(parent)).toBe(true);
+      if (!result.ok) return;
+      const writable = result.value.checks.find((c) => c.name === 'db-path-writable');
+      expect(writable?.ok).toBe(true);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 });
