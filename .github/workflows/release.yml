@@ -24,17 +24,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           # Changesets needs full history to determine which packages
           # have pending changes.
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: ".nvmrc"
           cache: pnpm
@@ -56,7 +56,7 @@ jobs:
         #    consumes the changesets.
         #  - if the previous "Version Packages" PR was just merged,
         #    runs `pnpm release` (build + changeset publish).
-        uses: changesets/action@v1
+        uses: changesets/action@6a0a831ff30acef54f2c6aa1cbbc1096b066edaf # v1.7.0
         with:
           publish: pnpm release
           version: pnpm version-packages
@@ -64,7 +64,13 @@ jobs:
           title: "chore(release): version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # No NPM_TOKEN: publishing uses OIDC trusted publishing
+          # (configured per-package on npmjs.com). The job needs
+          # `permissions.id-token: write` (set above) and a
+          # recent pnpm/npm CLI to mint and exchange the OIDC
+          # token automatically. NPM_CONFIG_PROVENANCE attaches
+          # SLSA provenance attestations to each published tarball.
+          NPM_CONFIG_PROVENANCE: "true"
 
       - name: Tag umbrella release
         # changesets/action publishes per-package git tags
