@@ -23,6 +23,7 @@ import {
   TimestampSchema,
 } from '@psraghuveer/memento-schema';
 import { z } from 'zod';
+import { confirmGate } from '../confirm-gate.js';
 
 /**
  * Input for `memory.write`.
@@ -170,11 +171,7 @@ export const MemoryForgetInputSchema = z
   .object({
     id: MemoryIdSchema,
     reason: z.string().max(512).nullable(),
-    confirm: z.literal(true, {
-      errorMap: () => ({
-        message: 'this operation is destructive; pass { confirm: true } to proceed',
-      }),
-    }),
+    confirm: confirmGate(),
   })
   .strict();
 
@@ -188,11 +185,7 @@ export const MemoryForgetInputSchema = z
 export const MemoryArchiveInputSchema = z
   .object({
     id: MemoryIdSchema,
-    confirm: z.literal(true, {
-      errorMap: () => ({
-        message: 'this operation is destructive; pass { confirm: true } to proceed',
-      }),
-    }),
+    confirm: confirmGate(),
   })
   .strict();
 
@@ -246,11 +239,7 @@ export const MemoryForgetManyInputSchema = z
     filter: MemoryBulkFilterSchema,
     reason: z.string().max(512).nullable(),
     dryRun: z.boolean().default(true),
-    confirm: z.literal(true, {
-      errorMap: () => ({
-        message: 'this operation is destructive; pass { confirm: true } to proceed',
-      }),
-    }),
+    confirm: confirmGate(),
   })
   .strict();
 
@@ -263,11 +252,7 @@ export const MemoryArchiveManyInputSchema = z
   .object({
     filter: MemoryBulkFilterSchema,
     dryRun: z.boolean().default(true),
-    confirm: z.literal(true, {
-      errorMap: () => ({
-        message: 'this operation is destructive; pass { confirm: true } to proceed',
-      }),
-    }),
+    confirm: confirmGate(),
   })
   .strict();
 

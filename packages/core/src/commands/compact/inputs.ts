@@ -1,6 +1,7 @@
 // Wire-shape input schema for the `compact.*` command set.
 
 import { z } from 'zod';
+import { confirmGate } from '../confirm-gate.js';
 
 /**
  * `compact.run`. Mirrors `CompactOptions` minus `actor`, `now`,
@@ -23,10 +24,6 @@ export const CompactRunInputSchema = z
      * status and is not reversible by an inverse command;
      * the gate is invariant (AGENTS.md rule 12).
      */
-    confirm: z.literal(true, {
-      errorMap: () => ({
-        message: 'this operation is destructive; pass { confirm: true } to proceed',
-      }),
-    }),
+    confirm: confirmGate(),
   })
   .strict();
