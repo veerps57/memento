@@ -263,7 +263,7 @@ pins this behaviour for every command that carries the flag.
 Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.yml). Include:
 
 - Memento version (`memento --version`).
-- Output of `memento doctor` (with `--format json` for the full diagnostic).
+- Output of `npx @psraghuveer/memento doctor` (with `--format json` for the full diagnostic).
 - Steps to reproduce.
 - Expected vs. actual behavior.
 - Relevant config (with secrets redacted).

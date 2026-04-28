@@ -15,7 +15,7 @@ These are deliberate omissions. The architecture is designed so that adding any 
 | Multi-user and team-scoped memory        | The data model supports it (`OwnerRef`, extensible `ScopeType`); commands do not | Not supported                        |
 | HTTP / SSE transport                     | stdio covers every current MCP client                                            | Not supported                        |
 | Encryption at rest                       | Use full-disk encryption or an encrypted volume                                  | Not supported                        |
-| Sync across machines                     | `memento export` / `memento import` (ADR-0013) cover transfer; live sync is out of scope | Manual transfer only                 |
+| Sync across machines                     | `npx @psraghuveer/memento export` / `npx @psraghuveer/memento import` (ADR-0013) cover transfer; live sync is out of scope | Manual transfer only                 |
 | Single-binary distribution               | Memento ships on npm                                                             | Not supported                        |
 | Web UI / TUI for browsing memory         | Treated as a separate product                                                    | Out of scope                         |
 
@@ -29,9 +29,9 @@ These are real constraints in the shipping product.
 - **Embedding model migration is explicit.** Changing `embedder.local.model` (or `embedder.local.dimension`) leaves stored vectors stamped with the old model. The next vector-enabled search aborts with a `CONFIG_ERROR` pointing at `memento embedding rebuild`; this is by design (Rule 14: model migration must be deliberate).
 - **Local embedding model first run.** When `retrieval.vector.enabled` is set to true for the first time, the local model (`bge-small-en-v1.5`, ~33 MB) is downloaded to a cache directory. The first call after enabling will be slow.
 - **Conflict detection scope.** Conflicts are detected within the same scope or against broader scopes (per the `conflict.detectionMode` config). Cross-repo conflict detection is intentionally not enabled by default.
-- **Decay parameters.** The default decay half-life is 90 days. This is a heuristic, not a researched value; tune it for your usage. `memento doctor` surfaces decay statistics to inform tuning.
+- **Decay parameters.** The default decay half-life is 90 days. This is a heuristic, not a researched value; tune it for your usage. `npx @psraghuveer/memento doctor` surfaces decay statistics to inform tuning.
 - **Scrubber is best-effort.** The built-in patterns catch common secret formats but cannot catch every possible secret. The scrubber is one layer of defense; do not assume content written to memory is automatically safe.
-- **Audit retention.** Audit events older than `storage.auditRetentionDays` (default 365) are pruned by `memento compact`. Long-lived audit history requires explicit configuration.
+- **Audit retention.** Audit events older than `storage.auditRetentionDays` (default 365) are pruned by `npx @psraghuveer/memento compact`. Long-lived audit history requires explicit configuration.
 - **Memory kinds are fixed.** The `kind` taxonomy (`fact`, `preference`, `decision`, `todo`, `snippet`) is fixed. User-defined kinds are not supported.
 - **Single global store.** All scopes resolve to one SQLite file under the user's home directory. Per-team or per-tenant stores are not supported.
 

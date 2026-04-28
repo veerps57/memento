@@ -161,7 +161,7 @@ Then re-run whatever triggered the embed call. The first call after install down
 
 **Cause.** `memento serve` speaks MCP over stdio and exits when the peer disconnects. If you piped `/dev/null` into it, redirected stdin from a closed file, or ran it in a way that doesn't keep stdin open, the server reads EOF immediately and shuts down cleanly. The non-zero exit is the MCP transport's "peer disconnected" code wrapped by `pnpm`.
 
-**Fix.** Don't redirect stdin. Run `pnpm dev:server` from an interactive shell so stdin stays open until you hit `Ctrl+C`, or wire it into a real MCP client (the supported case — see [`docs/guides/mcp-client-setup.md`](mcp-client-setup.md)). For a smoke check that doesn't require an MCP peer, run `memento context` instead:
+**Fix.** Don't redirect stdin. Run `pnpm dev:server` from an interactive shell so stdin stays open until you hit `Ctrl+C`, or wire it into a real MCP client (the supported case — see [`docs/guides/mcp-client-setup.md`](mcp-client-setup.md)). For a smoke check that doesn't require an MCP peer, run `npx @psraghuveer/memento context` instead:
 
 ```bash
 pnpm build
@@ -183,7 +183,7 @@ press Ctrl-C to stop
 
 **Cause.** This is the correct behaviour, not a hang. `serve` speaks the Model Context Protocol over stdin/stdout and blocks until an MCP client connects (or until you press Ctrl-C). The readiness line is printed to **stderr** so it never corrupts the protocol on stdout, and it only appears when stderr is a TTY — when an MCP client launches the server with piped stderr, the line is suppressed so client logs stay clean.
 
-**Fix.** Nothing to fix. To actually use the server, point an MCP client at it (see [`docs/guides/mcp-client-setup.md`](mcp-client-setup.md)). To smoke-test without an MCP peer, run `memento context` or `memento doctor` instead — both exit cleanly.
+**Fix.** Nothing to fix. To actually use the server, point an MCP client at it (see [`docs/guides/mcp-client-setup.md`](mcp-client-setup.md)). To smoke-test without an MCP peer, run `npx @psraghuveer/memento context` or `npx @psraghuveer/memento doctor` instead — both exit cleanly.
 
 ## Where to file issues
 

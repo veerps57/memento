@@ -35,7 +35,7 @@ These are encoded as tests and CI gates where possible. Do not bypass them.
 8. **Conflict detection runs via a post-write hook**, never inline. The write path does not block on conflict checks beyond a configured timeout.
 9. **Decay is computed at query time, not stored.** Effective confidence is `stored × decayFactor(now − lastConfirmedAt, halfLife)`. The `compact` job materializes archives for memories that have decayed below threshold.
 10. **`ScopeResolver` is composed of small, mockable resolvers** (`GitRemoteResolver`, `WorkspacePathResolver`, `SessionResolver`). The composite is a thin policy layer.
-11. **`MemoryEvent` is the audit source of truth.** `lastConfirmedAt` on `Memory` is a denormalized cache, validated at write-time and by `memento doctor`.
+11. **`MemoryEvent` is the audit source of truth.** `lastConfirmedAt` on `Memory` is a denormalized cache, validated at write-time and by `npx @psraghuveer/memento doctor`.
 12. **No configurable invariants.** Integrity rules (immutability, status transitions, supersession atomicity) are hardcoded. Configurable invariants are no invariants.
 13. **`memory.update` only mutates non-content fields** (tags, kind, pinned). Content changes route through `supersede` to preserve history. The error message points the caller to the right command.
 14. **Embedding model migration is explicit.** `memento embeddings rebuild` is the only way to re-embed memories. Never silent.
