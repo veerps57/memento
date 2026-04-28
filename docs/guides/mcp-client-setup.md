@@ -1,10 +1,10 @@
 # Wiring Memento into an MCP client
 
-Memento ships as a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. Any MCP-aware client — Claude Desktop, Claude Code, Cursor, Cline, Aider, OpenCode, VS Code's Agent mode, and so on — can talk to it the same way: by spawning the `memento serve` process and exchanging JSON-RPC over stdin/stdout.
+Memento ships as a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. Any MCP-aware client — Claude Desktop, Claude Code, Cursor, Cline, Aider, OpenCode, VS Code's Agent mode, and so on — can talk to it the same way: by spawning the `npx @psraghuveer/memento serve` process and exchanging JSON-RPC over stdin/stdout.
 
 This guide is written for both human operators and AI agents. The configuration snippets are concrete and copy-paste ready; the "why" notes are short and one click away from the supporting docs.
 
-## Quickstart: `memento init`
+## Quickstart: `npx @psraghuveer/memento init`
 
 The fastest path is to let Memento generate every snippet for you, with the resolved database path already filled in:
 
@@ -17,40 +17,32 @@ mkdir -p "$(dirname "$MEMENTO_DB")"
 npx @psraghuveer/memento init
 ```
 
-`memento init` is idempotent — running it again is safe and just reprints the snippets. It supports Claude Code, Claude Desktop, Cursor, VS Code Agent mode, and OpenCode out of the box. To target a subset, pass `--client` (csv): `memento init --client claude-code,opencode`.
+`init` is idempotent — running it again is safe and just reprints the snippets. It supports Claude Code, Claude Desktop, Cursor, VS Code Agent mode, and OpenCode out of the box. To target a subset, pass `--client` (csv): `npx @psraghuveer/memento init --client claude-code,opencode`.
 
 For the full per-client walkthrough (Cline, custom paths, troubleshooting), keep reading.
 
 ## Prerequisites
 
-Install Memento. Either path works — pick the one that matches how your MCP client spawns servers:
+The canonical invocation throughout this guide is `npx @psraghuveer/memento <cmd>`. The first run downloads and caches the package; subsequent runs reuse the cache. No global install is required, and the snippets below match exactly what `npx @psraghuveer/memento init` emits, so client configs work the same way regardless of who runs them.
 
-**Option A — global install** (recommended for client configs that take a bare command name):
-
-```bash
-npm install -g @psraghuveer/memento
-memento doctor          # confirms install + database writability
-```
-
-This puts `memento` on your `$PATH`. Client config can then use `"command": "memento"`.
-
-**Option B — `npx`** (no global state, fetched on demand):
+Verify your install:
 
 ```bash
 npx @psraghuveer/memento doctor
 ```
 
-Client config uses `"command": "npx"` with `"args": ["@psraghuveer/memento", "serve"]`. The first run downloads and caches the package; subsequent runs reuse the cache.
+If you'd rather not type the full package name every time, you have two options:
 
-**Option C — from a clone** (contributors only). Build the workspace and point clients at `node /abs/path/to/packages/cli/dist/cli.js`. See [`README.md`](../../README.md#getting-started) for the workspace setup.
+- **Global install:** `npm install -g @psraghuveer/memento`. Now `memento` is on your `$PATH` and every example below works with the bare command. Client configs that use `"command": "npx"` will keep working too.
+- **Shell alias:** `alias memento='npx -y @psraghuveer/memento'` in your shell rc.
 
-The snippets below default to Option A. To switch to npx, replace `"command": "memento", "args": ["serve"]` with `"command": "npx", "args": ["@psraghuveer/memento", "serve"]`.
+**From a clone (contributors only).** Build the workspace and point clients at `node /abs/path/to/packages/cli/dist/cli.js`. See [`README.md`](../../README.md#getting-started) for the workspace setup.
 
 ## What every client needs
 
 Memento's MCP transport is stdio only. Every client config boils down to four pieces of information:
 
-1. A **command** to spawn (`memento` if globally installed, or `npx` with `@psraghuveer/memento` as the first arg).
+1. A **command** to spawn (`npx`, with `@psraghuveer/memento` as the first arg; or the bare `memento` binary if you've installed globally).
 2. The **arguments** to pass it (`serve`, plus optional flags).
 3. Optional **environment variables** — most importantly `MEMENTO_DB`, the absolute path to the SQLite file Memento should use. When unset, Memento defaults to the XDG data dir (`$XDG_DATA_HOME/memento/memento.db`, typically `~/.local/share/memento/memento.db` on POSIX and `%LOCALAPPDATA%\memento\memento.db` on Windows), so MCP-launched servers find the same store regardless of cwd. Set `MEMENTO_DB` explicitly when you want a different location.
 4. Optional **CLI flags** after `serve` — `--db /abs/path/to/memento.db` is equivalent to `MEMENTO_DB`. Use whichever fits the client's config shape better.
@@ -77,8 +69,8 @@ Add `memento` under the top-level `mcpServers` map:
 {
   "mcpServers": {
     "memento": {
-      "command": "memento",
-      "args": ["serve"],
+      "command": "npx",
+      "args": ["-y", "@psraghuveer/memento", "serve"],
       "env": {
         "MEMENTO_DB": "/Users/<you>/.local/share/memento/memento.db"
       }
@@ -109,8 +101,8 @@ Cursor exposes MCP servers under **Settings → Cursor Settings → MCP → Add 
 {
   "mcpServers": {
     "memento": {
-      "command": "memento",
-      "args": ["serve"],
+      "command": "npx",
+      "args": ["-y", "@psraghuveer/memento", "serve"],
       "env": {
         "MEMENTO_DB": "/Users/<you>/.local/share/memento/memento.db"
       }
@@ -134,8 +126,8 @@ VS Code's Agent mode reads MCP servers from `.vscode/mcp.json` in the workspace 
 {
   "servers": {
     "memento": {
-      "command": "memento",
-      "args": ["serve"],
+      "command": "npx",
+      "args": ["-y", "@psraghuveer/memento", "serve"],
       "env": {
         "MEMENTO_DB": "${workspaceFolder}/.memento/memento.db"
       }
@@ -148,14 +140,14 @@ VS Code's Agent mode reads MCP servers from `.vscode/mcp.json` in the workspace 
 
 ## OpenCode
 
-OpenCode reads `~/.config/opencode/opencode.json`. Add `memento` under the `mcp` map. OpenCode accepts both an array form (`command: ["memento", "serve"]`) and a split `command` + `args` form; if `memento init` produced a snippet for a different client and you want to adapt it, the array form is usually what OpenCode expects:
+OpenCode reads `~/.config/opencode/opencode.json`. Add `memento` under the `mcp` map. OpenCode accepts both an array form (`command: ["npx", "-y", "@psraghuveer/memento", "serve"]`) and a split `command` + `args` form; if `npx @psraghuveer/memento init` produced a snippet for a different client and you want to adapt it, the array form is usually what OpenCode expects:
 
 ```json
 {
   "mcp": {
     "memento": {
       "type": "local",
-      "command": ["memento", "serve"],
+      "command": ["npx", "-y", "@psraghuveer/memento", "serve"],
       "environment": {
         "MEMENTO_DB": "/Users/<you>/.local/share/memento/memento.db"
       }
@@ -164,7 +156,7 @@ OpenCode reads `~/.config/opencode/opencode.json`. Add `memento` under the `mcp`
 }
 ```
 
-Restart OpenCode after editing. If the server doesn't connect, run `memento doctor --mcp` — it scans the OpenCode config among other client configs and flags shape mismatches.
+Restart OpenCode after editing. If the server doesn't connect, run `npx @psraghuveer/memento doctor --mcp` — it scans the OpenCode config among other client configs and flags shape mismatches.
 
 ## A note on databases and scope
 
@@ -187,7 +179,7 @@ stat -c "%y" /Users/<you>/.local/share/memento/memento.db    # Linux
 
 If the timestamp does not change after a memory-related interaction, double-check:
 
-1. The `command` field resolves correctly. If using `"command": "memento"`, verify with `which memento` from a shell that the same `$PATH` would expose to the client. If your client uses a stripped-down environment, prefer `"command": "npx"` with `"args": ["@psraghuveer/memento", "serve"]`, or use the absolute path printed by `which memento`.
+1. The `command` field resolves correctly. The default `"command": "npx"` requires Node.js to be on the `$PATH` of the shell the client uses to spawn servers — verify with `which npx` from a fresh login shell. If your client uses a stripped-down environment, prefer the absolute path: `"command": "/usr/local/bin/npx"` (or whatever `which npx` prints). If you've installed globally and switched the snippets to `"command": "memento"`, verify with `which memento` the same way.
 2. Shell features like `&&` will not work — MCP clients spawn the command directly, not via a shell.
 3. The `MEMENTO_DB` directory is writable by the user the client runs as.
 

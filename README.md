@@ -40,7 +40,7 @@ You can also point at an existing database with the `MEMENTO_DB` environment var
 
 **Verify the install** by running `npx @psraghuveer/memento doctor` (add `--quick` to skip the DB and embedder probes; add `--mcp` to also scan known MCP client config files). To inspect what your install can do — registered commands, current config, database location — without speaking MCP, run `npx @psraghuveer/memento context`. To smoke-test the MCP transport end-to-end, `npx @psraghuveer/memento ping`.
 
-**Wiring Memento into an MCP client** (Claude Desktop, Claude Code, Cursor, Cline, OpenCode, VS Code Agent mode, …) is covered step by step in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md). The TL;DR: run `memento init`, paste the snippet, set `MEMENTO_DB` to a stable absolute path.
+**Wiring Memento into an MCP client** (Claude Desktop, Claude Code, Cursor, Cline, OpenCode, VS Code Agent mode, …) is covered step by step in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md). The TL;DR: run `npx @psraghuveer/memento init`, paste the snippet, set `MEMENTO_DB` to a stable absolute path.
 
 **Turning on vector retrieval** (paraphrase matching on top of FTS) is opt-in and has its own walkthrough — install the embedder, opt in to the flag, mind the first-run model download. See [docs/guides/embeddings.md](docs/guides/embeddings.md).
 

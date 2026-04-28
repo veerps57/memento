@@ -76,7 +76,7 @@ If `memory.write` returns a conflict notice, do not retry the
 write or attempt to auto-resolve. Tell the user that the new
 information disagrees with an existing memory, show both, and
 ask which one to keep. The user can then resolve via
-`memento conflict resolve` (CLI) or by giving you the answer
+`npx @psraghuveer/memento conflict resolve` (CLI) or by giving you the answer
 in chat.
 ```
 
@@ -124,6 +124,6 @@ After updating the persona file:
 1. Start a fresh chat session.
 2. Tell the assistant a durable preference ("I prefer Vitest over Jest").
 3. End the session, start a new one, ask "what testing framework do I use?" — the assistant should call `memory.search`, find the preference, and answer without re-asking.
-4. Run `memento list` from a terminal to confirm the memory is on disk.
+4. Run `npx @psraghuveer/memento list` from a terminal to confirm the memory is on disk.
 
-If step 3 fails, the most common causes are: the persona file isn't actually loaded by the client, the client is pointed at a different `MEMENTO_DB`, or the assistant didn't write the preference in the first place. `memento doctor --mcp` and `memento ping` triage the first two; tightening the "When to write" section addresses the third.
+If step 3 fails, the most common causes are: the persona file isn't actually loaded by the client, the client is pointed at a different `MEMENTO_DB`, or the assistant didn't write the preference in the first place. `npx @psraghuveer/memento doctor --mcp` and `npx @psraghuveer/memento ping` triage the first two; tightening the "When to write" section addresses the third.
