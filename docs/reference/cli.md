@@ -197,13 +197,25 @@ Run conflict detection. In `memory` mode, evaluates per-kind policies for one hy
 
 ### `memento memory archive`
 
-Move a memory to long-term storage. Idempotent on already-archived rows.
+Move a memory to long-term storage. Idempotent on already-archived rows. Requires confirm: true.
+
+Example:
+
+```json
+{"id":"01HYXZ...","confirm":true}
+```
 
 - **Side-effect:** `destructive` — Bulk or irreversible; the CLI requires `--confirm` to execute.
 
 ### `memento memory archive_many`
 
-Bulk-archive memories matching a filter. Idempotent on already-archived rows. Defaults to dryRun=true; the apply path is capped by safety.bulkDestructiveLimit.
+Bulk-archive memories matching a filter. Idempotent on already-archived rows. Requires confirm: true. Defaults to dryRun=true (preview only); set dryRun=false to apply.
+
+Example (dry run):
+
+```json
+{"filter":{"kind":"snippet","pinned":false},"confirm":true}
+```
 
 - **Side-effect:** `destructive` — Bulk or irreversible; the CLI requires `--confirm` to execute.
 
@@ -239,7 +251,13 @@ Example:
 
 ### `memento memory forget_many`
 
-Bulk-soft-remove active memories matching a filter. Defaults to dryRun=true; the apply path is capped by safety.bulkDestructiveLimit.
+Bulk-soft-remove active memories matching a filter. Requires confirm: true. Defaults to dryRun=true (preview only); set dryRun=false to apply.
+
+Example (dry run):
+
+```json
+{"filter":{"kind":"todo"},"reason":"Completed sprint","confirm":true}
+```
 
 - **Side-effect:** `destructive` — Bulk or irreversible; the CLI requires `--confirm` to execute.
 
@@ -318,6 +336,8 @@ Example:
 
 Create a new memory in the given scope.
 
+Workflow: search first to avoid duplicates. If a similar memory exists, use memory.supersede to update it instead. Use memory.update for non-content changes (tags, pinned).
+
 Minimal example (pinned, storedConfidence, summary, owner all have defaults):
 
 ```json
@@ -342,10 +362,14 @@ Atomically create multiple memories in a single transaction. Per-item clientToke
 
 Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, and per-status memory counts. Read-only; safe to call freely.
 
+Tip: call system.list_scopes to discover valid scopes for memory.write.
+
 - **Side-effect:** `read` — Pure read; safe to call freely.
 
 ### `memento system list_scopes`
 
-List every scope that has at least one active memory, with per-scope count and most-recent write timestamp. Sorted by count desc. Read-only; safe to call freely. Useful for an assistant that needs to discover which scopes the user has populated before issuing scoped reads.
+List every scope that has at least one active memory, with per-scope count and most-recent write timestamp. Sorted by count desc. Read-only; safe to call freely.
+
+Call this before writing to discover valid scopes. If the response is empty, use {"type":"global"} as a safe default scope for memory.write. The returned scope objects can be passed directly to memory.write or memory.search.
 
 - **Side-effect:** `read` — Pure read; safe to call freely.

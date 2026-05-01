@@ -212,7 +212,7 @@ export function createMemoryCommands(
     outputSchema: MemoryOutputSchema,
     metadata: {
       description:
-        'Create a new memory in the given scope.\n\nMinimal example (pinned, storedConfidence, summary, owner all have defaults):\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"content":"Memento uses SQLite for storage."}\n```\n\nFull example:\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"pinned":false,"content":"Memento uses SQLite for storage.","summary":"Storage engine choice","storedConfidence":0.95}\n```',
+        'Create a new memory in the given scope.\n\nWorkflow: search first to avoid duplicates. If a similar memory exists, use memory.supersede to update it instead. Use memory.update for non-content changes (tags, pinned).\n\nMinimal example (pinned, storedConfidence, summary, owner all have defaults):\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"content":"Memento uses SQLite for storage."}\n```\n\nFull example:\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"pinned":false,"content":"Memento uses SQLite for storage.","summary":"Storage engine choice","storedConfidence":0.95}\n```',
     },
     handler: async (input, ctx) => {
       const pinned = input.pinned ?? deps?.configStore?.get('write.defaultPinned') ?? false;
@@ -482,7 +482,8 @@ export function createMemoryCommands(
     inputSchema: MemoryArchiveInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
-      description: 'Move a memory to long-term storage. Idempotent on already-archived rows.',
+      description:
+        'Move a memory to long-term storage. Idempotent on already-archived rows. Requires confirm: true.\n\nExample:\n\n```json\n{"id":"01HYXZ...","confirm":true}\n```',
       mcp: { idempotentHint: true },
     },
     handler: (input, ctx) =>
@@ -500,7 +501,7 @@ export function createMemoryCommands(
     outputSchema: MemoryBulkResultSchema,
     metadata: {
       description:
-        'Bulk-soft-remove active memories matching a filter. Defaults to dryRun=true; the apply path is capped by safety.bulkDestructiveLimit.',
+        'Bulk-soft-remove active memories matching a filter. Requires confirm: true. Defaults to dryRun=true (preview only); set dryRun=false to apply.\n\nExample (dry run):\n\n```json\n{"filter":{"kind":"todo"},"reason":"Completed sprint","confirm":true}\n```',
       mcpName: 'forget_many_memories',
     },
     handler: async (input, ctx) => {
@@ -583,7 +584,7 @@ export function createMemoryCommands(
     outputSchema: MemoryBulkResultSchema,
     metadata: {
       description:
-        'Bulk-archive memories matching a filter. Idempotent on already-archived rows. Defaults to dryRun=true; the apply path is capped by safety.bulkDestructiveLimit.',
+        'Bulk-archive memories matching a filter. Idempotent on already-archived rows. Requires confirm: true. Defaults to dryRun=true (preview only); set dryRun=false to apply.\n\nExample (dry run):\n\n```json\n{"filter":{"kind":"snippet","pinned":false},"confirm":true}\n```',
       mcpName: 'archive_many_memories',
       mcp: { idempotentHint: true },
     },
