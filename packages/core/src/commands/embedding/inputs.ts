@@ -23,7 +23,9 @@ export const EmbeddingRebuildInputSchema = z
     force: z
       .boolean()
       .optional()
-      .describe('If true, re-embeds all memories even if they already have an embedding for the current model.'),
+      .describe(
+        'If true, re-embeds all memories even if they already have an embedding for the current model.',
+      ),
     confirm: confirmGate().describe(
       'Safety gate — must be true to proceed. Rebuild rewrites all embeddings and may take minutes.',
     ),

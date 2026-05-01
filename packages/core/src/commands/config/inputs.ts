@@ -51,7 +51,11 @@ export const ConfigListInputSchema = z
 export const ConfigSetInputSchema = z
   .object({
     key: ConfigKeyArgSchema,
-    value: z.unknown().describe('The value to set. Type depends on the key — use config.get to see the current value and infer the expected type.'),
+    value: z
+      .unknown()
+      .describe(
+        'The value to set. Type depends on the key — use config.get to see the current value and infer the expected type.',
+      ),
   })
   .strict();
 

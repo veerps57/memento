@@ -69,7 +69,9 @@ export type ConflictId = z.infer<typeof ConflictIdSchema>;
 export const TimestampSchema = z
   .string()
   .regex(ISO_TIMESTAMP_PATTERN)
-  .describe('ISO-8601 UTC timestamp with millisecond precision. Example: "2025-01-15T09:30:00.000Z".')
+  .describe(
+    'ISO-8601 UTC timestamp with millisecond precision. Example: "2025-01-15T09:30:00.000Z".',
+  )
   .brand<'Timestamp'>();
 export type Timestamp = z.infer<typeof TimestampSchema>;
 

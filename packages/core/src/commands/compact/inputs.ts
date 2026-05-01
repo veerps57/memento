@@ -24,6 +24,8 @@ export const CompactRunInputSchema = z
       .positive()
       .optional()
       .describe('Number of memories to process per batch. Server uses default if omitted.'),
-    confirm: confirmGate().describe('Safety gate — must be true to proceed. Compaction is not reversible.'),
+    confirm: confirmGate().describe(
+      'Safety gate — must be true to proceed. Compaction is not reversible.',
+    ),
   })
   .strict();

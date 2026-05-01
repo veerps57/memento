@@ -18,14 +18,8 @@ import { z } from 'zod';
  */
 export const OwnerRefSchema = z
   .object({
-    type: z
-      .enum(['local', 'team', 'agent'])
-      .describe('Owner type. In v1, always "local".'),
-    id: z
-      .string()
-      .min(1)
-      .max(128)
-      .describe('Owner identifier. In v1, always "self".'),
+    type: z.enum(['local', 'team', 'agent']).describe('Owner type. In v1, always "local".'),
+    id: z.string().min(1).max(128).describe('Owner identifier. In v1, always "self".'),
   })
   .strict()
   .describe(
@@ -72,11 +66,7 @@ export const ActorRefSchema = z.discriminatedUnion('type', [
   z
     .object({
       type: z.literal('scheduler'),
-      job: z
-        .string()
-        .min(1)
-        .max(128)
-        .describe('Scheduled job identifier. Example: "compact"'),
+      job: z.string().min(1).max(128).describe('Scheduled job identifier. Example: "compact"'),
     })
     .strict()
     .describe('Actor is a scheduled job. Example: {"type":"scheduler","job":"compact"}'),

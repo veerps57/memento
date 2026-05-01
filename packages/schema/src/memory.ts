@@ -62,12 +62,12 @@ export const MemoryKindSchema = z.discriminatedUnion('type', [
         .min(1)
         .max(64)
         .nullable()
-        .describe('Programming language hint for syntax-aware retrieval, or null. Example: "typescript"'),
+        .describe(
+          'Programming language hint for syntax-aware retrieval, or null. Example: "typescript"',
+        ),
     })
     .strict()
-    .describe(
-      'A reusable code fragment. Example: {"type":"snippet","language":"typescript"}',
-    ),
+    .describe('A reusable code fragment. Example: {"type":"snippet","language":"typescript"}'),
 ]);
 
 export type MemoryKind = z.infer<typeof MemoryKindSchema>;

@@ -27,12 +27,16 @@ export const ConflictListInputSchema = z
     open: z
       .boolean()
       .optional()
-      .describe('Filter by open/resolved status. true = open only, false = resolved only. Omit for all.'),
+      .describe(
+        'Filter by open/resolved status. true = open only, false = resolved only. Omit for all.',
+      ),
     kind: z
       .enum(MEMORY_KIND_TYPES)
       .optional()
       .describe('Filter by memory kind: "fact", "preference", "decision", "todo", or "snippet".'),
-    memoryId: MemoryIdSchema.optional().describe('Filter to conflicts involving a specific memory ULID.'),
+    memoryId: MemoryIdSchema.optional().describe(
+      'Filter to conflicts involving a specific memory ULID.',
+    ),
     limit: z.number().int().positive().optional().describe('Maximum conflicts to return.'),
   })
   .strict();

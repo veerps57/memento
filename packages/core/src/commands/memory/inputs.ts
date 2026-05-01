@@ -51,7 +51,9 @@ export const MemoryWriteInputSchema = z
       ),
     pinned: z
       .boolean()
-      .describe('If true, this memory is exempt from confidence decay and will never auto-archive.'),
+      .describe(
+        'If true, this memory is exempt from confidence decay and will never auto-archive.',
+      ),
     content: z
       .string()
       .min(1)
@@ -125,11 +127,15 @@ export const MemoryListInputSchema = z
     status: z
       .enum(MEMORY_STATUSES)
       .optional()
-      .describe('Filter by status: "active", "superseded", "forgotten", or "archived". Omit for all.'),
+      .describe(
+        'Filter by status: "active", "superseded", "forgotten", or "archived". Omit for all.',
+      ),
     kind: z
       .enum(MEMORY_KIND_TYPES)
       .optional()
-      .describe('Filter by kind type: "fact", "preference", "decision", "todo", or "snippet". Omit for all.'),
+      .describe(
+        'Filter by kind type: "fact", "preference", "decision", "todo", or "snippet". Omit for all.',
+      ),
     pinned: z.boolean().optional().describe('Filter by pinned status. Omit for all.'),
     scope: ScopeSchema.optional().describe(
       'Filter by scope. Same shape as memory.write scope. Omit to list across all scopes.',
@@ -259,14 +265,21 @@ export const MemoryBulkFilterSchema = z
     kind: z
       .enum(MEMORY_KIND_TYPES)
       .optional()
-      .describe('Narrow to a specific kind: "fact", "preference", "decision", "todo", or "snippet".'),
-    pinned: z.boolean().optional().describe('Narrow to pinned (true) or unpinned (false) memories.'),
+      .describe(
+        'Narrow to a specific kind: "fact", "preference", "decision", "todo", or "snippet".',
+      ),
+    pinned: z
+      .boolean()
+      .optional()
+      .describe('Narrow to pinned (true) or unpinned (false) memories.'),
     createdAtLte: TimestampSchema.optional().describe(
       'Only include memories created at or before this timestamp. ISO-8601 UTC.',
     ),
   })
   .strict()
-  .describe('Filter for bulk operations. At least one field must be set to prevent accidental mass operations.')
+  .describe(
+    'Filter for bulk operations. At least one field must be set to prevent accidental mass operations.',
+  )
   .refine(
     (f) =>
       f.scope !== undefined ||
