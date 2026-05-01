@@ -6,6 +6,7 @@
 // filters are added only when they avoid forcing the caller to
 // post-filter a large response.
 
+import { MEMORY_STATUSES } from '@psraghuveer/memento-schema';
 import { z } from 'zod';
 
 /**
@@ -26,3 +27,22 @@ export const SystemInfoInputSchema = z.object({}).strict();
  * parameter is an additive change.
  */
 export const SystemListScopesInputSchema = z.object({}).strict();
+
+/**
+ * `system.list_tags` accepts an optional status filter. When
+ * omitted, only active memories are considered (the common case
+ * for an agent deciding which tags to filter on). The result is
+ * a flat array of `{ tag, count }` objects sorted by count
+ * descending — an agent can inspect the top-N directly without
+ * paging or post-processing.
+ */
+export const SystemListTagsInputSchema = z
+  .object({
+    status: z
+      .enum(MEMORY_STATUSES)
+      .optional()
+      .describe(
+        'Only count tags from memories with this status. Defaults to "active" when omitted.',
+      ),
+  })
+  .strict();

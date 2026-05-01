@@ -127,7 +127,7 @@ Print teardown instructions (config paths and database location)
 
 ## Registry commands
 
-Total: 29 commands.
+Total: 30 commands.
 
 ### `memento compact run`
 
@@ -383,5 +383,13 @@ Tip: call system.list_scopes to discover valid scopes for memory.write.
 List every scope that has at least one active memory, with per-scope count and most-recent write timestamp. Sorted by count desc. Read-only; safe to call freely.
 
 Call this before writing to discover valid scopes. If the response is empty, use {"type":"global"} as a safe default scope for memory.write. The returned scope objects can be passed directly to memory.write or memory.search.
+
+- **Side-effect:** `read` — Pure read; safe to call freely.
+
+### `memento system list_tags`
+
+List all tags in use across memories, with per-tag counts sorted by frequency descending. Defaults to active memories only. Read-only; safe to call freely.
+
+Use this to discover valid tags before calling memory.list or memory.search with a tags filter.
 
 - **Side-effect:** `read` — Pure read; safe to call freely.

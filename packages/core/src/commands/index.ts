@@ -58,4 +58,5 @@ export {
   type CreateSystemCommandsDeps,
   SystemInfoInputSchema,
   SystemListScopesInputSchema,
+  SystemListTagsInputSchema,
 } from './system/index.js';

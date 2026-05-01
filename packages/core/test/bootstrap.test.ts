@@ -94,6 +94,7 @@ describe('createMementoApp', () => {
         'config.history',
         'system.info',
         'system.list_scopes',
+        'system.list_tags',
       ].sort(),
     );
   });

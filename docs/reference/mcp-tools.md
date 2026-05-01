@@ -10,7 +10,7 @@ Input and output schemas are defined in source as Zod schemas and validated by t
 
 this reference lists names, descriptions, side-effect class, and the MCP annotation hints each command declares.
 
-Total: 29 tools.
+Total: 30 tools.
 
 ## `run_compact`
 
@@ -327,5 +327,15 @@ Registry name: `system.list_scopes` — CLI: `memento system list_scopes`
 List every scope that has at least one active memory, with per-scope count and most-recent write timestamp. Sorted by count desc. Read-only; safe to call freely.
 
 Call this before writing to discover valid scopes. If the response is empty, use {"type":"global"} as a safe default scope for memory.write. The returned scope objects can be passed directly to memory.write or memory.search.
+
+- **Side-effect:** `read` — Pure read; safe to call freely.
+
+## `list_tags_system`
+
+Registry name: `system.list_tags` — CLI: `memento system list_tags`
+
+List all tags in use across memories, with per-tag counts sorted by frequency descending. Defaults to active memories only. Read-only; safe to call freely.
+
+Use this to discover valid tags before calling memory.list or memory.search with a tags filter.
 
 - **Side-effect:** `read` — Pure read; safe to call freely.

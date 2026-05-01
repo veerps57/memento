@@ -24,7 +24,11 @@ import type { ConfigStore } from '../../config/index.js';
 import type { MementoSchema } from '../../storage/schema.js';
 import { repoErrorToMementoError } from '../errors.js';
 import type { AnyCommand, Command } from '../types.js';
-import { SystemInfoInputSchema, SystemListScopesInputSchema } from './inputs.js';
+import {
+  SystemInfoInputSchema,
+  SystemListScopesInputSchema,
+  SystemListTagsInputSchema,
+} from './inputs.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
 
@@ -225,5 +229,54 @@ export function createSystemCommands(deps: CreateSystemCommandsDeps): readonly A
       }),
   };
 
-  return Object.freeze([info, listScopes]) as readonly AnyCommand[];
+  const SystemListTagsOutputSchema = z
+    .object({
+      tags: z.array(
+        z
+          .object({
+            tag: z.string().min(1),
+            count: z.number().int().positive(),
+          })
+          .strict(),
+      ),
+    })
+    .strict();
+
+  const listTags: Command<typeof SystemListTagsInputSchema, typeof SystemListTagsOutputSchema> = {
+    name: 'system.list_tags',
+    sideEffect: 'read',
+    surfaces: SURFACES,
+    inputSchema: SystemListTagsInputSchema,
+    outputSchema: SystemListTagsOutputSchema,
+    metadata: {
+      description:
+        'List all tags in use across memories, with per-tag counts sorted by frequency descending. Defaults to active memories only. Read-only; safe to call freely.\n\nUse this to discover valid tags before calling memory.list or memory.search with a tags filter.',
+      mcpName: 'list_tags_system',
+    },
+    handler: async (input) =>
+      runRepo('system.list_tags', async () => {
+        const status = input.status ?? 'active';
+        const rows = await deps.db
+          .selectFrom('memories')
+          .where('status', '=', status)
+          .select(['tags_json'])
+          .execute();
+        // Explode the JSON arrays and count each tag. In-memory
+        // aggregation is fine — the number of active memories in a
+        // local store is small (hundreds to low thousands).
+        const counts = new Map<string, number>();
+        for (const row of rows) {
+          const tags: string[] = JSON.parse(row.tags_json);
+          for (const tag of tags) {
+            counts.set(tag, (counts.get(tag) ?? 0) + 1);
+          }
+        }
+        const sorted = [...counts.entries()]
+          .map(([tag, count]) => ({ tag, count }))
+          .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+        return { tags: sorted };
+      }),
+  };
+
+  return Object.freeze([info, listScopes, listTags]) as readonly AnyCommand[];
 }
