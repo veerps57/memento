@@ -1,6 +1,6 @@
-# @psraghuveer/memento
+# @psraghuveer/memento-schema
 
-## 0.1.2
+## 0.1.1
 
 ### Patch Changes
 
@@ -12,14 +12,3 @@
   - Default `owner` to `{"type":"local","id":"self"}`, `summary` to `null`, `pinned` and `storedConfidence` to config-driven values (`write.defaultPinned`, `write.defaultConfidence`)
   - Add usage examples to command descriptions
   - Enhance tool discoverability: scope hints, confirm gate guidance, workflow notes
-
-- Updated dependencies [3957548]
-  - @psraghuveer/memento-schema@0.1.1
-  - @psraghuveer/memento-core@0.1.1
-  - @psraghuveer/memento-server@0.1.1
-
-## 0.1.1
-
-### Patch Changes
-
-- c6e2d95: Fix `memento init` failing on fresh hosts where the platform data directory (e.g. `~/.local/share/memento/` or `%LOCALAPPDATA%\memento\`) did not yet exist. `init` now creates the parent directory recursively before the writability check, so the first run on a brand-new laptop succeeds.
