@@ -140,7 +140,8 @@ export function createMemorySearchCommand(
     inputSchema: MemorySearchInputSchema,
     outputSchema: MemorySearchOutputSchema,
     metadata: {
-      description: 'Search memories by free text using FTS5 + the configured linear ranker.',
+      description:
+        'Search memories by free text using FTS5 + the configured linear ranker.\n\nExamples:\n- Simple: `{"text":"database migration"}`\n- With filters: `{"text":"auth","kinds":["decision","fact"],"limit":5}`',
     },
     handler: async (input, ctx) => {
       try {

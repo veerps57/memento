@@ -211,7 +211,8 @@ export function createMemoryCommands(
     inputSchema: MemoryWriteInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
-      description: 'Create a new memory in the given scope.',
+      description:
+        'Create a new memory in the given scope.\n\nExample:\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"pinned":false,"content":"Memento uses SQLite for storage.","summary":"Storage engine choice","storedConfidence":0.9}\n```',
     },
     handler: async (input, ctx) => {
       const result = await runRepo<Memory>('memory.write', () =>
@@ -327,7 +328,8 @@ export function createMemoryCommands(
     inputSchema: MemoryListInputSchema,
     outputSchema: MemoryListOutputSchema,
     metadata: {
-      description: 'List memories matching the given filter, newest first.',
+      description:
+        'List memories matching the given filter, newest first.\n\nExamples:\n- All active: `{}`\n- Only facts: `{"kind":"fact"}`\n- Pinned in a repo: `{"pinned":true,"scope":{"type":"repo","remote":"github.com/acme/app"}}`',
       mcpName: 'list_memories',
     },
     handler: async (input) => {
@@ -360,7 +362,8 @@ export function createMemoryCommands(
       inputSchema: MemorySupersedeInputSchema,
       outputSchema: SupersedeOutputSchema,
       metadata: {
-        description: 'Replace an existing memory with a new one in a single transaction.',
+        description:
+          'Replace an existing memory with a new one in a single transaction. Use this instead of update when the content changes.\n\nExample:\n```json\n{"oldId":"01HYXZ...","next":{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["corrected"],"pinned":false,"content":"Updated fact content.","summary":null,"storedConfidence":0.9}}\n```',
       },
       handler: async (input, ctx) => {
         const result = await runRepo<{ previous: Memory; current: Memory }>(
@@ -402,7 +405,8 @@ export function createMemoryCommands(
     inputSchema: MemoryIdInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
-      description: 'Re-affirm an active memory (bumps lastConfirmedAt).',
+      description:
+        'Re-affirm an active memory (bumps lastConfirmedAt, resetting confidence decay).\n\nExample:\n```json\n{"id":"01HYXZ..."}\n```',
     },
     handler: (input, ctx) =>
       runRepo<Memory>('memory.confirm', () => repo.confirm(input.id, ctxToRepoCtx(ctx))),
@@ -415,7 +419,8 @@ export function createMemoryCommands(
     inputSchema: MemoryUpdateInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
-      description: 'Update taxonomy fields (tags / kind / pinned) of an active memory.',
+      description:
+        'Update taxonomy fields (tags / kind / pinned) of an active memory. Does NOT change content — use memory.supersede for that.\n\nExample:\n```json\n{"id":"01HYXZ...","patch":{"tags":["updated-tag"],"pinned":true}}\n```',
     },
     handler: (input, ctx) =>
       runRepo<Memory>('memory.update', () =>
@@ -439,7 +444,8 @@ export function createMemoryCommands(
     inputSchema: MemoryForgetInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
-      description: 'Soft-remove an active memory; reversible via memory.restore.',
+      description:
+        'Soft-remove an active memory; reversible via memory.restore.\n\nExample:\n```json\n{"id":"01HYXZ...","reason":"No longer relevant","confirm":true}\n```',
     },
     handler: (input, ctx) =>
       runRepo<Memory>('memory.forget', () =>
@@ -454,7 +460,8 @@ export function createMemoryCommands(
     inputSchema: MemoryIdInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
-      description: 'Move a forgotten or archived memory back to active.',
+      description:
+        'Move a forgotten or archived memory back to active.\n\nExample:\n```json\n{"id":"01HYXZ..."}\n```',
     },
     handler: (input, ctx) =>
       runRepo<Memory>('memory.restore', () => repo.restore(input.id, ctxToRepoCtx(ctx))),

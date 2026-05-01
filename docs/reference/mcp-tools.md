@@ -122,7 +122,12 @@ Bulk-archive memories matching a filter. Idempotent on already-archived rows. De
 
 Registry name: `memory.confirm` — CLI: `memento memory confirm`
 
-Re-affirm an active memory (bumps lastConfirmedAt).
+Re-affirm an active memory (bumps lastConfirmedAt, resetting confidence decay).
+
+Example:
+```json
+{"id":"01HYXZ..."}
+```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
@@ -140,6 +145,11 @@ Registry name: `memory.forget` — CLI: `memento memory forget`
 
 Soft-remove an active memory; reversible via memory.restore.
 
+Example:
+```json
+{"id":"01HYXZ...","reason":"No longer relevant","confirm":true}
+```
+
 - **Side-effect:** `destructive` — Bulk or irreversible; clients should confirm before invoking.
 
 ## `forget_many_memories`
@@ -155,6 +165,11 @@ Bulk-soft-remove active memories matching a filter. Defaults to dryRun=true; the
 Registry name: `memory.list` — CLI: `memento memory list`
 
 List memories matching the given filter, newest first.
+
+Examples:
+- All active: `{}`
+- Only facts: `{"kind":"fact"}`
+- Pinned in a repo: `{"pinned":true,"scope":{"type":"repo","remote":"github.com/acme/app"}}`
 
 - **Side-effect:** `read` — Pure read; safe to call freely.
 
@@ -172,6 +187,11 @@ Registry name: `memory.restore` — CLI: `memento memory restore`
 
 Move a forgotten or archived memory back to active.
 
+Example:
+```json
+{"id":"01HYXZ..."}
+```
+
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
 ## `search_memory`
@@ -179,6 +199,10 @@ Move a forgotten or archived memory back to active.
 Registry name: `memory.search` — CLI: `memento memory search`
 
 Search memories by free text using FTS5 + the configured linear ranker.
+
+Examples:
+- Simple: `{"text":"database migration"}`
+- With filters: `{"text":"auth","kinds":["decision","fact"],"limit":5}`
 
 - **Side-effect:** `read` — Pure read; safe to call freely.
 
@@ -195,7 +219,12 @@ Attach or replace the embedding for an active memory; appends a reembedded event
 
 Registry name: `memory.supersede` — CLI: `memento memory supersede`
 
-Replace an existing memory with a new one in a single transaction.
+Replace an existing memory with a new one in a single transaction. Use this instead of update when the content changes.
+
+Example:
+```json
+{"oldId":"01HYXZ...","next":{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["corrected"],"pinned":false,"content":"Updated fact content.","summary":null,"storedConfidence":0.9}}
+```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
@@ -203,7 +232,12 @@ Replace an existing memory with a new one in a single transaction.
 
 Registry name: `memory.update` — CLI: `memento memory update`
 
-Update taxonomy fields (tags / kind / pinned) of an active memory.
+Update taxonomy fields (tags / kind / pinned) of an active memory. Does NOT change content — use memory.supersede for that.
+
+Example:
+```json
+{"id":"01HYXZ...","patch":{"tags":["updated-tag"],"pinned":true}}
+```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
@@ -212,6 +246,11 @@ Update taxonomy fields (tags / kind / pinned) of an active memory.
 Registry name: `memory.write` — CLI: `memento memory write`
 
 Create a new memory in the given scope.
+
+Example:
+```json
+{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"pinned":false,"content":"Memento uses SQLite for storage.","summary":"Storage engine choice","storedConfidence":0.9}
+```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
