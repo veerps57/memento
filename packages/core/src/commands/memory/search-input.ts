@@ -62,6 +62,12 @@ export const MemorySearchInputSchema = z
     now: TimestampSchema.optional().describe(
       'Override clock for decay calculation. ISO-8601 UTC. Omit to use wall-clock time.',
     ),
+    includeEmbedding: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether to include the full embedding vector in results. Defaults to false. Embedding vectors can be large (hundreds of floats); omit or set to false for compact output.',
+      ),
   })
   .strict();
 

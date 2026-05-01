@@ -156,6 +156,12 @@ export const MemoryListInputSchema = z
       .positive()
       .optional()
       .describe('Maximum number of memories to return. Omit for server default.'),
+    includeEmbedding: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether to include the full embedding vector in results. Defaults to false. Embedding vectors can be large (hundreds of floats); omit or set to false for compact output.',
+      ),
   })
   .strict();
 

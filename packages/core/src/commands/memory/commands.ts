@@ -372,7 +372,16 @@ export function createMemoryCommands(
       // full Memory entities; the projection is purely
       // presentational and never touches the database.
       const redact = deps?.configStore?.get('privacy.redactSensitiveSnippets') ?? false;
-      return ok(result.value.map((m) => projectMemoryView(m, redact)));
+      const stripEmbedding = !(input.includeEmbedding === true);
+      return ok(
+        result.value.map((m) => {
+          const view = projectMemoryView(m, redact);
+          if (stripEmbedding) {
+            return { ...view, embedding: null };
+          }
+          return view;
+        }),
+      );
     },
   };
 

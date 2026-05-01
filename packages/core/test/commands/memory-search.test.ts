@@ -104,6 +104,37 @@ describe('memory.search command', () => {
     });
   });
 
+  it('strips embedding from search results by default', async () => {
+    const { repo, command } = await fixture();
+    const a = await repo.write({ ...baseInput, content: 'kafka topic' }, { actor });
+    await repo.setEmbedding(
+      a.id,
+      { model: 'test-model', dimension: 3, vector: [1, 0, 0] },
+      { actor },
+    );
+
+    const result = await executeCommand(command, { text: 'kafka' }, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.results[0]?.memory.embedding).toBeNull();
+  });
+
+  it('includes embedding in search results when includeEmbedding is true', async () => {
+    const { repo, command } = await fixture();
+    const a = await repo.write({ ...baseInput, content: 'kafka topic' }, { actor });
+    await repo.setEmbedding(
+      a.id,
+      { model: 'test-model', dimension: 3, vector: [1, 0, 0] },
+      { actor },
+    );
+
+    const result = await executeCommand(command, { text: 'kafka', includeEmbedding: true }, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.results[0]?.memory.embedding).not.toBeNull();
+    expect(result.value.results[0]?.memory.embedding?.dimension).toBe(3);
+  });
+
   it('rejects empty text with INVALID_INPUT', async () => {
     const { command } = await fixture();
     const result = await executeCommand(command, { text: '' }, ctx);

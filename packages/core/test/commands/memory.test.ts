@@ -278,6 +278,45 @@ describe('createMemoryCommands', () => {
     });
   });
 
+  describe('memory.list includeEmbedding', () => {
+    it('strips embedding by default', async () => {
+      const { byName } = await fixture();
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+      await executeCommand(
+        get(byName, 'memory.set_embedding'),
+        { id: writeRes.value.id, model: 'test', dimension: 3, vector: [0.1, 0.2, 0.3] },
+        ctx,
+      );
+
+      const list = await executeCommand(get(byName, 'memory.list'), {}, ctx);
+      expect(list.ok).toBe(true);
+      if (!list.ok) return;
+      expect(list.value[0]?.embedding).toBeNull();
+    });
+
+    it('includes embedding when includeEmbedding is true', async () => {
+      const { byName } = await fixture();
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+      await executeCommand(
+        get(byName, 'memory.set_embedding'),
+        { id: writeRes.value.id, model: 'test', dimension: 3, vector: [0.1, 0.2, 0.3] },
+        ctx,
+      );
+
+      const list = await executeCommand(
+        get(byName, 'memory.list'),
+        { includeEmbedding: true },
+        ctx,
+      );
+      expect(list.ok).toBe(true);
+      if (!list.ok) return;
+      expect(list.value[0]?.embedding).not.toBeNull();
+      expect(list.value[0]?.embedding?.dimension).toBe(3);
+    });
+  });
+
   describe('memory.supersede', () => {
     it('replaces the active head and returns previous + current', async () => {
       const { byName } = await fixture();
