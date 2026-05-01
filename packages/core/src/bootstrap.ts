@@ -188,6 +188,30 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
           actor: ctx.actor,
           maxCandidates,
         });
+        // Auto-embed: fire-and-forget, same pattern as conflict hook.
+        // Guarded by provider presence + config flag. Errors are
+        // swallowed — embedding is best-effort; the memory is already
+        // persisted. The user can always run `embedding rebuild` later.
+        if (embeddingProvider !== undefined && configStore.get('embedding.autoEmbed')) {
+          void (async () => {
+            try {
+              const vector = await embeddingProvider.embed(memory.content);
+              await memoryRepository.setEmbedding(
+                memory.id,
+                {
+                  model: embeddingProvider.model,
+                  dimension: embeddingProvider.dimension,
+                  vector,
+                },
+                { actor: ctx.actor },
+              );
+            } catch {
+              // Best-effort: embedding failure must never surface
+              // to the caller. The memory is written; vector search
+              // will simply not find it until a successful re-embed.
+            }
+          })();
+        }
       },
     },
     { eventRepository, configStore },

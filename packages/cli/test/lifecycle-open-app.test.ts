@@ -40,7 +40,10 @@ describe('openAppForSurface', () => {
     const deps: LifecycleDeps = {
       createApp: async (opts) => {
         openCount += 1;
-        return createMementoApp(opts);
+        return createMementoApp({
+          ...opts,
+          configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+        });
       },
       migrateStore: rejectMigrateStore,
       serveStdio: rejectServeStdio,
@@ -143,7 +146,7 @@ describe('openAppForSurface', () => {
       if (result.ok) return;
       expect(result.error.code).toBe('CONFIG_ERROR');
       expect(result.error.message).toContain('@psraghuveer/memento-embedder-local');
-      expect(result.error.message).toContain('npm install');
+      expect(result.error.message).toContain('could not be resolved');
     } finally {
       const { rmTmpSync } = await import('./_helpers/rm-tmp.js');
       rmTmpSync(dir);

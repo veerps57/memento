@@ -30,28 +30,16 @@
   "files": ["dist", "scripts", "README.md"],
   "dependencies": {
     "@psraghuveer/memento-core": "workspace:^",
+    "@psraghuveer/memento-embedder-local": "workspace:^",
     "@psraghuveer/memento-schema": "workspace:^",
     "@psraghuveer/memento-server": "workspace:^"
-  },
-  "peerDependencies": {
-    "@huggingface/transformers": "^3.0.0",
-    "@psraghuveer/memento-embedder-local": "workspace:^"
-  },
-  "peerDependenciesMeta": {
-    "@psraghuveer/memento-embedder-local": {
-      "optional": true
-    },
-    "@huggingface/transformers": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "tsup": "8.3.5",
     "typescript": "5.7.2",
     "vitest": "2.1.8",
-    "zod": "3.25.76",
-    "@psraghuveer/memento-embedder-local": "workspace:^"
+    "zod": "3.25.76"
   },
   "publishConfig": {
     "access": "public"

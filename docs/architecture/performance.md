@@ -12,7 +12,7 @@ The goal is honesty. If an operation is `O(n)` we say so, and we name the thresh
 | ----------------------- | ---------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `memory.read`           | `O(1)`                                   | Single primary-key lookup on `memories.id`                            | Sub-millisecond at any store size we support                      | Never — this is a B-tree probe                                                                      |
 | `memory.list`           | `O(log n + p)`                           | Scope-prefix + `created_at desc` indexed scan; `p` = page size        | Linear in page size; index keeps it independent of total store    | Add a covering index if a new filter starts dominating the scan                                     |
-| `memory.write`          | `O(1)` storage + `O(d)` embedding        | One insert + transactional FTS trigger + optional embedder call (`d` = vector dimension) | Insert is sub-millisecond; embedding is the long tail when enabled | Move embedding out of the write path (already reembed-able offline) if write throughput becomes a goal |
+| `memory.write`          | `O(1)` storage + `O(d)` embedding (async) | One insert + transactional FTS trigger + fire-and-forget embedder call via `afterWrite` hook (`d` = vector dimension) | Insert is sub-millisecond; embedding runs async and does not block the write response | The async embed is already non-blocking; batch multiple writes if throughput becomes a goal |
 | `memory.search` (FTS)   | `O(log n + m + m log k)`                 | FTS5 token match + ranker top-`k` heap                                | Millisecond-scale at tens of thousands of rows                    | Replace SQLite FTS5 only if a tokenizer requirement (e.g. stemming) forces it                       |
 | `memory.search` (vector) | `O(n_e · d)` per query                   | Brute-force cosine scan over every embedded active row (`n_e ≤ n`)    | Acceptable at low thousands; degrades linearly above              | Switch `retrieval.vector.backend` from `brute-force` to a native ANN (`sqlite-vec`) when `n_e` exceeds the configured threshold |
 | `conflict.list`         | `O(log n + p)`                           | Indexed scan over `conflicts` by `status`                             | Same as `memory.list`                                             | Add a status-leading covering index if a new filter dominates                                       |
@@ -42,8 +42,8 @@ Per write:
 
 1. One row insert into `memories` (B-tree).
 2. FTS5 trigger updates the inverted index transactionally.
-3. If the write commit succeeds and the embedder is enabled, one embedder call (the long tail).
-4. Audit row for the verb (`memory.write`).
+3. Audit row for the verb (`memory.write`).
+4. If the write commit succeeds and `embedding.autoEmbed` is true, one fire-and-forget embedder call via the `afterWrite` hook. This does not block the write response; transient failures are swallowed and the embedding is materialised later by `embedding.rebuild`.
 
 Per read (search):
 
@@ -56,7 +56,7 @@ The conflict-detection hook on writes ([conflict-detection.md](conflict-detectio
 
 ## What we do not do
 
-- **No background indexer.** Writes update FTS5 and the embedding inline (or skip it cleanly when the embedder is disabled). A separate indexer would let writes return faster but would split the failure domain — search would lag behind storage. We pick consistency over latency here.
+- **No background indexer.** Writes update FTS5 inline and fire-and-forget the embedding via the `afterWrite` hook (when `embedding.autoEmbed` is true). The embedding is async so writes return immediately; search may lag behind for newly-written memories until the embed completes. `embedding.rebuild` backfills any that were missed.
 - **No query plan cache.** SQLite plans are cheap to recompute and the workload is hot-row-dominated; a cache would be solving a problem we do not have.
 - **No premature ANN.** The vector backend stays brute-force until `n_e` hits the documented break-even. Until then, an ANN's recall floor is a regression, not an improvement.
 
@@ -66,7 +66,7 @@ Every entry in this table is in `docs/reference/config-keys.md`. We list them he
 
 | Key                                     | What it changes                                                             |
 | --------------------------------------- | --------------------------------------------------------------------------- |
-| `retrieval.vector.enabled`              | Enables the linear-cost vector path on search and the embedder call on write |
+| `retrieval.vector.enabled`              | Enables the linear-cost vector path on search and the async embedder call on write (default: true) |
 | `retrieval.vector.backend`              | `brute-force` is `O(n_e · d)`; `auto` will pick a native ANN when available |
 | `retrieval.candidates.maxPerSource`     | Bounds `m` from each candidate source — caps ranker work                     |
 | `retrieval.results.defaultPageSize`     | Bounds `k` for the top-`k` heap                                              |

@@ -108,7 +108,7 @@ export async function openAppForSurface(
     return err({
       code: 'CONFIG_ERROR',
       message:
-        'retrieval.vector.enabled is true but no embedder resolver was supplied to the CLI. Install @psraghuveer/memento-embedder-local @huggingface/transformers, or supply resolveEmbedder when invoking lifecycle commands programmatically.',
+        'retrieval.vector.enabled is true but no embedder resolver was supplied to the CLI. Supply resolveEmbedder when invoking lifecycle commands programmatically, or disable vector search with `memento config set retrieval.vector.enabled false`.',
     });
   }
 
@@ -118,7 +118,7 @@ export async function openAppForSurface(
   } catch (cause) {
     return err({
       code: 'CONFIG_ERROR',
-      message: `retrieval.vector.enabled is true but the local embedder package failed to load: ${describe(cause)}. Install it with: npm install @psraghuveer/memento-embedder-local @huggingface/transformers`,
+      message: `retrieval.vector.enabled is true but the local embedder package failed to load: ${describe(cause)}. Try reinstalling @psraghuveer/memento, or disable vector search with \`memento config set retrieval.vector.enabled false\`.`,
     });
   }
 
@@ -126,7 +126,7 @@ export async function openAppForSurface(
     return err({
       code: 'CONFIG_ERROR',
       message:
-        'retrieval.vector.enabled is true but @psraghuveer/memento-embedder-local is not installed. Install it with: npm install @psraghuveer/memento-embedder-local @huggingface/transformers',
+        'retrieval.vector.enabled is true but @psraghuveer/memento-embedder-local could not be resolved. Try reinstalling @psraghuveer/memento, or disable vector search with `memento config set retrieval.vector.enabled false`.',
     });
   }
 

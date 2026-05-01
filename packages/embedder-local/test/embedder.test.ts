@@ -11,7 +11,7 @@ import {
 // All tests inject a fake loader. The default loader is
 // covered separately by the manual integration check
 // documented in the package README; running it in CI would
-// require downloading a ~33 MB model on every test run.
+// require downloading a ~110 MB model on every test run.
 
 const buildVector = (length: number, fill = 0): number[] => {
   const out: number[] = [];
@@ -70,15 +70,19 @@ describe('createLocalEmbedder', () => {
   });
 
   it('forwards the configured model and cacheDir to the loader', async () => {
+    const customEmbed: EmbedFn = async () => buildVector(384, 0.1);
+    const customLoader: ReturnType<typeof vi.fn> & LocalEmbedderLoader = vi.fn(
+      async () => customEmbed,
+    );
     const provider = createLocalEmbedder({
-      loader,
+      loader: customLoader,
       model: 'all-MiniLM-L6-v2',
       dimension: 384,
       cacheDir: '/tmp/memento-models',
     });
     expect(provider.model).toBe('all-MiniLM-L6-v2');
     await provider.embed('hello');
-    expect(loader).toHaveBeenCalledWith('all-MiniLM-L6-v2', {
+    expect(customLoader).toHaveBeenCalledWith('all-MiniLM-L6-v2', {
       cacheDir: '/tmp/memento-models',
     });
   });
@@ -93,7 +97,7 @@ describe('createLocalEmbedder', () => {
     const wrongLength: EmbedFn = async () => buildVector(10, 0);
     const wrongLoader: LocalEmbedderLoader = async () => wrongLength;
     const provider = createLocalEmbedder({ loader: wrongLoader });
-    await expect(provider.embed('hi')).rejects.toThrow(/length 10, expected 384/);
+    await expect(provider.embed('hi')).rejects.toThrow(/length 10, expected 768/);
   });
 
   it('honours an overridden dimension when validating output', async () => {

@@ -22,7 +22,7 @@ Fields in the snapshot:
 - `lastEventAt` — most recent audit event timestamp; useful as a "last write" liveness signal.
 - `vectorEnabled` — whether `retrieval.vector.enabled` is `true` in config.
 
-For a deeper readiness check (Node version, embedded engine, embedder peer dep, MCP client config files), use:
+For a deeper readiness check (Node version, embedded engine, embedder resolution, MCP client config files), use:
 
 ```bash
 memento doctor          # full probe

@@ -273,7 +273,7 @@ export const CONFIG_KEYS = {
   // capable of honouring them.
   'retrieval.vector.enabled': defineKey({
     schema: z.boolean(),
-    default: false,
+    default: true,
     mutable: true,
     description:
       'When true, retrieval unions FTS candidates with cosine-similarity matches over `embedding`. Requires an `EmbeddingProvider` to be wired into the host; `memory.search` returns CONFIG_ERROR when the flag is on and no provider is present.',
@@ -391,17 +391,25 @@ export const CONFIG_KEYS = {
   // to migrate the stored vectors (Rule 14, ADR 0006).
   'embedder.local.model': defineKey({
     schema: z.string().min(1),
-    default: 'bge-small-en-v1.5',
+    default: 'bge-base-en-v1.5',
     mutable: false,
     description:
       'Hugging Face model id for `@psraghuveer/memento-embedder-local`. Resolved as `Xenova/<model>` on the Hub. Pinned at server start; changing it requires `embedding rebuild`.',
   }),
   'embedder.local.dimension': defineKey({
     schema: PositiveInt,
-    default: 384,
+    default: 768,
     mutable: false,
     description:
       'Expected vector dimension for the configured embedder model. Must match `embedder.local.model`; the embedder rejects vectors of any other length. Pinned at server start.',
+  }),
+
+  'embedding.autoEmbed': defineKey({
+    schema: z.boolean(),
+    default: true,
+    mutable: true,
+    description:
+      'When true and an EmbeddingProvider is wired, newly-written memories are embedded immediately after write (fire-and-forget). Disable to defer embedding to manual `embedding rebuild` runs.',
   }),
 
   // — Scrubber —

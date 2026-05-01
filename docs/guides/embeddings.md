@@ -1,6 +1,6 @@
 # Embeddings setup
 
-Memento ships two retrieval arms: full-text search (FTS, always on) and vector search (off by default, gated behind `retrieval.vector.enabled`). This guide explains how to opt into the vector arm — what to install, what to expect on first run, and how to wire the embedder when embedding Memento as a library.
+Memento ships two retrieval arms: full-text search (FTS, always on) and vector search (on by default, gated behind `retrieval.vector.enabled`). This guide explains what happens out of the box, how to customise it, and how to wire the embedder when embedding Memento as a library.
 
 The architectural rationale lives in [`docs/architecture/retrieval.md`](../architecture/retrieval.md) and ADR [`0006-local-embeddings-only-in-v1.md`](../adr/0006-local-embeddings-only-in-v1.md). This document is the operator-facing companion.
 
@@ -8,44 +8,29 @@ The architectural rationale lives in [`docs/architecture/retrieval.md`](../archi
 
 FTS catches lexical matches: proper nouns, identifiers, exact phrases. Vector search catches paraphrases: queries whose words don't appear in the stored memory but whose meaning does. The retrieval pipeline unions both candidate sets and lets the ranker score the union — neither arm is "primary"; they cover different failure modes.
 
-When `retrieval.vector.enabled` is `false` (the default), Memento behaves as a pure-FTS store. You get correct, fast retrieval over the literal text of every memory; you do not get paraphrase matching.
+When `retrieval.vector.enabled` is `true` (the default), both arms are active. If the embedding model has not yet been downloaded (first run) or a transient error occurs during embedding, the search pipeline degrades gracefully to FTS-only — you still get results, just without paraphrase matching until the vector arm recovers.
 
-## What you need
+## What ships out of the box
 
-1. The `@psraghuveer/memento-embedder-local` package and its peer dependency `@huggingface/transformers`. The peer dependency is **not** declared as a hard dependency — the runtime is large (~100 MB once the model is cached) and only relevant when you opt in.
-2. The flag flipped on: `retrieval.vector.enabled = true`. The published `memento` CLI auto-wires the embedder when this flag is set; library consumers pass `embeddingProvider` to `createMementoApp` themselves.
-3. Roughly 33 MB of disk for the `bge-small-en-v1.5` ONNX model, downloaded on first use.
+`@psraghuveer/memento-embedder-local` (and its dependency `@huggingface/transformers`) ships as a regular dependency of the `@psraghuveer/memento` CLI package. When you install Memento, the embedder is already available — no extra install step required.
 
-## Step 1: Install the embedder
+On first use, the embedding model (`bge-base-en-v1.5`, ~110 MB ONNX) is downloaded to a local cache directory. Subsequent calls reuse the cache. If the download fails or the model is not yet cached, the search pipeline degrades to FTS-only until the next successful embed call.
 
-**Globally installed CLI** (`npm install -g @psraghuveer/memento`):
+New memories are automatically embedded on write when `embedding.autoEmbed` is `true` (the default). The embedding runs fire-and-forget after the write commits — it does not block the write response. If the embedder is not yet initialised (first write after install), the embedding is skipped for that write and materialised on the next `embedding.rebuild` or the next write after the model has been downloaded.
 
-```bash
-npm install -g @psraghuveer/memento-embedder-local @huggingface/transformers
-```
+## Disabling vector retrieval
 
-**`npx` users**: install the two packages into the project where `npx` runs from, or install them globally as above.
-
-**From a clone** (contributors):
+If you prefer pure-FTS behavior (smaller install footprint, no model download):
 
 ```bash
-pnpm add -w @huggingface/transformers
+memento config set retrieval.vector.enabled false
 ```
 
-`@psraghuveer/memento-embedder-local` is already a workspace package; the workspace install builds it. Adding `@huggingface/transformers` satisfies the dynamic `import('@huggingface/transformers')` inside the embedder.
+This disables the vector candidate arm entirely. The embedder is never loaded and no model is downloaded.
 
-If the peer is missing when an embedder code path runs, you will see:
+## Wiring the embedder (library use only)
 
-```text
-Failed to load '@huggingface/transformers'. Install it as a
-dependency to use @psraghuveer/memento-embedder-local (e.g.
-`pnpm add @huggingface/transformers`). See
-packages/embedder-local/README.md for details.
-```
-
-## Step 2: Wire the embedder (library use only)
-
-The `memento` CLI handles wiring automatically when `retrieval.vector.enabled` is true — see ["CLI auto-wires the local embedder"](#cli-auto-wires-the-local-embedder-when-vector-retrieval-is-enabled) below. Skip this step if you only use the CLI / MCP server.
+The `memento` CLI handles wiring automatically when `retrieval.vector.enabled` is true — see ["CLI auto-wires the local embedder"](#cli-auto-wires-the-local-embedder-when-vector-retrieval-is-enabled) below. Skip this section if you only use the CLI / MCP server.
 
 Library consumers wire the embedder by passing `embeddingProvider` to `createMementoApp`:
 
@@ -56,41 +41,20 @@ import { createLocalEmbedder } from "@psraghuveer/memento-embedder-local";
 const app = await createMementoApp({
   dbPath: "/abs/path/to/memento.db",
   embeddingProvider: createLocalEmbedder(),
-  // bge-small-en-v1.5, dimension 384 — both come from the
+  // bge-base-en-v1.5, dimension 768 — both come from the
   // canonical config registry and are immutable at runtime.
 });
 ```
 
 `createLocalEmbedder()` returns synchronously; the underlying transformers.js pipeline is **lazy-loaded on the first call to `embed()`**. That keeps `memento serve` startup, `memento context`, and other read-only paths fast and offline-friendly.
 
-## Step 3: Turn vector retrieval on
+## First-run model download
 
-From the CLI:
-
-```bash
-memento config set retrieval.vector.enabled true
-```
-
-Or from a library host:
-
-```ts
-await executeCommand(
-  app.registry.commands["config.set"],
-  { key: "retrieval.vector.enabled", value: true },
-  ctx,
-);
-```
-
-The next call to `memory.search` will run both retrieval arms.
-
-## Step 4: First-run model download
-
-The first call to `embed()` after the flag is on will block briefly while transformers.js downloads the ONNX model from Hugging Face — roughly 33 MB. Subsequent calls reuse the cache. The cache directory follows transformers.js's default; override it via `cacheDir` on `createLocalEmbedder({ cacheDir: "/abs/path" })` if you want to keep it under your Memento data directory.
+The first call to `embed()` blocks briefly while transformers.js downloads the ONNX model from Hugging Face — roughly 110 MB for `bge-base-en-v1.5`. Subsequent calls reuse the cache. The cache directory follows transformers.js's default; override it via `cacheDir` on `createLocalEmbedder({ cacheDir: "/abs/path" })` if you want to keep it under your Memento data directory.
 
 To pre-warm the cache without going through Memento:
 
 ```bash
-pnpm add -w @huggingface/transformers
 node --input-type=module -e "
   import { createLocalEmbedder } from '@psraghuveer/memento-embedder-local';
   const e = createLocalEmbedder();
@@ -100,9 +64,9 @@ node --input-type=module -e "
 "
 ```
 
-## Step 5: Embedding existing memories
+## Embedding existing memories
 
-Memories written **before** the flag was on have no embedding. They will continue to surface via FTS but cannot be matched by paraphrase. To backfill them, run the `embedding.rebuild` command. From a host that has wired the embedder:
+With `embedding.autoEmbed` on (the default), new memories are embedded automatically on write. Memories written before vector retrieval was enabled (or before the auto-embed feature was available) have no embedding. They surface via FTS but cannot be matched by paraphrase. To backfill them, run the `embedding.rebuild` command. From a host that has wired the embedder:
 
 ```ts
 await executeCommand(
@@ -141,10 +105,10 @@ The `sqlite-vec` backend is tracked in [`KNOWN_LIMITATIONS.md`](../../KNOWN_LIMI
 The CLI's `serve`, `context`, and per-command dispatch surfaces all run through a single helper (`openAppForSurface`) that:
 
 1. Opens the app once to read `retrieval.vector.enabled`.
-2. If the flag is `false`, keeps the probe app and returns it. The embedder is never loaded — `@huggingface/transformers` is not even resolved, so a fresh install with FTS-only usage stays lightweight.
-3. If the flag is `true`, closes the probe, calls the dependency-injected `resolveEmbedder` (production default: `createRequire(import.meta.url).resolve('@psraghuveer/memento-embedder-local')` followed by a dynamic `import()`), and reopens the app with `embeddingProvider` set. The registry then includes `embedding.rebuild` and `memory.search` can use vector candidates.
-4. If the flag is `true` but the peer (`@psraghuveer/memento-embedder-local`) is not installed, the helper returns a `CONFIG_ERROR` at app-open time with the install hint `npm install @psraghuveer/memento-embedder-local @huggingface/transformers`. The error surfaces immediately on `serve`/`context` startup or on the first registry-dispatched command — not deferred to the first `memory.search`.
+2. If the flag is `false`, keeps the probe app and returns it. The embedder is never loaded.
+3. If the flag is `true` (the default), closes the probe, calls the dependency-injected `resolveEmbedder` (production default: dynamic `import()` of `@psraghuveer/memento-embedder-local`), and reopens the app with `embeddingProvider` set. The registry then includes `embedding.rebuild` and `memory.search` can use vector candidates.
+4. If the flag is `true` but `@psraghuveer/memento-embedder-local` could not be resolved (e.g. a broken install), the helper returns a `CONFIG_ERROR` at app-open time. The error surfaces immediately on `serve`/`context` startup — not deferred to the first `memory.search`.
 
 `memento doctor` performs the same resolve check as a pre-flight diagnostic and reports it under the embedder probe.
 
-If you only need FTS, leave `retrieval.vector.enabled` at its default (`false`) — the helper short-circuits and the CLI never touches the embedder peer.
+If you only need FTS, set `retrieval.vector.enabled` to `false` — the helper short-circuits and the CLI never touches the embedder.
