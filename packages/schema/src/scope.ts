@@ -31,32 +31,47 @@ import { AbsolutePathSchema, RepoRemoteSchema, SessionIdSchema } from './primiti
  * modelled as a supersession, not an in-place edit.
  */
 export const ScopeSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('global') }).strict(),
+  z
+    .object({ type: z.literal('global') })
+    .strict()
+    .describe('Global scope — memory applies everywhere. Example: {"type":"global"}'),
   z
     .object({
       type: z.literal('workspace'),
       path: AbsolutePathSchema,
     })
-    .strict(),
+    .strict()
+    .describe(
+      'Workspace scope — pinned to a filesystem path. Example: {"type":"workspace","path":"/home/user/project"}',
+    ),
   z
     .object({
       type: z.literal('repo'),
       remote: RepoRemoteSchema,
     })
-    .strict(),
+    .strict()
+    .describe(
+      'Repo scope — pinned to a git remote. Example: {"type":"repo","remote":"github.com/acme/my-repo"}',
+    ),
   z
     .object({
       type: z.literal('branch'),
       remote: RepoRemoteSchema,
       branch: z.string().min(1).max(255),
     })
-    .strict(),
+    .strict()
+    .describe(
+      'Branch scope — pinned to a remote/branch pair. Example: {"type":"branch","remote":"github.com/acme/my-repo","branch":"feat/foo"}',
+    ),
   z
     .object({
       type: z.literal('session'),
       id: SessionIdSchema,
     })
-    .strict(),
+    .strict()
+    .describe(
+      'Session scope — ephemeral, pinned to a single MCP session. Example: {"type":"session","id":"01HYXZ1A2B3C4D5E6F7G8H9J0K"}',
+    ),
 ]);
 
 export type Scope = z.infer<typeof ScopeSchema>;

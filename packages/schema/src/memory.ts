@@ -25,26 +25,49 @@ export const MEMORY_SCHEMA_VERSION = 1;
  *                   language hint for syntax-aware retrieval.
  */
 export const MemoryKindSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('fact') }).strict(),
-  z.object({ type: z.literal('preference') }).strict(),
+  z
+    .object({ type: z.literal('fact') })
+    .strict()
+    .describe('A factual assertion. Example: {"type":"fact"}'),
+  z
+    .object({ type: z.literal('preference') })
+    .strict()
+    .describe('A user preference that should bias future actions. Example: {"type":"preference"}'),
   z
     .object({
       type: z.literal('decision'),
-      rationale: z.string().nullable(),
+      rationale: z
+        .string()
+        .nullable()
+        .describe('Why this decision was made and alternatives rejected. Null if not provided.'),
     })
-    .strict(),
+    .strict()
+    .describe(
+      'A chosen path among alternatives. Example: {"type":"decision","rationale":"Chose SQLite for simplicity"}',
+    ),
   z
     .object({
       type: z.literal('todo'),
-      due: TimestampSchema.nullable(),
+      due: TimestampSchema.nullable().describe(
+        'Optional due date as ISO-8601 UTC timestamp, or null. Example: "2025-06-01T00:00:00.000Z"',
+      ),
     })
-    .strict(),
+    .strict()
+    .describe('An action item. Example: {"type":"todo","due":null}'),
   z
     .object({
       type: z.literal('snippet'),
-      language: z.string().min(1).max(64).nullable(),
+      language: z
+        .string()
+        .min(1)
+        .max(64)
+        .nullable()
+        .describe('Programming language hint for syntax-aware retrieval, or null. Example: "typescript"'),
     })
-    .strict(),
+    .strict()
+    .describe(
+      'A reusable code fragment. Example: {"type":"snippet","language":"typescript"}',
+    ),
 ]);
 
 export type MemoryKind = z.infer<typeof MemoryKindSchema>;

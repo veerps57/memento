@@ -13,7 +13,7 @@ import { z } from 'zod';
 /** `conflict.read`, `conflict.events`. */
 export const ConflictIdInputSchema = z
   .object({
-    id: ConflictIdSchema,
+    id: ConflictIdSchema.describe('The ULID of the conflict to read.'),
   })
   .strict();
 
@@ -24,10 +24,16 @@ export const ConflictIdInputSchema = z
  */
 export const ConflictListInputSchema = z
   .object({
-    open: z.boolean().optional(),
-    kind: z.enum(MEMORY_KIND_TYPES).optional(),
-    memoryId: MemoryIdSchema.optional(),
-    limit: z.number().int().positive().optional(),
+    open: z
+      .boolean()
+      .optional()
+      .describe('Filter by open/resolved status. true = open only, false = resolved only. Omit for all.'),
+    kind: z
+      .enum(MEMORY_KIND_TYPES)
+      .optional()
+      .describe('Filter by memory kind: "fact", "preference", "decision", "todo", or "snippet".'),
+    memoryId: MemoryIdSchema.optional().describe('Filter to conflicts involving a specific memory ULID.'),
+    limit: z.number().int().positive().optional().describe('Maximum conflicts to return.'),
   })
   .strict();
 
@@ -39,8 +45,10 @@ export const ConflictListInputSchema = z
  */
 export const ConflictResolveInputSchema = z
   .object({
-    id: ConflictIdSchema,
-    resolution: z.enum(CONFLICT_RESOLUTIONS),
+    id: ConflictIdSchema.describe('The ULID of the conflict to resolve.'),
+    resolution: z
+      .enum(CONFLICT_RESOLUTIONS)
+      .describe('How to resolve: typically "keep_existing", "keep_new", or "merge".'),
   })
   .strict();
 
@@ -61,23 +69,40 @@ export const ConflictResolveInputSchema = z
  * through to a no-op SQL filter.
  */
 const ScanSharedShape = {
-  scopes: z.array(ScopeSchema).min(1).optional(),
-  maxCandidates: z.number().int().positive().optional(),
+  scopes: z
+    .array(ScopeSchema)
+    .min(1)
+    .optional()
+    .describe('Scopes to scan within. Each element uses the scope discriminated union shape.'),
+  maxCandidates: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Maximum candidate memories to compare against. Server uses default if omitted.'),
 } as const;
 
 export const ConflictScanInputSchema = z.discriminatedUnion('mode', [
   z
     .object({
       mode: z.literal('memory'),
-      memoryId: MemoryIdSchema,
+      memoryId: MemoryIdSchema.describe('The memory ULID to check for conflicts.'),
       ...ScanSharedShape,
     })
-    .strict(),
+    .strict()
+    .describe(
+      'Scan a single memory for conflicts. Example: {"mode":"memory","memoryId":"01HYXZ..."}',
+    ),
   z
     .object({
       mode: z.literal('since'),
-      since: TimestampSchema,
+      since: TimestampSchema.describe(
+        'Scan memories created at or after this ISO-8601 UTC timestamp.',
+      ),
       ...ScanSharedShape,
     })
-    .strict(),
+    .strict()
+    .describe(
+      'Scan all memories created since a timestamp. Example: {"mode":"since","since":"2025-01-01T00:00:00.000Z"}',
+    ),
 ]);

@@ -18,10 +18,19 @@ import { z } from 'zod';
  */
 export const OwnerRefSchema = z
   .object({
-    type: z.enum(['local', 'team', 'agent']),
-    id: z.string().min(1).max(128),
+    type: z
+      .enum(['local', 'team', 'agent'])
+      .describe('Owner type. In v1, always "local".'),
+    id: z
+      .string()
+      .min(1)
+      .max(128)
+      .describe('Owner identifier. In v1, always "self".'),
   })
-  .strict();
+  .strict()
+  .describe(
+    'The principal that owns this memory. In single-user mode, always {"type":"local","id":"self"}.',
+  );
 
 export type OwnerRef = z.infer<typeof OwnerRefSchema>;
 
@@ -45,20 +54,36 @@ export type OwnerRef = z.infer<typeof OwnerRefSchema>;
  *                  the event `type` for context.
  */
 export const ActorRefSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('cli') }).strict(),
+  z
+    .object({ type: z.literal('cli') })
+    .strict()
+    .describe('Actor is the CLI user. Example: {"type":"cli"}'),
   z
     .object({
       type: z.literal('mcp'),
-      agent: z.string().min(1).max(256),
+      agent: z
+        .string()
+        .min(1)
+        .max(256)
+        .describe('MCP client name and version. Example: "claude-code/0.5.0"'),
     })
-    .strict(),
+    .strict()
+    .describe('Actor is an MCP client. Example: {"type":"mcp","agent":"claude-code/0.5.0"}'),
   z
     .object({
       type: z.literal('scheduler'),
-      job: z.string().min(1).max(128),
+      job: z
+        .string()
+        .min(1)
+        .max(128)
+        .describe('Scheduled job identifier. Example: "compact"'),
     })
-    .strict(),
-  z.object({ type: z.literal('system') }).strict(),
+    .strict()
+    .describe('Actor is a scheduled job. Example: {"type":"scheduler","job":"compact"}'),
+  z
+    .object({ type: z.literal('system') })
+    .strict()
+    .describe('Actor is the system itself (migrations, startup). Example: {"type":"system"}'),
 ]);
 
 export type ActorRef = z.infer<typeof ActorRefSchema>;

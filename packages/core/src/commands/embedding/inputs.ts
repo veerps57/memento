@@ -14,13 +14,18 @@ import { confirmGate } from '../confirm-gate.js';
  */
 export const EmbeddingRebuildInputSchema = z
   .object({
-    batchSize: z.number().int().positive().optional(),
-    force: z.boolean().optional(),
-    /**
-     * Safety gate from ADR-0012. A rebuild rewrites every
-     * embedding row and can take minutes on large stores;
-     * the gate is invariant (AGENTS.md rule 12).
-     */
-    confirm: confirmGate(),
+    batchSize: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Number of memories to embed per batch. Server uses default if omitted.'),
+    force: z
+      .boolean()
+      .optional()
+      .describe('If true, re-embeds all memories even if they already have an embedding for the current model.'),
+    confirm: confirmGate().describe(
+      'Safety gate — must be true to proceed. Rebuild rewrites all embeddings and may take minutes.',
+    ),
   })
   .strict();
