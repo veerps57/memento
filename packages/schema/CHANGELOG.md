@@ -1,5 +1,17 @@
 # @psraghuveer/memento-schema
 
+## 0.3.0
+
+### Minor Changes
+
+- 544e96b: Add memory.context and memory.extract commands (ADR-0016)
+
+  - `memory.extract`: batch extraction with embedding-based dedup (skip/supersede/write) and configurable confidence defaults
+  - `memory.context`: query-less ranked retrieval for session-start context injection
+  - ~13 new config keys for extraction thresholds, context limits, and ranking weights
+  - Remove dead code (`commands/memory/errors.ts`)
+  - Harden test coverage across bulk commands, retrieval pipeline, CLI lifecycle, and doc renderers
+
 ## 0.2.0
 
 ### Minor Changes
