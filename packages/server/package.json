@@ -1,6 +1,6 @@
 {
   "name": "@psraghuveer/memento-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MCP server adapter for Memento. Translates MCP tool calls into command-registry invocations.",
   "keywords": ["memento", "memory", "ai", "assistant", "mcp", "local-first", "sqlite"],
   "license": "Apache-2.0",
