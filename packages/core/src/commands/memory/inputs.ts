@@ -51,8 +51,9 @@ export const MemoryWriteInputSchema = z
       ),
     pinned: z
       .boolean()
+      .optional()
       .describe(
-        'If true, this memory is exempt from confidence decay and will never auto-archive.',
+        'If true, this memory is exempt from confidence decay and will never auto-archive. Defaults to the write.defaultPinned config value (false) when omitted.',
       ),
     content: z
       .string()
@@ -61,15 +62,17 @@ export const MemoryWriteInputSchema = z
     summary: z
       .string()
       .nullable()
+      .default(null)
       .describe(
-        'A short summary of the content for display in listings. Pass null if no summary is needed.',
+        'A short summary of the content for display in listings. Defaults to null if omitted.',
       ),
     storedConfidence: z
       .number()
       .min(0)
       .max(1)
+      .optional()
       .describe(
-        'How confident this memory is, from 0.0 to 1.0. Decays over time unless confirmed. Typical value: 0.9 for high-confidence facts, 0.7 for tentative observations.',
+        'How confident this memory is, from 0.0 to 1.0. Decays over time unless confirmed. Defaults to the write.defaultConfidence config value (1.0) when omitted.',
       ),
     clientToken: z
       .string()

@@ -438,6 +438,26 @@ export const CONFIG_KEYS = {
       'When true, `memory.list` and `memory.search` project sensitive memories to a redacted view (`content: null`, `redacted: true`). `memory.read` always returns full text.',
   }),
 
+  // — Write defaults —
+  // Per principle 4 (config-driven by the user): callers should
+  // not have to repeat identical values on every write. These keys
+  // provide user-tunable defaults applied by the handler when the
+  // corresponding field is omitted from the wire input.
+  'write.defaultConfidence': defineKey({
+    schema: z.number().min(0).max(1),
+    default: 1,
+    mutable: true,
+    description:
+      'Default `storedConfidence` for new memories when the caller omits the field. 1.0 means full confidence at write time; decay handles degradation over time.',
+  }),
+  'write.defaultPinned': defineKey({
+    schema: z.boolean(),
+    default: false,
+    mutable: true,
+    description:
+      'Default `pinned` value for new memories when the caller omits the field. Pinned memories are exempt from confidence decay.',
+  }),
+
   // — Safety —
   // Per ADR-0012 §4. Hard upper bound on `memory.write_many`
   // batch size, exposed as a knob so operators can tighten or

@@ -125,6 +125,7 @@ Registry name: `memory.confirm` — CLI: `memento memory confirm`
 Re-affirm an active memory (bumps lastConfirmedAt, resetting confidence decay).
 
 Example:
+
 ```json
 {"id":"01HYXZ..."}
 ```
@@ -146,6 +147,7 @@ Registry name: `memory.forget` — CLI: `memento memory forget`
 Soft-remove an active memory; reversible via memory.restore.
 
 Example:
+
 ```json
 {"id":"01HYXZ...","reason":"No longer relevant","confirm":true}
 ```
@@ -167,6 +169,7 @@ Registry name: `memory.list` — CLI: `memento memory list`
 List memories matching the given filter, newest first.
 
 Examples:
+
 - All active: `{}`
 - Only facts: `{"kind":"fact"}`
 - Pinned in a repo: `{"pinned":true,"scope":{"type":"repo","remote":"github.com/acme/app"}}`
@@ -188,6 +191,7 @@ Registry name: `memory.restore` — CLI: `memento memory restore`
 Move a forgotten or archived memory back to active.
 
 Example:
+
 ```json
 {"id":"01HYXZ..."}
 ```
@@ -201,6 +205,7 @@ Registry name: `memory.search` — CLI: `memento memory search`
 Search memories by free text using FTS5 + the configured linear ranker.
 
 Examples:
+
 - Simple: `{"text":"database migration"}`
 - With filters: `{"text":"auth","kinds":["decision","fact"],"limit":5}`
 
@@ -222,6 +227,7 @@ Registry name: `memory.supersede` — CLI: `memento memory supersede`
 Replace an existing memory with a new one in a single transaction. Use this instead of update when the content changes.
 
 Example:
+
 ```json
 {"oldId":"01HYXZ...","next":{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["corrected"],"pinned":false,"content":"Updated fact content.","summary":null,"storedConfidence":0.9}}
 ```
@@ -235,6 +241,7 @@ Registry name: `memory.update` — CLI: `memento memory update`
 Update taxonomy fields (tags / kind / pinned) of an active memory. Does NOT change content — use memory.supersede for that.
 
 Example:
+
 ```json
 {"id":"01HYXZ...","patch":{"tags":["updated-tag"],"pinned":true}}
 ```
@@ -247,9 +254,16 @@ Registry name: `memory.write` — CLI: `memento memory write`
 
 Create a new memory in the given scope.
 
-Example:
+Minimal example (pinned, storedConfidence, summary, owner all have defaults):
+
 ```json
-{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"pinned":false,"content":"Memento uses SQLite for storage.","summary":"Storage engine choice","storedConfidence":0.9}
+{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"content":"Memento uses SQLite for storage."}
+```
+
+Full example:
+
+```json
+{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"pinned":false,"content":"Memento uses SQLite for storage.","summary":"Storage engine choice","storedConfidence":0.95}
 ```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
