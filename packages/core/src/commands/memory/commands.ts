@@ -42,6 +42,7 @@ import type { AnyCommand, Command, CommandContext } from '../types.js';
 import {
   MemoryArchiveInputSchema,
   MemoryArchiveManyInputSchema,
+  MemoryConfirmManyInputSchema,
   MemoryEventsInputSchema,
   MemoryForgetInputSchema,
   MemoryForgetManyInputSchema,
@@ -65,6 +66,21 @@ const MemoryWriteManyOutputSchema = z
   .object({
     ids: z.array(MemoryIdSchema),
     idempotentCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const ConfirmManyOutputSchema = z
+  .object({
+    confirmed: z.number().int().nonnegative(),
+    failed: z.array(
+      z
+        .object({
+          id: z.string(),
+          code: z.string(),
+          message: z.string(),
+        })
+        .strict(),
+    ),
   })
   .strict();
 const SupersedeOutputSchema = z
@@ -342,6 +358,7 @@ export function createMemoryCommands(
         repo.list({
           ...(input.status !== undefined ? { status: input.status } : {}),
           ...(input.kind !== undefined ? { kind: input.kind } : {}),
+          ...(input.tags !== undefined ? { tags: input.tags } : {}),
           ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
           ...(input.scope !== undefined ? { scope: input.scope } : {}),
           ...(input.limit !== undefined ? { limit: input.limit } : {}),
@@ -355,7 +372,16 @@ export function createMemoryCommands(
       // full Memory entities; the projection is purely
       // presentational and never touches the database.
       const redact = deps?.configStore?.get('privacy.redactSensitiveSnippets') ?? false;
-      return ok(result.value.map((m) => projectMemoryView(m, redact)));
+      const stripEmbedding = !(input.includeEmbedding === true);
+      return ok(
+        result.value.map((m) => {
+          const view = projectMemoryView(m, redact);
+          if (stripEmbedding) {
+            return { ...view, embedding: null };
+          }
+          return view;
+        }),
+      );
     },
   };
 
@@ -418,6 +444,36 @@ export function createMemoryCommands(
     },
     handler: (input, ctx) =>
       runRepo<Memory>('memory.confirm', () => repo.confirm(input.id, ctxToRepoCtx(ctx))),
+  };
+
+  const confirmManyCommand: Command<
+    typeof MemoryConfirmManyInputSchema,
+    typeof ConfirmManyOutputSchema
+  > = {
+    name: 'memory.confirm_many',
+    sideEffect: 'write',
+    surfaces: SURFACES,
+    inputSchema: MemoryConfirmManyInputSchema,
+    outputSchema: ConfirmManyOutputSchema,
+    metadata: {
+      description:
+        'Bulk-confirm multiple active memories in one call (resets confidence decay for each).\n\nExample:\n\n```json\n{"ids":["01HYXZ...","01HYXY..."]}\n```',
+      mcpName: 'confirm_many_memories',
+    },
+    handler: async (input, ctx) => {
+      const confirmed: string[] = [];
+      const failed: { id: string; code: string; message: string }[] = [];
+      for (const id of input.ids) {
+        try {
+          await repo.confirm(id, ctxToRepoCtx(ctx));
+          confirmed.push(id);
+        } catch (error) {
+          const mErr = repoErrorToMementoError(error, 'memory.confirm_many');
+          failed.push({ id, code: mErr.code, message: mErr.message });
+        }
+      }
+      return ok({ confirmed: confirmed.length, failed });
+    },
   };
 
   const updateCommand: Command<typeof MemoryUpdateInputSchema, typeof MemoryOutputSchema> = {
@@ -725,6 +781,7 @@ export function createMemoryCommands(
     writeManyCommand,
     supersedeCommand,
     confirmCommand,
+    confirmManyCommand,
     updateCommand,
     restoreCommand,
     forgetCommand,

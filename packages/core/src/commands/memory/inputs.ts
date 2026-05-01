@@ -139,6 +139,13 @@ export const MemoryListInputSchema = z
       .describe(
         'Filter by kind type: "fact", "preference", "decision", "todo", or "snippet". Omit for all.',
       ),
+    tags: z
+      .array(z.string())
+      .min(1)
+      .optional()
+      .describe(
+        'Filter to memories containing ALL of these tags (AND logic). Tags are normalised to lowercase. Example: ["project:memento","architecture"].',
+      ),
     pinned: z.boolean().optional().describe('Filter by pinned status. Omit for all.'),
     scope: ScopeSchema.optional().describe(
       'Filter by scope. Same shape as memory.write scope. Omit to list across all scopes.',
@@ -149,6 +156,12 @@ export const MemoryListInputSchema = z
       .positive()
       .optional()
       .describe('Maximum number of memories to return. Omit for server default.'),
+    includeEmbedding: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether to include the full embedding vector in results. Defaults to false. Embedding vectors can be large (hundreds of floats); omit or set to false for compact output.',
+      ),
   })
   .strict();
 
@@ -173,6 +186,22 @@ export const MemorySupersedeInputSchema = z
 export const MemoryIdInputSchema = z
   .object({
     id: MemoryIdSchema.describe('The ULID of the target memory.'),
+  })
+  .strict();
+
+/**
+ * Input for `memory.confirm_many`. Accepts an array of memory
+ * ids to re-affirm in a single call. Each id is confirmed
+ * independently; failures on one id do not block others. The
+ * output reports which ids succeeded and which failed.
+ */
+export const MemoryConfirmManyInputSchema = z
+  .object({
+    ids: z
+      .array(MemoryIdSchema)
+      .min(1)
+      .max(100)
+      .describe('Array of memory ULIDs to confirm. 1–100 items.'),
   })
   .strict();
 

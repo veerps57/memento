@@ -99,6 +99,7 @@ describe('createMemoryCommands', () => {
       'memory.write_many',
       'memory.supersede',
       'memory.confirm',
+      'memory.confirm_many',
       'memory.update',
       'memory.restore',
       'memory.forget',
@@ -121,6 +122,7 @@ describe('createMemoryCommands', () => {
     expect(get(byName, 'memory.write_many').sideEffect).toBe('write');
     expect(get(byName, 'memory.supersede').sideEffect).toBe('write');
     expect(get(byName, 'memory.confirm').sideEffect).toBe('write');
+    expect(get(byName, 'memory.confirm_many').sideEffect).toBe('write');
     expect(get(byName, 'memory.update').sideEffect).toBe('write');
     expect(get(byName, 'memory.restore').sideEffect).toBe('write');
     expect(get(byName, 'memory.forget').sideEffect).toBe('destructive');
@@ -223,6 +225,95 @@ describe('createMemoryCommands', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.code).toBe('INVALID_INPUT');
+    });
+
+    it('filters by tags (AND logic)', async () => {
+      const { byName } = await fixture();
+      await executeCommand(
+        get(byName, 'memory.write'),
+        { ...writeInput, tags: ['arch', 'config'], content: 'tagged both' },
+        ctx,
+      );
+      await executeCommand(
+        get(byName, 'memory.write'),
+        { ...writeInput, tags: ['arch'], content: 'tagged arch only' },
+        ctx,
+      );
+      await executeCommand(
+        get(byName, 'memory.write'),
+        { ...writeInput, tags: ['unrelated'], content: 'no match' },
+        ctx,
+      );
+
+      // Single tag filter
+      const archOnly = await executeCommand(get(byName, 'memory.list'), { tags: ['arch'] }, ctx);
+      expect(archOnly.ok).toBe(true);
+      if (!archOnly.ok) return;
+      expect(archOnly.value).toHaveLength(2);
+
+      // AND logic: both tags required
+      const both = await executeCommand(
+        get(byName, 'memory.list'),
+        { tags: ['arch', 'config'] },
+        ctx,
+      );
+      expect(both.ok).toBe(true);
+      if (!both.ok) return;
+      expect(both.value).toHaveLength(1);
+      expect(both.value[0]?.content).toBe('tagged both');
+    });
+
+    it('normalises tag filter to lowercase', async () => {
+      const { byName } = await fixture();
+      await executeCommand(
+        get(byName, 'memory.write'),
+        { ...writeInput, tags: ['MyTag'], content: 'case test' },
+        ctx,
+      );
+
+      const result = await executeCommand(get(byName, 'memory.list'), { tags: ['MYTAG'] }, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(1);
+    });
+  });
+
+  describe('memory.list includeEmbedding', () => {
+    it('strips embedding by default', async () => {
+      const { byName } = await fixture();
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+      await executeCommand(
+        get(byName, 'memory.set_embedding'),
+        { id: writeRes.value.id, model: 'test', dimension: 3, vector: [0.1, 0.2, 0.3] },
+        ctx,
+      );
+
+      const list = await executeCommand(get(byName, 'memory.list'), {}, ctx);
+      expect(list.ok).toBe(true);
+      if (!list.ok) return;
+      expect(list.value[0]?.embedding).toBeNull();
+    });
+
+    it('includes embedding when includeEmbedding is true', async () => {
+      const { byName } = await fixture();
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+      await executeCommand(
+        get(byName, 'memory.set_embedding'),
+        { id: writeRes.value.id, model: 'test', dimension: 3, vector: [0.1, 0.2, 0.3] },
+        ctx,
+      );
+
+      const list = await executeCommand(
+        get(byName, 'memory.list'),
+        { includeEmbedding: true },
+        ctx,
+      );
+      expect(list.ok).toBe(true);
+      if (!list.ok) return;
+      expect(list.value[0]?.embedding).not.toBeNull();
+      expect(list.value[0]?.embedding?.dimension).toBe(3);
     });
   });
 
@@ -395,6 +486,69 @@ describe('createMemoryCommands', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.code).toBe('CONFLICT');
+    });
+  });
+
+  describe('memory.confirm_many', () => {
+    it('confirms multiple active memories in a single call', async () => {
+      const { byName } = await fixture();
+      const r1 = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!r1.ok) throw new Error('seed 1 failed');
+      const r2 = await executeCommand(
+        get(byName, 'memory.write'),
+        { ...writeInput, content: 'second memory' },
+        ctx,
+      );
+      if (!r2.ok) throw new Error('seed 2 failed');
+
+      const result = await executeCommand(
+        get(byName, 'memory.confirm_many'),
+        { ids: [r1.value.id, r2.value.id] },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.confirmed).toBe(2);
+      expect(result.value.failed).toEqual([]);
+    });
+
+    it('reports per-id failures without blocking others', async () => {
+      const { byName } = await fixture();
+      const r1 = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!r1.ok) throw new Error('seed failed');
+
+      // forget r1 so confirming it will fail
+      await executeCommand(
+        get(byName, 'memory.forget'),
+        { id: r1.value.id, reason: null, confirm: true },
+        ctx,
+      );
+
+      const r2 = await executeCommand(
+        get(byName, 'memory.write'),
+        { ...writeInput, content: 'still active' },
+        ctx,
+      );
+      if (!r2.ok) throw new Error('seed 2 failed');
+
+      const result = await executeCommand(
+        get(byName, 'memory.confirm_many'),
+        { ids: [r1.value.id, r2.value.id] },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.confirmed).toBe(1);
+      expect(result.value.failed).toHaveLength(1);
+      expect(result.value.failed[0].id).toBe(r1.value.id);
+    });
+
+    it('returns INVALID_INPUT for empty ids array', async () => {
+      const { byName } = await fixture();
+      const result = await executeCommand(get(byName, 'memory.confirm_many'), { ids: [] }, ctx);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('INVALID_INPUT');
     });
   });
 

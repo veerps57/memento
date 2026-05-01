@@ -157,6 +157,91 @@ describe('system.info', () => {
   });
 });
 
+describe('system.list_tags', () => {
+  it('returns tags sorted by frequency descending', async () => {
+    const app = await newApp({ dbPath: ':memory:' });
+    const scope: Scope = { type: 'global' };
+
+    // Write memories with overlapping tags.
+    const writeCmd = app.registry.get('memory.write');
+    if (!writeCmd) throw new Error('memory.write missing');
+    await executeCommand(
+      writeCmd,
+      { ...baseWrite, scope, content: 'a', tags: ['arch', 'config'] },
+      ctx,
+    );
+    await executeCommand(
+      writeCmd,
+      { ...baseWrite, scope, content: 'b', tags: ['arch', 'testing'] },
+      ctx,
+    );
+    await executeCommand(writeCmd, { ...baseWrite, scope, content: 'c', tags: ['arch'] }, ctx);
+
+    const cmd = app.registry.get('system.list_tags');
+    if (!cmd) throw new Error('system.list_tags missing');
+    const result = await executeCommand(cmd, {}, ctx);
+    if (!result.ok) throw new Error(`failed: ${result.error.code}`);
+    const out = result.value as { tags: Array<{ tag: string; count: number }> };
+
+    expect(out.tags).toEqual([
+      { tag: 'arch', count: 3 },
+      { tag: 'config', count: 1 },
+      { tag: 'testing', count: 1 },
+    ]);
+  });
+
+  it('defaults to active-only and respects status filter', async () => {
+    const app = await newApp({ dbPath: ':memory:' });
+    const scope: Scope = { type: 'global' };
+
+    const writeCmd = app.registry.get('memory.write');
+    if (!writeCmd) throw new Error('memory.write missing');
+    const r1 = await executeCommand(
+      writeCmd,
+      { ...baseWrite, scope, content: 'a', tags: ['alive'] },
+      ctx,
+    );
+    if (!r1.ok) throw new Error('write failed');
+    const r2 = await executeCommand(
+      writeCmd,
+      { ...baseWrite, scope, content: 'b', tags: ['doomed'] },
+      ctx,
+    );
+    if (!r2.ok) throw new Error('write failed');
+
+    // Archive the second memory.
+    const archive = app.registry.get('memory.archive');
+    if (!archive) throw new Error('memory.archive missing');
+    await executeCommand(archive, { id: (r2.value as { id: string }).id, confirm: true }, ctx);
+
+    const cmd = app.registry.get('system.list_tags');
+    if (!cmd) throw new Error('system.list_tags missing');
+
+    // Default (active) should only show 'alive'.
+    const active = await executeCommand(cmd, {}, ctx);
+    if (!active.ok) throw new Error('list_tags failed');
+    expect((active.value as { tags: Array<{ tag: string }> }).tags.map((t) => t.tag)).toEqual([
+      'alive',
+    ]);
+
+    // Explicit archived filter shows 'doomed'.
+    const archived = await executeCommand(cmd, { status: 'archived' }, ctx);
+    if (!archived.ok) throw new Error('list_tags failed');
+    expect((archived.value as { tags: Array<{ tag: string }> }).tags.map((t) => t.tag)).toEqual([
+      'doomed',
+    ]);
+  });
+
+  it('returns empty tags array when no memories exist', async () => {
+    const app = await newApp({ dbPath: ':memory:' });
+    const cmd = app.registry.get('system.list_tags');
+    if (!cmd) throw new Error('system.list_tags missing');
+    const result = await executeCommand(cmd, {}, ctx);
+    if (!result.ok) throw new Error(result.error.code);
+    expect((result.value as { tags: unknown[] }).tags).toEqual([]);
+  });
+});
+
 describe('system.list_scopes', () => {
   it('groups by scope, sorts by count desc, and ignores non-active rows', async () => {
     const app = await newApp({ dbPath: ':memory:' });

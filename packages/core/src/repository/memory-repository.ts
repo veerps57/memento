@@ -45,7 +45,7 @@ import {
   TagSchema,
   type Timestamp,
 } from '@psraghuveer/memento-schema';
-import type { Kysely } from 'kysely';
+import { type Kysely, type SqlBool, sql } from 'kysely';
 import { applyRules } from '../scrubber/engine.js';
 import type { MementoSchema, MemoriesTable, MemoryEventsTable } from '../storage/schema.js';
 import { ulid } from './ulid.js';
@@ -122,6 +122,12 @@ export interface MemoryListFilter {
    * as `createdAtGte`.
    */
   readonly createdAtLte?: Timestamp;
+  /**
+   * Filter to memories that contain **all** of the given tags.
+   * Tags are normalised (lowercase, trimmed) before comparison.
+   * An empty array matches nothing; `undefined` skips the filter.
+   */
+  readonly tags?: readonly string[];
   readonly limit?: number;
 }
 
@@ -568,6 +574,17 @@ export function createMemoryRepository(
           ),
         );
       }
+      if (filter.tags !== undefined && filter.tags.length > 0) {
+        // Each requested tag must appear in the memory's tags_json array.
+        // Uses SQLite json_each to check containment: for each tag, assert
+        // a matching row exists in the json_each expansion of tags_json.
+        for (const tag of filter.tags) {
+          const normalised = tag.trim().toLowerCase();
+          query = query.where(
+            sql<SqlBool>`exists (select 1 from json_each(${sql.ref('tags_json')}) where value = ${normalised})`,
+          );
+        }
+      }
       const rows = await query.execute();
       return rows.map(rowToMemory);
     },
@@ -615,6 +632,14 @@ export function createMemoryRepository(
             ),
           ),
         );
+      }
+      if (filter.tags !== undefined && filter.tags.length > 0) {
+        for (const tag of filter.tags) {
+          const normalised = tag.trim().toLowerCase();
+          query = query.where(
+            sql<SqlBool>`exists (select 1 from json_each(${sql.ref('tags_json')}) where value = ${normalised})`,
+          );
+        }
       }
       const rows = await query.execute();
       return rows.map((r) => r.id as MemoryId);

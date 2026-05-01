@@ -135,9 +135,11 @@ export function createConflictCommands(deps: CreateConflictCommandsDeps): readon
           ...(input.maxCandidates !== undefined ? { maxCandidates: input.maxCandidates } : {}),
         };
         if (input.mode === 'memory') {
-          const memory = await memories.read(input.memoryId);
+          // `.refine()` guarantees memoryId is present when mode='memory'.
+          const memoryId = input.memoryId as NonNullable<typeof input.memoryId>;
+          const memory = await memories.read(memoryId);
           if (memory === null) {
-            throw new Error(`conflict.scan: memory not found: ${input.memoryId}`);
+            throw new Error(`conflict.scan: memory not found: ${memoryId}`);
           }
           const result = await detectConflicts(
             memory,
@@ -146,10 +148,11 @@ export function createConflictCommands(deps: CreateConflictCommandsDeps): readon
           );
           return { scanned: result.scanned, opened: result.opened.slice() };
         }
-        // mode === 'since'
+        // mode === 'since' — `.refine()` guarantees since is present.
+        const since = input.since as NonNullable<typeof input.since>;
         const candidates = await memories.list({
           status: 'active',
-          createdAtGte: input.since,
+          createdAtGte: since,
         });
         let scanned = 0;
         const opened: Awaited<ReturnType<typeof detectConflicts>>['opened'][number][] = [];

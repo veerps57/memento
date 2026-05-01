@@ -154,6 +154,7 @@ export function createMemorySearchCommand(
               ? { includeStatuses: input.includeStatuses }
               : {}),
             ...(input.kinds !== undefined ? { kinds: input.kinds } : {}),
+            ...(input.tags !== undefined ? { tags: input.tags } : {}),
             ...(input.limit !== undefined ? { limit: input.limit } : {}),
             ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
             ...(input.now !== undefined ? { now: input.now } : {}),
@@ -161,6 +162,15 @@ export function createMemorySearchCommand(
           { actor: ctx.actor },
         );
         const annotated = await annotateWithConflicts(deps, page);
+        if (!(input.includeEmbedding === true)) {
+          return ok({
+            ...annotated,
+            results: annotated.results.map((r) => ({
+              ...r,
+              memory: { ...r.memory, embedding: null },
+            })),
+          });
+        }
         return ok(annotated);
       } catch (caught) {
         return err<MementoError>(repoErrorToMementoError(caught, 'memory.search'));

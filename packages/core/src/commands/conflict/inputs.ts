@@ -57,56 +57,59 @@ export const ConflictResolveInputSchema = z
   .strict();
 
 /**
- * `conflict.scan`. Two mutually exclusive modes, discriminated
- * by `mode`:
+ * `conflict.scan`. Two mutually exclusive modes controlled by
+ * `mode`:
  *
  * - `mode: 'memory'` — runs `detectConflicts` against a single
- *   hydrated memory. Used by the post-write hook recovery path
- *   and by interactive triage.
+ *   hydrated memory. Requires `memoryId`. Used by the post-write
+ *   hook recovery path and by interactive triage.
  * - `mode: 'since'` — re-runs detection over the historical
- *   window of memories created at or after `since`. Used to
- *   recover from missed post-write hooks per
+ *   window of memories created at or after `since`. Requires
+ *   `since`. Used to recover from missed post-write hooks per
  *   `docs/architecture/conflict-detection.md`.
  *
  * `scopes` and `maxCandidates` are shared between modes. Empty
  * `scopes` is rejected so callers do not accidentally fall
  * through to a no-op SQL filter.
+ *
+ * NOTE: this schema is deliberately a flat object (not a
+ * discriminatedUnion) because MCP clients (Claude Desktop,
+ * others) strip JSON Schema `oneOf` branches, rendering
+ * union-shaped tools unusable. The conditional requirement
+ * (`memoryId` when mode=memory, `since` when mode=since) is
+ * enforced via `.refine()`.
  */
-const ScanSharedShape = {
-  scopes: z
-    .array(ScopeSchema)
-    .min(1)
-    .optional()
-    .describe('Scopes to scan within. Each element uses the scope discriminated union shape.'),
-  maxCandidates: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe('Maximum candidate memories to compare against. Server uses default if omitted.'),
-} as const;
-
-export const ConflictScanInputSchema = z.discriminatedUnion('mode', [
-  z
-    .object({
-      mode: z.literal('memory'),
-      memoryId: MemoryIdSchema.describe('The memory ULID to check for conflicts.'),
-      ...ScanSharedShape,
-    })
-    .strict()
-    .describe(
-      'Scan a single memory for conflicts. Example: {"mode":"memory","memoryId":"01HYXZ..."}',
-    ),
-  z
-    .object({
-      mode: z.literal('since'),
-      since: TimestampSchema.describe(
-        'Scan memories created at or after this ISO-8601 UTC timestamp.',
+export const ConflictScanInputSchema = z
+  .object({
+    mode: z
+      .enum(['memory', 'since'])
+      .describe(
+        'Scan mode. "memory" checks one memory for conflicts (requires memoryId). "since" replays detection over all memories created since a timestamp (requires since).',
       ),
-      ...ScanSharedShape,
-    })
-    .strict()
-    .describe(
-      'Scan all memories created since a timestamp. Example: {"mode":"since","since":"2025-01-01T00:00:00.000Z"}',
+    memoryId: MemoryIdSchema.optional().describe(
+      'Required when mode="memory". The memory ULID to check for conflicts.',
     ),
-]);
+    since: TimestampSchema.optional().describe(
+      'Required when mode="since". Scan memories created at or after this ISO-8601 UTC timestamp.',
+    ),
+    scopes: z
+      .array(ScopeSchema)
+      .min(1)
+      .optional()
+      .describe('Scopes to scan within. Each element uses the scope discriminated union shape.'),
+    maxCandidates: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Maximum candidate memories to compare against. Server uses default if omitted.'),
+  })
+  .strict()
+  .refine((input) => input.mode !== 'memory' || input.memoryId !== undefined, {
+    message: 'memoryId is required when mode is "memory"',
+    path: ['memoryId'],
+  })
+  .refine((input) => input.mode !== 'since' || input.since !== undefined, {
+    message: 'since is required when mode is "since"',
+    path: ['since'],
+  });

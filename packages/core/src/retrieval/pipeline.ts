@@ -186,7 +186,18 @@ export async function searchMemories(
     return { results: [], nextCursor: null };
   }
 
-  const memories = await deps.memoryRepository.readMany(candidates.map((c) => c.id));
+  let memories = await deps.memoryRepository.readMany(candidates.map((c) => c.id));
+
+  // Post-hydration tag filter: retain only memories whose tags
+  // include all requested tags. Applied here (rather than in
+  // FTS/vector) so that tag filtering is backend-agnostic.
+  if (query.tags !== undefined && query.tags.length > 0) {
+    const requiredTags = query.tags.map((t) => t.trim().toLowerCase());
+    memories = memories.filter((m) =>
+      requiredTags.every((tag) => (m.tags as readonly string[]).includes(tag)),
+    );
+  }
+
   const byId = new Map<string, Memory>();
   for (const m of memories) {
     byId.set(m.id as unknown as string, m);

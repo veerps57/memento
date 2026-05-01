@@ -72,6 +72,7 @@ describe('createMementoApp', () => {
         'memory.write_many',
         'memory.update',
         'memory.confirm',
+        'memory.confirm_many',
         'memory.supersede',
         'memory.archive',
         'memory.restore',
@@ -93,6 +94,7 @@ describe('createMementoApp', () => {
         'config.history',
         'system.info',
         'system.list_scopes',
+        'system.list_tags',
       ].sort(),
     );
   });

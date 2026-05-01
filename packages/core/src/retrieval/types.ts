@@ -38,6 +38,13 @@ export interface SearchQuery {
   readonly scopes?: readonly Scope[];
   readonly includeStatuses?: readonly ('active' | 'superseded' | 'forgotten' | 'archived')[];
   readonly kinds?: readonly MemoryKindType[];
+  /**
+   * Post-hydration filter: only include memories containing ALL
+   * of the given tags (AND logic). Applied after candidate
+   * generation and before ranking so that neither FTS nor vector
+   * search need schema changes to support tag filtering.
+   */
+  readonly tags?: readonly string[];
   readonly limit?: number;
   readonly now?: Timestamp;
   /**

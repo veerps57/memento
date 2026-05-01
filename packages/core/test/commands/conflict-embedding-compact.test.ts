@@ -295,6 +295,22 @@ describe('createConflictCommands', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('INVALID_INPUT');
   });
+
+  it('rejects mode=memory without memoryId as INVALID_INPUT', async () => {
+    const { byName } = await fixture();
+    const result = await executeCommand(get(byName, 'conflict.scan'), { mode: 'memory' }, ctx);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INVALID_INPUT');
+  });
+
+  it('rejects mode=since without since as INVALID_INPUT', async () => {
+    const { byName } = await fixture();
+    const result = await executeCommand(get(byName, 'conflict.scan'), { mode: 'since' }, ctx);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INVALID_INPUT');
+  });
 });
 
 describe('createEmbeddingCommands', () => {
