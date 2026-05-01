@@ -38,8 +38,8 @@ export const MemoryWriteInputSchema = z
     scope: ScopeSchema.describe(
       'Where this memory lives. Discriminated by "type". Use {"type":"global"} for universal memories, {"type":"repo","remote":"github.com/owner/repo"} for repo-scoped, or {"type":"workspace","path":"/absolute/path"} for workspace-scoped.',
     ),
-    owner: OwnerRefSchema.describe(
-      'Who owns this memory. In single-user mode, always {"type":"local","id":"self"}.',
+    owner: OwnerRefSchema.default({ type: 'local', id: 'self' }).describe(
+      'Who owns this memory. Defaults to {"type":"local","id":"self"} if omitted. In single-user mode this is the only valid value.',
     ),
     kind: MemoryKindSchema.describe(
       'What kind of memory this is. Discriminated by "type". Options: {"type":"fact"}, {"type":"preference"}, {"type":"decision","rationale":"..."}, {"type":"todo","due":null}, {"type":"snippet","language":"typescript"}.',
