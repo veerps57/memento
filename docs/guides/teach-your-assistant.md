@@ -1,6 +1,6 @@
 # Teach your assistant
 
-Memento exposes a set of MCP tools (`memory.write`, `memory.search`, `memory.confirm`, `memento_context`, etc.) but it does not, by itself, teach an AI assistant *when* to use them. That part is up to you.
+Memento exposes a set of MCP tools (`memory.write`, `memory.search`, `memory.confirm`, `memory.context`, etc.) but it does not, by itself, teach an AI assistant *when* to use them. That part is up to you.
 
 This guide is a starter pack of prompt fragments you can drop into your assistant's persona file (`CLAUDE.md`, `.cursorrules`, `copilot-instructions.md`, OpenCode prompt, custom system prompt) so the assistant uses Memento well from the first conversation.
 
@@ -17,7 +17,7 @@ their preferences, and their projects. Treat the current chat
 session as ephemeral — anything you want to remember beyond this
 session must be written to Memento.
 
-At the start of each task, call `memento_context` to load relevant
+At the start of each task, call `memory.context` to load relevant
 memory. Before answering questions about the user's preferences
 or past decisions, call `memory.search` first; do not guess from
 chat history alone.
@@ -31,10 +31,12 @@ The most common failure mode is an assistant that never writes anything to Memen
 Write to Memento when the user states something durable about
 themselves, their preferences, their tools, or their projects —
 e.g. "I prefer pnpm over npm", "the staging cluster lives at
-gke-staging", "I always squash-merge PRs". Use `memory.write`
-with an explicit `kind` (`fact`, `preference`, `decision`,
-`todo`, or `snippet`) and a tight `content` field of one or two
-sentences.
+gke-staging", "I always squash-merge PRs", "I write in British
+English", "my target audience is mid-career professionals",
+"I prefer concise summaries over verbose explanations". Use
+`memory.write` with an explicit `kind` (`fact`, `preference`,
+`decision`, `todo`, or `snippet`) and a tight `content` field
+of one or two sentences.
 
 Do not write transient context (the file you are currently
 editing, the error message you just saw, what the user typed
@@ -43,7 +45,7 @@ five minutes ago). Memento is not a chat log.
 
 ## When to confirm
 
-`memento_context` and `memory.search` return memories without bumping their `lastConfirmedAt` timestamp. The timestamp only moves when the assistant explicitly calls `memento_confirm` after actually using the memory. This keeps decay semantics meaningful — a memory that is loaded into context but never acted on still ages.
+`memory.context` and `memory.search` return memories without bumping their `lastConfirmedAt` timestamp. The timestamp only moves when the assistant explicitly calls `memory.confirm` after actually using the memory. This keeps decay semantics meaningful — a memory that is loaded into context but never acted on still ages.
 
 ```text
 When you actually rely on a memory to answer a question or shape
@@ -102,18 +104,17 @@ For copy-paste, here is a compact version of the above that fits in a `CLAUDE.md
 You have a local memory store via MCP. Use it as your durable
 memory; treat chat as ephemeral.
 
-- At the start of a task, call `memento_context` to load memory.
-- Before answering questions about the user's preferences or
-  past decisions, call `memory.search` first.
-- When you actually use a memory to answer or act, call
-  `memory.confirm` with its id.
+- At the start of a task, call `memory.context` to load relevant
+  memories for this session. If context looks thin, call
+  `memory.search` with specific terms.
+- When you actually use a memory, call `memory.confirm` with its id.
 - Write durable user statements (preferences, decisions, facts,
   todos, snippets) via `memory.write` with an explicit `kind`.
-  Do not write transient context.
-- For changes of mind, call `memory.supersede`, not
-  `memory.update`. Updates cannot change content by design.
-- If `memory.write` reports a conflict, show both sides and ask
-  the user which to keep. Do not auto-resolve.
+- Before ending a session, call `memory.extract` with a batch of
+  candidates for anything worth remembering that wasn't written
+  explicitly during the conversation. The server deduplicates
+  automatically — when in doubt, include it.
+- For changes of mind, use `memory.supersede`, not `memory.update`.
 - Never write secrets, tokens, or credentials.
 ```
 

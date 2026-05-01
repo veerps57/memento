@@ -77,7 +77,7 @@ These are the four principles every design decision is judged against. They are 
 ## What Memento is not
 
 - Not a chat history store. It records distilled, structured memory — preferences, facts, episodes, lessons — not raw transcripts.
-- Not a knowledge graph or semantic database for your codebase. Use the right tools for that.
+- Not a knowledge graph or semantic database. Use the right tools for that.
 - Not a cloud service. Memory lives on your machine; cloud embedders, sync across machines, and team-shared memory are not part of the product.
 - Not a plugin platform. The architecture leaves the door open, but Memento ships with a fixed surface to hold the line on quality.
 
@@ -87,7 +87,8 @@ The full list of out-of-scope and current limitations is in [KNOWN_LIMITATIONS.m
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
-│  Clients: Claude Code, Cursor, Copilot, OpenCode, …     │
+│  Clients: Claude Desktop, Claude Code, Cursor, Copilot, │
+│           OpenCode, custom agents, …                    │
 └──────────────────────┬──────────────────────────────────┘
                        │ MCP (stdio)
 ┌──────────────────────▼──────────────────────────────────┐
@@ -110,7 +111,7 @@ A full architectural walkthrough lives in [ARCHITECTURE.md](ARCHITECTURE.md). Ea
 
 Contributions are welcome from both human and AI-assisted authors. We treat them with the same standards.
 
-- **Read [AGENTS.md](AGENTS.md)** if you are an AI coding agent or working with one. It is the canonical instruction set; `CLAUDE.md` and `.github/copilot-instructions.md` are thin pointers to it.
+- **Read [AGENTS.md](AGENTS.md)** if you are an AI agent or working with one. It is the canonical instruction set; `CLAUDE.md` and `.github/copilot-instructions.md` are thin pointers to it.
 - **Read [CONTRIBUTING.md](CONTRIBUTING.md)** for development setup, branching, commit conventions, and the PR lifecycle.
 - **Open a [design proposal issue](.github/ISSUE_TEMPLATE/design_proposal.yml)** before any non-trivial change.
 - **Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md).** It asks you to justify, not just describe, the change.

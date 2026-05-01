@@ -18,10 +18,12 @@ Each scope answers a different question:
 | Scope       | Lives until             | Typical use                                               |
 | ----------- | ----------------------- | --------------------------------------------------------- |
 | `global`    | The user deletes it     | Personal preferences, cross-project conventions           |
-| `workspace` | The folder is deleted   | Local environment quirks, machine-specific paths          |
+| `workspace` | The folder is deleted   | Local environment quirks, machine-specific paths, project-specific context |
 | `repo`      | The repo is forgotten   | Codebase facts, architectural rules, team conventions     |
 | `branch`    | The branch is forgotten | Work-in-progress decisions tied to a feature branch       |
 | `session`   | The session ends        | Ephemeral working memory; cleared when the agent restarts |
+
+**Note on non-git domains.** `repo` and `branch` scopes are git-specific and require a git remote to resolve. Non-coding workflows (writing, research, planning, personal knowledge management) typically use `global`, `workspace`, and `session` scopes. The `workspace` scope is the most natural fit for project-level context that isn't tied to a git repository — e.g., a research folder, a writing project directory, or a client engagement workspace.
 
 `workspace` and `repo` are deliberately separate: a workspace can contain multiple repos (monorepo), and a repo can be checked out in multiple workspaces. They answer different questions.
 

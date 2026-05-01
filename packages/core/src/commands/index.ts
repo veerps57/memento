@@ -13,9 +13,17 @@ export type {
 } from './types.js';
 export {
   createMemoryCommands,
+  createMemoryContextCommand,
+  type CreateMemoryContextCommandDeps,
+  createMemoryExtractCommand,
+  type CreateMemoryExtractCommandDeps,
   createMemorySearchCommand,
   type CreateMemorySearchCommandDeps,
   type MemoryCommandHooks,
+  MemoryContextInputSchema,
+  MemoryContextOutputSchema,
+  MemoryExtractInputSchema,
+  MemoryExtractOutputSchema,
   MemoryForgetInputSchema,
   MemoryIdInputSchema,
   MemoryListInputSchema,

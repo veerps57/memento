@@ -256,6 +256,48 @@ describe('memory.forget_many', () => {
     expect(value.applied).toBe(0);
   });
 
+  it('applies with createdAtLte filter', async () => {
+    const { byName } = await fixture();
+    await seedMemories(byName, 2);
+
+    const result = await executeCommand(
+      get(byName, 'memory.forget_many'),
+      {
+        filter: { kind: 'fact', createdAtLte: '2025-01-02T00:00:00.000Z' },
+        reason: null,
+        dryRun: false,
+        confirm: true,
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { matched: number; applied: number };
+    expect(value.matched).toBe(2);
+    expect(value.applied).toBe(2);
+  });
+
+  it('applies with scope and pinned filters', async () => {
+    const { byName } = await fixture();
+    await seedMemories(byName, 2);
+
+    const result = await executeCommand(
+      get(byName, 'memory.forget_many'),
+      {
+        filter: { kind: 'fact', scope: { type: 'global' }, pinned: false },
+        reason: null,
+        dryRun: false,
+        confirm: true,
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { matched: number; applied: number };
+    expect(value.matched).toBe(2);
+    expect(value.applied).toBe(2);
+  });
+
   it('scopes by kind: a non-matching kind leaves rows untouched', async () => {
     const { byName } = await fixture();
     // Seed two facts and one preference.
@@ -369,6 +411,69 @@ describe('memory.archive_many', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('INVALID_INPUT');
     expect(result.error.details).toEqual({ limit: 1, matched: 2 });
+  });
+
+  it('defaults to dryRun=true: previews the match set without touching rows', async () => {
+    const { byName } = await fixture();
+    const ids = await seedMemories(byName, 2);
+
+    const result = await executeCommand(
+      get(byName, 'memory.archive_many'),
+      { filter: { kind: 'fact' }, confirm: true },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as {
+      dryRun: boolean;
+      matched: number;
+      applied: number;
+      ids: string[];
+    };
+    expect(value.dryRun).toBe(true);
+    expect(value.matched).toBe(2);
+    expect(value.applied).toBe(0);
+    expect(value.ids.sort()).toEqual([...ids].sort());
+  });
+
+  it('applies with createdAtLte filter', async () => {
+    const { byName } = await fixture();
+    await seedMemories(byName, 2);
+
+    const result = await executeCommand(
+      get(byName, 'memory.archive_many'),
+      {
+        filter: { kind: 'fact', createdAtLte: '2025-01-02T00:00:00.000Z' },
+        dryRun: false,
+        confirm: true,
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { matched: number; applied: number };
+    expect(value.matched).toBe(2);
+    expect(value.applied).toBe(2);
+  });
+
+  it('applies with scope and pinned filters', async () => {
+    const { byName } = await fixture();
+    await seedMemories(byName, 2);
+
+    const result = await executeCommand(
+      get(byName, 'memory.archive_many'),
+      {
+        filter: { kind: 'fact', scope: { type: 'global' }, pinned: false },
+        dryRun: false,
+        confirm: true,
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { matched: number; applied: number };
+    expect(value.matched).toBe(2);
+    expect(value.applied).toBe(2);
   });
 
   it('archives forgotten rows too (legal source statuses include forgotten)', async () => {

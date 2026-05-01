@@ -193,4 +193,187 @@ describe('searchMemories', () => {
       ),
     ).rejects.toBeInstanceOf(VectorRetrievalConfigError);
   });
+
+  it('returns empty page when limit is 0', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    await repo.write({ ...baseInput, content: 'kafka kafka kafka' }, { actor });
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka', limit: 0 },
+    );
+
+    expect(page.results).toEqual([]);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('returns empty page when includeStatuses is empty', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    await repo.write({ ...baseInput, content: 'kafka kafka kafka' }, { actor });
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka', includeStatuses: [] },
+    );
+
+    expect(page.results).toEqual([]);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('returns empty page when limit is non-finite (falls back to default)', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    await repo.write({ ...baseInput, content: 'kafka kafka kafka' }, { actor });
+
+    // Non-finite limit falls back to the configured default limit,
+    // so results are still returned (exercises clampLimit branch).
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka', limit: Number.POSITIVE_INFINITY },
+    );
+
+    expect(page.results).toHaveLength(1);
+  });
+
+  it('returns empty page when limit is negative (falls back to default)', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    await repo.write({ ...baseInput, content: 'kafka kafka kafka' }, { actor });
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka', limit: -5 },
+    );
+
+    expect(page.results).toHaveLength(1);
+  });
+
+  it('returns empty page when cursor does not match any result (stale cursor)', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    await repo.write({ ...baseInput, content: 'kafka stale cursor test' }, { actor });
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka', cursor: '01HZZZZZZZZZZZZZZZZZZZZZZZ' as never },
+    );
+
+    expect(page.results).toEqual([]);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('filters results by tags post-hydration', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    const tagged = await repo.write(
+      { ...baseInput, content: 'kafka tagged', tags: ['important'] },
+      { actor },
+    );
+    await repo.write({ ...baseInput, content: 'kafka untagged', tags: [] }, { actor });
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka', tags: ['important'] },
+    );
+
+    expect(page.results).toHaveLength(1);
+    expect(page.results[0]?.memory.id).toBe(tagged.id);
+  });
+
+  it('re-wraps StaleEmbeddingError as VectorRetrievalConfigError', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    await repo.write({ ...baseInput, content: 'kafka stale embed' }, { actor });
+
+    // Manually insert a stale embedding into the DB so the vector
+    // scanner encounters a model mismatch.
+    const { StaleEmbeddingError } = await import('../../src/retrieval/vector.js');
+
+    const staleProvider: EmbeddingProvider = {
+      model: 'stale-model',
+      dimension: 4,
+      embed: () => {
+        throw new StaleEmbeddingError({
+          memoryId: 'M0fake',
+          storedModel: 'stale-model',
+          storedDimension: 4,
+          providerModel: 'other-model',
+          providerDimension: 4,
+        });
+      },
+    };
+
+    await expect(
+      searchMemories(
+        {
+          db: handle.db,
+          memoryRepository: repo,
+          configStore: createConfigStore({ 'retrieval.vector.enabled': true }),
+          embeddingProvider: staleProvider,
+          clock: () => fixedClock,
+        },
+        { text: 'kafka' },
+      ),
+    ).rejects.toBeInstanceOf(VectorRetrievalConfigError);
+  });
 });

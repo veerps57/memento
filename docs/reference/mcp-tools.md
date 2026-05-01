@@ -10,7 +10,7 @@ Input and output schemas are defined in source as Zod schemas and validated by t
 
 this reference lists names, descriptions, side-effect class, and the MCP annotation hints each command declares.
 
-Total: 30 tools.
+Total: 32 tools.
 
 ## `run_compact`
 
@@ -158,6 +158,22 @@ Example:
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
+## `get_memory_context`
+
+Registry name: `memory.context` — CLI: `memento memory context`
+
+Load the most relevant memories for the current session without a search query. Uses ranked retrieval based on confidence, recency, scope, pinned status, and confirmation frequency.
+
+Call at the start of a task to load context. No arguments required — returns the top memories from config-driven defaults.
+
+Examples:
+
+- Default: `{}`
+- Scoped: `{"scopes":[{"type":"repo","remote":"github.com/org/app"},{"type":"global"}]}`
+- Filtered: `{"kinds":["preference","decision"],"limit":10}`
+
+- **Side-effect:** `read` — Pure read; safe to call freely.
+
 ## `list_memory_events`
 
 Registry name: `memory.events` — CLI: `memento memory events`
@@ -165,6 +181,22 @@ Registry name: `memory.events` — CLI: `memento memory events`
 Read the audit log: events for one memory (ascending) when id is given, otherwise recent events across all memories (descending).
 
 - **Side-effect:** `read` — Pure read; safe to call freely.
+
+## `extract_memory`
+
+Registry name: `memory.extract` — CLI: `memento memory extract`
+
+Batch-extract candidate memories from a conversation. The server handles dedup against existing memories, scrubbing, and writing. The assistant's job is reduced to dumping "what seemed worth remembering."
+
+The server deduplicates automatically — when in doubt, include the candidate.
+
+Example:
+
+```json
+{"candidates":[{"kind":"preference","content":"User prefers dark mode in all editors"},{"kind":"fact","content":"The production database is PostgreSQL 15"}]}
+```
+
+- **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
 ## `forget_memory`
 

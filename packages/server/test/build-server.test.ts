@@ -152,6 +152,110 @@ function buildTestRegistry(): CommandRegistry {
     .freeze();
 }
 
+// Mock commands for resource and prompt handler tests.
+const contextCommand: Command<z.ZodObject<Record<string, never>>, z.ZodAny> = {
+  name: 'memory.context',
+  sideEffect: 'read',
+  surfaces: ['mcp'],
+  inputSchema: z.object({}).strict(),
+  outputSchema: z.any(),
+  metadata: {
+    description: 'Get memory context',
+    mcpName: 'get_memory_context',
+  },
+  handler: async () =>
+    ok({
+      results: [
+        {
+          memory: { content: 'remember this', kind: { type: 'fact' }, tags: [] },
+          score: 0.9,
+        },
+        {
+          memory: { content: 'dark mode', kind: { type: 'preference' }, tags: ['ui'] },
+          score: 0.7,
+        },
+      ],
+    }),
+};
+
+const searchCommand: Command<z.ZodObject<{ text: z.ZodString }>, z.ZodAny> = {
+  name: 'memory.search',
+  sideEffect: 'read',
+  surfaces: ['mcp'],
+  inputSchema: z.object({ text: z.string() }).strict(),
+  outputSchema: z.any(),
+  metadata: {
+    description: 'Search memories',
+    mcpName: 'search_memory',
+  },
+  handler: async (input) => ok({ searched: true, query: `searched for: ${input.text}` }),
+};
+
+// Error-returning variants for testing error branches.
+const failingContextCommand: Command<z.ZodObject<Record<string, never>>, z.ZodAny> = {
+  name: 'memory.context',
+  sideEffect: 'read',
+  surfaces: ['mcp'],
+  inputSchema: z.object({}).strict(),
+  outputSchema: z.any(),
+  metadata: {
+    description: 'Get memory context (always fails)',
+    mcpName: 'get_memory_context',
+  },
+  handler: async () => err({ code: 'STORAGE_ERROR', message: 'context: database is locked' }),
+};
+
+const failingSearchCommand: Command<z.ZodObject<{ text: z.ZodString }>, z.ZodAny> = {
+  name: 'memory.search',
+  sideEffect: 'read',
+  surfaces: ['mcp'],
+  inputSchema: z.object({ text: z.string() }).strict(),
+  outputSchema: z.any(),
+  metadata: {
+    description: 'Search memories (always fails)',
+    mcpName: 'search_memory',
+  },
+  handler: async () => err({ code: 'EMBEDDER_ERROR', message: 'search: embedder not loaded' }),
+};
+
+// Empty-results context command for testing the "no memories" branch.
+const emptyContextCommand: Command<z.ZodObject<Record<string, never>>, z.ZodAny> = {
+  name: 'memory.context',
+  sideEffect: 'read',
+  surfaces: ['mcp'],
+  inputSchema: z.object({}).strict(),
+  outputSchema: z.any(),
+  metadata: {
+    description: 'Get memory context (empty)',
+    mcpName: 'get_memory_context',
+  },
+  handler: async () => ok({ results: [] }),
+};
+
+function buildRegistryWithContextAndSearch(): CommandRegistry {
+  return createRegistry()
+    .register(echoCommand)
+    .register(contextCommand)
+    .register(searchCommand)
+    .freeze();
+}
+
+function buildRegistryWithFailingContext(): CommandRegistry {
+  return createRegistry().register(echoCommand).register(failingContextCommand).freeze();
+}
+
+function buildRegistryWithFailingContextAndSearch(): CommandRegistry {
+  return createRegistry()
+    .register(echoCommand)
+    .register(failingContextCommand)
+    .register(failingSearchCommand)
+    .freeze();
+}
+
+function buildRegistryWithEmptyContext(): CommandRegistry {
+  return createRegistry().register(echoCommand).register(emptyContextCommand).freeze();
+}
+
 async function connect(registry: CommandRegistry): Promise<Client> {
   const server = buildMementoServer({ registry, ctx });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -304,6 +408,171 @@ describe('buildMementoServer', () => {
     expect(client.getServerVersion()).toEqual({
       name: 'memento-test',
       version: '9.9.9',
+    });
+  });
+
+  describe('resources', () => {
+    it('ListResources returns the memento://context resource', async () => {
+      const client = await connect(buildTestRegistry());
+      const { resources } = await client.listResources();
+      expect(resources).toHaveLength(1);
+      expect(resources[0]).toEqual({
+        uri: 'memento://context',
+        name: 'Session Context',
+        description:
+          'The most relevant memories for the current session, ranked by confidence, recency, scope, and frequency.',
+        mimeType: 'text/plain',
+      });
+    });
+
+    it('ReadResource for memento://context returns formatted memory results', async () => {
+      const registry = buildRegistryWithContextAndSearch();
+      const client = await connect(registry);
+      const result = await client.readResource({ uri: 'memento://context' });
+      expect(result.contents).toHaveLength(1);
+      expect(result.contents[0]?.uri).toBe('memento://context');
+      expect(result.contents[0]?.mimeType).toBe('text/plain');
+      const entry = result.contents[0];
+      const text = entry !== undefined && 'text' in entry ? (entry.text as string) : '';
+      expect(text).toContain('Relevant memories (2)');
+      expect(text).toContain('1. [fact] remember this');
+      expect(text).toContain('2. [preference] [ui] dark mode');
+    });
+
+    it('ReadResource returns fallback when get_memory_context command is not registered', async () => {
+      // buildTestRegistry() has no memory.context command.
+      const client = await connect(buildTestRegistry());
+      const result = await client.readResource({ uri: 'memento://context' });
+      expect(result.contents).toHaveLength(1);
+      const entry = result.contents[0];
+      const text = entry !== undefined && 'text' in entry ? (entry.text as string) : '';
+      expect(text).toBe('(memory.context command not available)');
+    });
+
+    it('ReadResource returns error text when context command returns an error', async () => {
+      const client = await connect(buildRegistryWithFailingContext());
+      const result = await client.readResource({ uri: 'memento://context' });
+      expect(result.contents).toHaveLength(1);
+      const entry = result.contents[0];
+      const text = entry !== undefined && 'text' in entry ? (entry.text as string) : '';
+      expect(text).toContain('Error loading context:');
+      expect(text).toContain('database is locked');
+    });
+
+    it('ReadResource returns empty-store message when context has no results', async () => {
+      const client = await connect(buildRegistryWithEmptyContext());
+      const result = await client.readResource({ uri: 'memento://context' });
+      expect(result.contents).toHaveLength(1);
+      const entry = result.contents[0];
+      const text = entry !== undefined && 'text' in entry ? (entry.text as string) : '';
+      expect(text).toContain('No memories found');
+    });
+
+    it('ReadResource for an unknown URI throws an error', async () => {
+      const client = await connect(buildTestRegistry());
+      await expect(client.readResource({ uri: 'memento://unknown' })).rejects.toThrow(
+        /Unknown resource/,
+      );
+    });
+  });
+
+  describe('prompts', () => {
+    it('ListPrompts returns session-context prompt with focus argument', async () => {
+      const client = await connect(buildTestRegistry());
+      const { prompts } = await client.listPrompts();
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]?.name).toBe('session-context');
+      expect(prompts[0]?.description).toBe('Load relevant memories for this session');
+      expect(prompts[0]?.arguments).toEqual([
+        {
+          name: 'focus',
+          description:
+            'Optional topic to focus on (triggers memory.search instead of memory.context)',
+          required: false,
+        },
+      ]);
+    });
+
+    it('GetPrompt with no focus returns context results as messages', async () => {
+      const registry = buildRegistryWithContextAndSearch();
+      const client = await connect(registry);
+      const result = await client.getPrompt({ name: 'session-context' });
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0]?.role).toBe('user');
+      const text = (result.messages[0]?.content as { type: string; text: string }).text;
+      expect(text).toContain('Here are your relevant memories for this session');
+      expect(text).toContain('- [fact] remember this');
+      expect(text).toContain('- [preference] [ui] dark mode');
+      expect(text).toContain('Call memory.confirm on any memory you actually use.');
+    });
+
+    it('GetPrompt with a focus argument uses search instead of context', async () => {
+      const registry = buildRegistryWithContextAndSearch();
+      const client = await connect(registry);
+      const result = await client.getPrompt({
+        name: 'session-context',
+        arguments: { focus: 'dark mode' },
+      });
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0]?.role).toBe('user');
+      const text = (result.messages[0]?.content as { type: string; text: string }).text;
+      expect(text).toContain('Here are the relevant memories for "dark mode"');
+      expect(text).toContain('searched for: dark mode');
+    });
+
+    it('GetPrompt with no focus returns fallback when get_memory_context is not registered', async () => {
+      // buildTestRegistry() has no memory.context command.
+      const client = await connect(buildTestRegistry());
+      const result = await client.getPrompt({ name: 'session-context' });
+      expect(result.messages).toHaveLength(1);
+      const text = (result.messages[0]?.content as { type: string; text: string }).text;
+      expect(text).toBe('(memory.context not available)');
+    });
+
+    it('GetPrompt with no focus returns error when context command fails', async () => {
+      const client = await connect(buildRegistryWithFailingContext());
+      const result = await client.getPrompt({ name: 'session-context' });
+      expect(result.messages).toHaveLength(1);
+      const text = (result.messages[0]?.content as { type: string; text: string }).text;
+      expect(text).toContain('Error:');
+      expect(text).toContain('database is locked');
+    });
+
+    it('GetPrompt with focus returns fallback when search_memory is not registered', async () => {
+      // buildTestRegistry() has no memory.search command.
+      const client = await connect(buildTestRegistry());
+      const result = await client.getPrompt({
+        name: 'session-context',
+        arguments: { focus: 'dark mode' },
+      });
+      expect(result.messages).toHaveLength(1);
+      const text = (result.messages[0]?.content as { type: string; text: string }).text;
+      expect(text).toBe('(memory.search not available)');
+    });
+
+    it('GetPrompt with focus returns error when search command fails', async () => {
+      const client = await connect(buildRegistryWithFailingContextAndSearch());
+      const result = await client.getPrompt({
+        name: 'session-context',
+        arguments: { focus: 'test query' },
+      });
+      expect(result.messages).toHaveLength(1);
+      const text = (result.messages[0]?.content as { type: string; text: string }).text;
+      expect(text).toContain('Error:');
+      expect(text).toContain('embedder not loaded');
+    });
+
+    it('GetPrompt with no focus returns empty-store message when context has no results', async () => {
+      const client = await connect(buildRegistryWithEmptyContext());
+      const result = await client.getPrompt({ name: 'session-context' });
+      expect(result.messages).toHaveLength(1);
+      const text = (result.messages[0]?.content as { type: string; text: string }).text;
+      expect(text).toContain('No memories found yet');
+    });
+
+    it('GetPrompt for unknown prompt name throws an error', async () => {
+      const client = await connect(buildTestRegistry());
+      await expect(client.getPrompt({ name: 'unknown-prompt' })).rejects.toThrow(/Unknown prompt/);
     });
   });
 
