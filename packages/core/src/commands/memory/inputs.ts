@@ -35,30 +35,59 @@ import { confirmGate } from '../confirm-gate.js';
  */
 export const MemoryWriteInputSchema = z
   .object({
-    scope: ScopeSchema,
-    owner: OwnerRefSchema,
-    kind: MemoryKindSchema,
-    tags: z.array(z.string()),
-    pinned: z.boolean(),
-    content: z.string().min(1),
-    summary: z.string().nullable(),
-    storedConfidence: z.number().min(0).max(1),
-    /**
-     * Per-scope idempotency token (ADR-0012 §2). When supplied,
-     * a second `memory.write` with the same `(scope, clientToken)`
-     * while the first memory is still `active` returns the
-     * existing memory id without inserting a new row or audit
-     * event. Tokens are freed when the memory is forgotten.
-     */
-    clientToken: z.string().min(1).max(128).optional(),
-    /**
-     * Privacy flag (ADR-0012 §3). When true the memory is
-     * marked `sensitive`; `memory.list` and `memory.search`
-     * may then project it through the redacted view if
-     * `privacy.redactSensitiveSnippets` is on. Defaults to
-     * `false` when omitted.
-     */
-    sensitive: z.boolean().optional(),
+    scope: ScopeSchema.describe(
+      'Where this memory lives. Discriminated by "type". Use {"type":"global"} for universal memories, {"type":"repo","remote":"github.com/owner/repo"} for repo-scoped, or {"type":"workspace","path":"/absolute/path"} for workspace-scoped.',
+    ),
+    owner: OwnerRefSchema.default({ type: 'local', id: 'self' }).describe(
+      'Who owns this memory. Defaults to {"type":"local","id":"self"} if omitted. In single-user mode this is the only valid value.',
+    ),
+    kind: MemoryKindSchema.describe(
+      'What kind of memory this is. Discriminated by "type". Options: {"type":"fact"}, {"type":"preference"}, {"type":"decision","rationale":"..."}, {"type":"todo","due":null}, {"type":"snippet","language":"typescript"}.',
+    ),
+    tags: z
+      .array(z.string())
+      .describe(
+        'Freeform tags for categorisation. Normalised to lowercase on ingest. Example: ["project:memento", "architecture"].',
+      ),
+    pinned: z
+      .boolean()
+      .optional()
+      .describe(
+        'If true, this memory is exempt from confidence decay and will never auto-archive. Defaults to the write.defaultPinned config value (false) when omitted.',
+      ),
+    content: z
+      .string()
+      .min(1)
+      .describe('The memory content — the actual information to remember. Must be non-empty.'),
+    summary: z
+      .string()
+      .nullable()
+      .default(null)
+      .describe(
+        'A short summary of the content for display in listings. Defaults to null if omitted.',
+      ),
+    storedConfidence: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe(
+        'How confident this memory is, from 0.0 to 1.0. Decays over time unless confirmed. Defaults to the write.defaultConfidence config value (1.0) when omitted.',
+      ),
+    clientToken: z
+      .string()
+      .min(1)
+      .max(128)
+      .optional()
+      .describe(
+        'Optional idempotency token. If a memory with the same (scope, clientToken) already exists and is active, the existing id is returned without creating a duplicate.',
+      ),
+    sensitive: z
+      .boolean()
+      .optional()
+      .describe(
+        'Optional privacy flag. When true, content may be redacted in listings if privacy.redactSensitiveSnippets is enabled. Defaults to false.',
+      ),
   })
   .strict();
 
@@ -84,7 +113,7 @@ export const MemoryWriteManyInputSchema = z
  */
 export const MemoryReadInputSchema = z
   .object({
-    id: MemoryIdSchema,
+    id: MemoryIdSchema.describe('The ULID of the memory to read.'),
   })
   .strict();
 
@@ -98,11 +127,28 @@ export const MemoryReadInputSchema = z
  */
 export const MemoryListInputSchema = z
   .object({
-    status: z.enum(MEMORY_STATUSES).optional(),
-    kind: z.enum(MEMORY_KIND_TYPES).optional(),
-    pinned: z.boolean().optional(),
-    scope: ScopeSchema.optional(),
-    limit: z.number().int().positive().optional(),
+    status: z
+      .enum(MEMORY_STATUSES)
+      .optional()
+      .describe(
+        'Filter by status: "active", "superseded", "forgotten", or "archived". Omit for all.',
+      ),
+    kind: z
+      .enum(MEMORY_KIND_TYPES)
+      .optional()
+      .describe(
+        'Filter by kind type: "fact", "preference", "decision", "todo", or "snippet". Omit for all.',
+      ),
+    pinned: z.boolean().optional().describe('Filter by pinned status. Omit for all.'),
+    scope: ScopeSchema.optional().describe(
+      'Filter by scope. Same shape as memory.write scope. Omit to list across all scopes.',
+    ),
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Maximum number of memories to return. Omit for server default.'),
   })
   .strict();
 
@@ -112,8 +158,10 @@ export const MemoryListInputSchema = z
  */
 export const MemorySupersedeInputSchema = z
   .object({
-    oldId: MemoryIdSchema,
-    next: MemoryWriteInputSchema,
+    oldId: MemoryIdSchema.describe('The ULID of the memory being replaced.'),
+    next: MemoryWriteInputSchema.describe(
+      'The full new memory to create (same shape as memory.write input). It will link back to oldId.',
+    ),
   })
   .strict();
 
@@ -124,7 +172,7 @@ export const MemorySupersedeInputSchema = z
  */
 export const MemoryIdInputSchema = z
   .object({
-    id: MemoryIdSchema,
+    id: MemoryIdSchema.describe('The ULID of the target memory.'),
   })
   .strict();
 
@@ -136,15 +184,23 @@ export const MemoryIdInputSchema = z
  */
 export const MemoryUpdateInputSchema = z
   .object({
-    id: MemoryIdSchema,
+    id: MemoryIdSchema.describe('The ULID of the memory to update.'),
     patch: z
       .object({
-        tags: z.array(z.string()).optional(),
-        kind: MemoryKindSchema.optional(),
-        pinned: z.boolean().optional(),
-        sensitive: z.boolean().optional(),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe('New tags to replace existing tags. Omit to leave unchanged.'),
+        kind: MemoryKindSchema.optional().describe(
+          'New kind. Same shape as memory.write kind. Omit to leave unchanged.',
+        ),
+        pinned: z.boolean().optional().describe('New pinned status. Omit to leave unchanged.'),
+        sensitive: z.boolean().optional().describe('New sensitive flag. Omit to leave unchanged.'),
       })
       .strict()
+      .describe(
+        'Patch object — must contain at least one field. Only non-content fields can be updated; to change content, use memory.supersede.',
+      )
       .refine(
         (p) =>
           p.tags !== undefined ||
@@ -169,9 +225,13 @@ export const MemoryUpdateInputSchema = z
  */
 export const MemoryForgetInputSchema = z
   .object({
-    id: MemoryIdSchema,
-    reason: z.string().max(512).nullable(),
-    confirm: confirmGate(),
+    id: MemoryIdSchema.describe('The ULID of the memory to forget.'),
+    reason: z
+      .string()
+      .max(512)
+      .nullable()
+      .describe('Why this memory is being forgotten. Pass null if no reason.'),
+    confirm: confirmGate().describe('Safety gate — must be true to proceed.'),
   })
   .strict();
 
@@ -184,8 +244,8 @@ export const MemoryForgetInputSchema = z
  */
 export const MemoryArchiveInputSchema = z
   .object({
-    id: MemoryIdSchema,
-    confirm: confirmGate(),
+    id: MemoryIdSchema.describe('The ULID of the memory to archive.'),
+    confirm: confirmGate().describe('Safety gate — must be true to proceed.'),
   })
   .strict();
 
@@ -204,12 +264,25 @@ export const MemoryArchiveInputSchema = z
  */
 export const MemoryBulkFilterSchema = z
   .object({
-    scope: ScopeSchema.optional(),
-    kind: z.enum(MEMORY_KIND_TYPES).optional(),
-    pinned: z.boolean().optional(),
-    createdAtLte: TimestampSchema.optional(),
+    scope: ScopeSchema.optional().describe('Narrow to a specific scope.'),
+    kind: z
+      .enum(MEMORY_KIND_TYPES)
+      .optional()
+      .describe(
+        'Narrow to a specific kind: "fact", "preference", "decision", "todo", or "snippet".',
+      ),
+    pinned: z
+      .boolean()
+      .optional()
+      .describe('Narrow to pinned (true) or unpinned (false) memories.'),
+    createdAtLte: TimestampSchema.optional().describe(
+      'Only include memories created at or before this timestamp. ISO-8601 UTC.',
+    ),
   })
   .strict()
+  .describe(
+    'Filter for bulk operations. At least one field must be set to prevent accidental mass operations.',
+  )
   .refine(
     (f) =>
       f.scope !== undefined ||
@@ -236,10 +309,17 @@ export const MemoryBulkFilterSchema = z
  */
 export const MemoryForgetManyInputSchema = z
   .object({
-    filter: MemoryBulkFilterSchema,
-    reason: z.string().max(512).nullable(),
-    dryRun: z.boolean().default(true),
-    confirm: confirmGate(),
+    filter: MemoryBulkFilterSchema.describe('Filter selecting which memories to forget.'),
+    reason: z
+      .string()
+      .max(512)
+      .nullable()
+      .describe('Reason for forgetting, applied to each affected memory. Pass null if no reason.'),
+    dryRun: z
+      .boolean()
+      .default(true)
+      .describe('If true (default), only previews what would be forgotten without acting.'),
+    confirm: confirmGate().describe('Safety gate — must be true to proceed.'),
   })
   .strict();
 
@@ -250,9 +330,12 @@ export const MemoryForgetManyInputSchema = z
  */
 export const MemoryArchiveManyInputSchema = z
   .object({
-    filter: MemoryBulkFilterSchema,
-    dryRun: z.boolean().default(true),
-    confirm: confirmGate(),
+    filter: MemoryBulkFilterSchema.describe('Filter selecting which memories to archive.'),
+    dryRun: z
+      .boolean()
+      .default(true)
+      .describe('If true (default), only previews what would be archived without acting.'),
+    confirm: confirmGate().describe('Safety gate — must be true to proceed.'),
   })
   .strict();
 
@@ -271,10 +354,21 @@ export const MemoryArchiveManyInputSchema = z
  */
 export const MemorySetEmbeddingInputSchema = z
   .object({
-    id: MemoryIdSchema,
-    model: z.string().min(1).max(128),
-    dimension: z.number().int().positive().max(4096),
-    vector: z.array(z.number().finite()),
+    id: MemoryIdSchema.describe('The ULID of the memory to attach an embedding to.'),
+    model: z
+      .string()
+      .min(1)
+      .max(128)
+      .describe('Embedding model name. Example: "bge-small-en-v1.5".'),
+    dimension: z
+      .number()
+      .int()
+      .positive()
+      .max(4096)
+      .describe('Vector dimension. Must match vector array length. Example: 384.'),
+    vector: z
+      .array(z.number().finite())
+      .describe('The embedding vector as an array of finite floats. Length must equal dimension.'),
   })
   .strict();
 
@@ -292,8 +386,19 @@ export const MemorySetEmbeddingInputSchema = z
  */
 export const MemoryEventsInputSchema = z
   .object({
-    id: MemoryIdSchema.optional(),
-    types: z.array(z.enum(MEMORY_EVENT_TYPES)).nonempty().optional(),
-    limit: z.number().int().positive().optional(),
+    id: MemoryIdSchema.optional().describe(
+      'Optional memory ULID. If provided, returns events for that memory in commit order. If omitted, returns the cross-memory event tail newest-first.',
+    ),
+    types: z
+      .array(z.enum(MEMORY_EVENT_TYPES))
+      .nonempty()
+      .optional()
+      .describe('Filter to specific event types. Omit for all event types.'),
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Maximum events to return. Server clamps to configured max.'),
   })
   .strict();

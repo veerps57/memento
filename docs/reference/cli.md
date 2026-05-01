@@ -197,19 +197,37 @@ Run conflict detection. In `memory` mode, evaluates per-kind policies for one hy
 
 ### `memento memory archive`
 
-Move a memory to long-term storage. Idempotent on already-archived rows.
+Move a memory to long-term storage. Idempotent on already-archived rows. Requires confirm: true.
+
+Example:
+
+```json
+{"id":"01HYXZ...","confirm":true}
+```
 
 - **Side-effect:** `destructive` — Bulk or irreversible; the CLI requires `--confirm` to execute.
 
 ### `memento memory archive_many`
 
-Bulk-archive memories matching a filter. Idempotent on already-archived rows. Defaults to dryRun=true; the apply path is capped by safety.bulkDestructiveLimit.
+Bulk-archive memories matching a filter. Idempotent on already-archived rows. Requires confirm: true. Defaults to dryRun=true (preview only); set dryRun=false to apply.
+
+Example (dry run):
+
+```json
+{"filter":{"kind":"snippet","pinned":false},"confirm":true}
+```
 
 - **Side-effect:** `destructive` — Bulk or irreversible; the CLI requires `--confirm` to execute.
 
 ### `memento memory confirm`
 
-Re-affirm an active memory (bumps lastConfirmedAt).
+Re-affirm an active memory (bumps lastConfirmedAt, resetting confidence decay).
+
+Example:
+
+```json
+{"id":"01HYXZ..."}
+```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
@@ -223,17 +241,35 @@ Read the audit log: events for one memory (ascending) when id is given, otherwis
 
 Soft-remove an active memory; reversible via memory.restore.
 
+Example:
+
+```json
+{"id":"01HYXZ...","reason":"No longer relevant","confirm":true}
+```
+
 - **Side-effect:** `destructive` — Bulk or irreversible; the CLI requires `--confirm` to execute.
 
 ### `memento memory forget_many`
 
-Bulk-soft-remove active memories matching a filter. Defaults to dryRun=true; the apply path is capped by safety.bulkDestructiveLimit.
+Bulk-soft-remove active memories matching a filter. Requires confirm: true. Defaults to dryRun=true (preview only); set dryRun=false to apply.
+
+Example (dry run):
+
+```json
+{"filter":{"kind":"todo"},"reason":"Completed sprint","confirm":true}
+```
 
 - **Side-effect:** `destructive` — Bulk or irreversible; the CLI requires `--confirm` to execute.
 
 ### `memento memory list`
 
 List memories matching the given filter, newest first.
+
+Examples:
+
+- All active: `{}`
+- Only facts: `{"kind":"fact"}`
+- Pinned in a repo: `{"pinned":true,"scope":{"type":"repo","remote":"github.com/acme/app"}}`
 
 - **Side-effect:** `read` — Pure read; safe to call freely.
 
@@ -247,11 +283,22 @@ Fetch a single memory by id, or null if absent.
 
 Move a forgotten or archived memory back to active.
 
+Example:
+
+```json
+{"id":"01HYXZ..."}
+```
+
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
 ### `memento memory search`
 
 Search memories by free text using FTS5 + the configured linear ranker.
+
+Examples:
+
+- Simple: `{"text":"database migration"}`
+- With filters: `{"text":"auth","kinds":["decision","fact"],"limit":5}`
 
 - **Side-effect:** `read` — Pure read; safe to call freely.
 
@@ -263,19 +310,45 @@ Attach or replace the embedding for an active memory; appends a reembedded event
 
 ### `memento memory supersede`
 
-Replace an existing memory with a new one in a single transaction.
+Replace an existing memory with a new one in a single transaction. Use this instead of update when the content changes.
+
+Example:
+
+```json
+{"oldId":"01HYXZ...","next":{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["corrected"],"pinned":false,"content":"Updated fact content.","summary":null,"storedConfidence":0.9}}
+```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
 ### `memento memory update`
 
-Update taxonomy fields (tags / kind / pinned) of an active memory.
+Update taxonomy fields (tags / kind / pinned) of an active memory. Does NOT change content — use memory.supersede for that.
+
+Example:
+
+```json
+{"id":"01HYXZ...","patch":{"tags":["updated-tag"],"pinned":true}}
+```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
 ### `memento memory write`
 
 Create a new memory in the given scope.
+
+Workflow: search first to avoid duplicates. If a similar memory exists, use memory.supersede to update it instead. Use memory.update for non-content changes (tags, pinned).
+
+Minimal example (pinned, storedConfidence, summary, owner all have defaults):
+
+```json
+{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"content":"Memento uses SQLite for storage."}
+```
+
+Full example:
+
+```json
+{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"pinned":false,"content":"Memento uses SQLite for storage.","summary":"Storage engine choice","storedConfidence":0.95}
+```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
@@ -289,10 +362,14 @@ Atomically create multiple memories in a single transaction. Per-item clientToke
 
 Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, and per-status memory counts. Read-only; safe to call freely.
 
+Tip: call system.list_scopes to discover valid scopes for memory.write.
+
 - **Side-effect:** `read` — Pure read; safe to call freely.
 
 ### `memento system list_scopes`
 
-List every scope that has at least one active memory, with per-scope count and most-recent write timestamp. Sorted by count desc. Read-only; safe to call freely. Useful for an assistant that needs to discover which scopes the user has populated before issuing scoped reads.
+List every scope that has at least one active memory, with per-scope count and most-recent write timestamp. Sorted by count desc. Read-only; safe to call freely.
+
+Call this before writing to discover valid scopes. If the response is empty, use {"type":"global"} as a safe default scope for memory.write. The returned scope objects can be passed directly to memory.write or memory.search.
 
 - **Side-effect:** `read` — Pure read; safe to call freely.

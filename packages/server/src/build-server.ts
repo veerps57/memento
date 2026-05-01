@@ -134,7 +134,83 @@ function deriveAnnotations(command: AnyCommand): ToolAnnotations {
 interface JsonSchemaLike {
   type?: string;
   anyOf?: readonly JsonSchemaLike[];
+  properties?: Record<string, JsonSchemaLike>;
+  items?: JsonSchemaLike;
+  oneOf?: readonly JsonSchemaLike[];
+  const?: unknown;
+  discriminator?: { propertyName: string };
   [key: string]: unknown;
+}
+
+/**
+ * Detect the discriminator property from an `anyOf` / `oneOf`
+ * array. Returns the shared property name whose every branch
+ * constrains it with `const`, or `undefined` if the union is
+ * not a discriminated one.
+ */
+function detectDiscriminator(branches: readonly JsonSchemaLike[]): string | undefined {
+  if (branches.length < 2) return undefined;
+
+  // Collect candidate properties: those with `const` in the first branch.
+  const first = branches[0];
+  if (first?.type !== 'object' || first.properties === undefined) return undefined;
+
+  for (const propName of Object.keys(first.properties)) {
+    const prop = first.properties[propName];
+    if (prop?.const === undefined) continue;
+
+    // Check every other branch has the same property with a `const`.
+    const allHaveConst = branches.every((branch) => {
+      const p = branch.properties?.[propName];
+      return p !== undefined && p.const !== undefined;
+    });
+    if (allHaveConst) return propName;
+  }
+  return undefined;
+}
+
+/**
+ * Recursively walk a JSON Schema tree and annotate `anyOf` /
+ * `oneOf` arrays that represent discriminated unions with an
+ * OpenAPI 3.1-style `discriminator: { propertyName }` hint.
+ *
+ * Many LLM tool-calling implementations (including Claude and
+ * GPT-4) recognise this annotation and use it to select the
+ * correct branch without needing to trial-parse all variants.
+ *
+ * This mutates the schema in place for efficiency — it is
+ * called on a freshly-produced `zodToJsonSchema` output that
+ * is not shared.
+ */
+function injectDiscriminatorHints(schema: JsonSchemaLike): JsonSchemaLike {
+  // Annotate top-level anyOf / oneOf.
+  for (const key of ['anyOf', 'oneOf'] as const) {
+    const branches = schema[key] as readonly JsonSchemaLike[] | undefined;
+    if (Array.isArray(branches)) {
+      const disc = detectDiscriminator(branches);
+      if (disc !== undefined) {
+        schema.discriminator = { propertyName: disc };
+      }
+      // Recurse into branches.
+      for (const branch of branches) {
+        injectDiscriminatorHints(branch);
+      }
+    }
+  }
+
+  // Recurse into object properties.
+  if (schema.properties !== undefined) {
+    for (const prop of Object.values(schema.properties)) {
+      injectDiscriminatorHints(prop);
+    }
+  }
+
+  // Recurse into array items.
+  if (schema.items !== undefined && typeof schema.items === 'object') {
+    injectDiscriminatorHints(schema.items);
+  }
+
+  return schema;
 }
 
 /**
@@ -224,6 +300,7 @@ function commandToTool(command: AnyCommand): Tool {
     $refStrategy: 'none',
     target: 'jsonSchema7',
   }) as JsonSchemaLike;
+  injectDiscriminatorHints(rawSchema);
   const jsonSchema = normaliseToolInputSchema(rawSchema, command.name);
 
   return {

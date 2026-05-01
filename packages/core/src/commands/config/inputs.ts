@@ -12,9 +12,14 @@ import { z } from 'zod';
 const KNOWN_KEYS = new Set<string>(CONFIG_KEY_NAMES);
 
 /** Accepts only keys registered in `CONFIG_KEYS`. */
-const ConfigKeyArgSchema = z.string().refine((k): k is ConfigKey => KNOWN_KEYS.has(k), {
-  message: 'unknown config key',
-});
+const ConfigKeyArgSchema = z
+  .string()
+  .describe(
+    'A registered config key name (dotted path). Examples: "retrieval.decay.halfLifeDays", "scrubber.enabled", "privacy.redactSensitiveSnippets". Use config.list to see all available keys.',
+  )
+  .refine((k): k is ConfigKey => KNOWN_KEYS.has(k), {
+    message: 'unknown config key',
+  });
 
 /** `config.get`, `config.unset`. */
 export const ConfigKeyInputSchema = z
@@ -29,7 +34,12 @@ export const ConfigKeyInputSchema = z
  */
 export const ConfigListInputSchema = z
   .object({
-    prefix: z.string().optional(),
+    prefix: z
+      .string()
+      .optional()
+      .describe(
+        'Optional dotted prefix to filter keys. Example: "retrieval." returns all retrieval.* keys. Omit for all keys.',
+      ),
   })
   .strict();
 
@@ -41,7 +51,11 @@ export const ConfigListInputSchema = z
 export const ConfigSetInputSchema = z
   .object({
     key: ConfigKeyArgSchema,
-    value: z.unknown(),
+    value: z
+      .unknown()
+      .describe(
+        'The value to set. Type depends on the key — use config.get to see the current value and infer the expected type.',
+      ),
   })
   .strict();
 
@@ -52,6 +66,11 @@ export const ConfigSetInputSchema = z
 export const ConfigHistoryInputSchema = z
   .object({
     key: ConfigKeyArgSchema,
-    limit: z.number().int().positive().optional(),
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Maximum number of history entries to return.'),
   })
   .strict();

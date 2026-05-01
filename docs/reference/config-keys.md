@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 50 keys.
+Total: 52 keys.
 
 ## `decay.*`
 
@@ -110,6 +110,13 @@ Total: 50 keys.
 | Key | Default | Mutable | Description |
 | --- | --- | --- | --- |
 | `privacy.redactSensitiveSnippets` | `true` | yes | When true, `memory.list` and `memory.search` project sensitive memories to a redacted view (`content: null`, `redacted: true`). `memory.read` always returns full text. |
+
+## `write.*`
+
+| Key | Default | Mutable | Description |
+| --- | --- | --- | --- |
+| `write.defaultConfidence` | `1` | yes | Default `storedConfidence` for new memories when the caller omits the field. 1.0 means full confidence at write time; decay handles degradation over time. |
+| `write.defaultPinned` | `false` | yes | Default `pinned` value for new memories when the caller omits the field. Pinned memories are exempt from confidence decay. |
 
 ## `safety.*`
 

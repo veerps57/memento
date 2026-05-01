@@ -21,42 +21,40 @@ import { z } from 'zod';
 
 export const MemorySearchInputSchema = z
   .object({
-    /** Free-text query. The engine sanitises FTS5 sigils internally. */
-    text: z.string().min(1),
-    /**
-     * Optional explicit scope filter. When omitted the search runs
-     * against every scope visible to the actor — the host
-     * (`@psraghuveer/memento-server`) decides whether to inject the active
-     * layered scopes here. Keeping that policy out of the engine
-     * means CLI runs (which know the cwd) and MCP runs (which know
-     * the session) compose the same primitive consistently.
-     */
-    scopes: z.array(ScopeSchema).optional(),
-    /**
-     * Statuses to include. Defaults to `['active']` inside the
-     * engine; surfaced here so admin tooling can audit
-     * superseded / forgotten / archived memories explicitly.
-     */
-    includeStatuses: z.array(z.enum(MEMORY_STATUSES)).optional(),
-    /** Optional kind filter. */
-    kinds: z.array(z.enum(MEMORY_KIND_TYPES)).optional(),
-    /**
-     * Page size. The engine clamps against
-     * `retrieval.search.maxLimit` so a malicious caller cannot
-     * exhaust memory by asking for `Number.MAX_SAFE_INTEGER`.
-     */
-    limit: z.number().int().positive().optional(),
-    /**
-     * Pagination cursor. Pass the `nextCursor` from the previous
-     * page to fetch the next slice. Stable across pages because
-     * the ranker is a pure function of the query + memory state.
-     */
-    cursor: MemoryIdSchema.optional(),
-    /**
-     * Override clock. Useful for replay / test harnesses; in
-     * production the engine uses `deps.clock` or wall-clock now.
-     */
-    now: TimestampSchema.optional(),
+    text: z
+      .string()
+      .min(1)
+      .describe('Free-text search query. Searches memory content and summaries.'),
+    scopes: z
+      .array(ScopeSchema)
+      .optional()
+      .describe(
+        'Optional scope filter. Each element uses the same shape as memory.write scope (e.g. {"type":"global"}). Omit to search all visible scopes.',
+      ),
+    includeStatuses: z
+      .array(z.enum(MEMORY_STATUSES))
+      .optional()
+      .describe(
+        'Which statuses to include. Defaults to ["active"]. Options: "active", "superseded", "forgotten", "archived".',
+      ),
+    kinds: z
+      .array(z.enum(MEMORY_KIND_TYPES))
+      .optional()
+      .describe(
+        'Filter by memory kind types. Options: "fact", "preference", "decision", "todo", "snippet". Omit for all.',
+      ),
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Maximum number of results to return. Server clamps to configured max.'),
+    cursor: MemoryIdSchema.optional().describe(
+      'Pagination cursor — pass the nextCursor from a previous search response to get the next page.',
+    ),
+    now: TimestampSchema.optional().describe(
+      'Override clock for decay calculation. ISO-8601 UTC. Omit to use wall-clock time.',
+    ),
   })
   .strict();
 

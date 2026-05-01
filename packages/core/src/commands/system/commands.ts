@@ -151,7 +151,7 @@ export function createSystemCommands(deps: CreateSystemCommandsDeps): readonly A
     outputSchema: SystemInfoOutputSchema,
     metadata: {
       description:
-        'Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, and per-status memory counts. Read-only; safe to call freely.',
+        'Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, and per-status memory counts. Read-only; safe to call freely.\n\nTip: call system.list_scopes to discover valid scopes for memory.write.',
     },
     handler: async () =>
       runRepo('system.info', async () => {
@@ -195,7 +195,7 @@ export function createSystemCommands(deps: CreateSystemCommandsDeps): readonly A
     outputSchema: SystemListScopesOutputSchema,
     metadata: {
       description:
-        'List every scope that has at least one active memory, with per-scope count and most-recent write timestamp. Sorted by count desc. Read-only; safe to call freely. Useful for an assistant that needs to discover which scopes the user has populated before issuing scoped reads.',
+        'List every scope that has at least one active memory, with per-scope count and most-recent write timestamp. Sorted by count desc. Read-only; safe to call freely.\n\nCall this before writing to discover valid scopes. If the response is empty, use {"type":"global"} as a safe default scope for memory.write. The returned scope objects can be passed directly to memory.write or memory.search.',
     },
     handler: async () =>
       runRepo('system.list_scopes', async () => {

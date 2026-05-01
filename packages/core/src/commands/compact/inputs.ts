@@ -18,12 +18,14 @@ import { confirmGate } from '../confirm-gate.js';
  */
 export const CompactRunInputSchema = z
   .object({
-    batchSize: z.number().int().positive().optional(),
-    /**
-     * Safety gate from ADR-0012. Compaction rewrites memory
-     * status and is not reversible by an inverse command;
-     * the gate is invariant (AGENTS.md rule 12).
-     */
-    confirm: confirmGate(),
+    batchSize: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Number of memories to process per batch. Server uses default if omitted.'),
+    confirm: confirmGate().describe(
+      'Safety gate — must be true to proceed. Compaction is not reversible.',
+    ),
   })
   .strict();

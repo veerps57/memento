@@ -38,19 +38,41 @@ const POSIX_ABSOLUTE_PATTERN = /^\//;
 const WINDOWS_ABSOLUTE_PATTERN = /^[A-Za-z]:[\\/]/;
 const REPO_REMOTE_PATTERN = /^[a-z0-9.-]+\/[a-z0-9._-]+\/[a-z0-9._-]+$/;
 
-export const MemoryIdSchema = z.string().regex(ULID_PATTERN).brand<'MemoryId'>();
+export const MemoryIdSchema = z
+  .string()
+  .regex(ULID_PATTERN)
+  .describe('A 26-character ULID string (Crockford base32). Example: "01HYXZ1A2B3C4D5E6F7G8H9J0K".')
+  .brand<'MemoryId'>();
 export type MemoryId = z.infer<typeof MemoryIdSchema>;
 
-export const EventIdSchema = z.string().regex(ULID_PATTERN).brand<'EventId'>();
+export const EventIdSchema = z
+  .string()
+  .regex(ULID_PATTERN)
+  .describe('A 26-character ULID string identifying an event.')
+  .brand<'EventId'>();
 export type EventId = z.infer<typeof EventIdSchema>;
 
-export const SessionIdSchema = z.string().regex(ULID_PATTERN).brand<'SessionId'>();
+export const SessionIdSchema = z
+  .string()
+  .regex(ULID_PATTERN)
+  .describe('A 26-character ULID string identifying a session.')
+  .brand<'SessionId'>();
 export type SessionId = z.infer<typeof SessionIdSchema>;
 
-export const ConflictIdSchema = z.string().regex(ULID_PATTERN).brand<'ConflictId'>();
+export const ConflictIdSchema = z
+  .string()
+  .regex(ULID_PATTERN)
+  .describe('A 26-character ULID string identifying a conflict.')
+  .brand<'ConflictId'>();
 export type ConflictId = z.infer<typeof ConflictIdSchema>;
 
-export const TimestampSchema = z.string().regex(ISO_TIMESTAMP_PATTERN).brand<'Timestamp'>();
+export const TimestampSchema = z
+  .string()
+  .regex(ISO_TIMESTAMP_PATTERN)
+  .describe(
+    'ISO-8601 UTC timestamp with millisecond precision. Example: "2025-01-15T09:30:00.000Z".',
+  )
+  .brand<'Timestamp'>();
 export type Timestamp = z.infer<typeof TimestampSchema>;
 
 /**
@@ -60,6 +82,9 @@ export type Timestamp = z.infer<typeof TimestampSchema>;
  */
 export const TagSchema = z
   .string()
+  .describe(
+    'A tag string (1–64 chars). Trimmed and lowercased on ingest. Allowed characters: a-z, 0-9, "-", "_", "/", ".", ":". Examples: "project:memento", "lang-typescript", "config".',
+  )
   .transform((value) => value.trim().toLowerCase())
   .pipe(z.string().min(1).max(64).regex(TAG_PATTERN))
   .brand<'Tag'>();
@@ -68,11 +93,20 @@ export type Tag = z.infer<typeof TagSchema>;
 export const AbsolutePathSchema = z
   .string()
   .min(1)
+  .describe(
+    'An absolute filesystem path (POSIX or Windows). Examples: "/home/user/project", "C:\\Users\\user\\project".',
+  )
   .refine((value) => POSIX_ABSOLUTE_PATTERN.test(value) || WINDOWS_ABSOLUTE_PATTERN.test(value), {
     message: 'AbsolutePath must be a POSIX or Windows absolute path',
   })
   .brand<'AbsolutePath'>();
 export type AbsolutePath = z.infer<typeof AbsolutePathSchema>;
 
-export const RepoRemoteSchema = z.string().regex(REPO_REMOTE_PATTERN).brand<'RepoRemote'>();
+export const RepoRemoteSchema = z
+  .string()
+  .regex(REPO_REMOTE_PATTERN)
+  .describe(
+    'Canonical lowercased "host/owner/name" form of a git remote. Example: "github.com/acme/my-repo".',
+  )
+  .brand<'RepoRemote'>();
 export type RepoRemote = z.infer<typeof RepoRemoteSchema>;
