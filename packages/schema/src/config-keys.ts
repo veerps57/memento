@@ -498,6 +498,110 @@ export const CONFIG_KEYS = {
       'Maximum number of memories a single bulk-destructive call (`memory.forget_many`, `memory.archive_many`) may transition. Applied when `dryRun: false`; rehearsals are uncapped. Requests exceeding the cap are rejected with `INVALID_INPUT` before any row is touched.',
   }),
 
+  // — Extraction —
+  // Auto-extraction pipeline per design proposal
+  // `docs/design-proposals/auto-extraction-and-context-injection.md`.
+  // The assistant dumps candidates; the server deduplicates via
+  // embedding similarity against existing memories before writing.
+  'extraction.enabled': defineKey({
+    schema: z.boolean(),
+    default: true,
+    mutable: true,
+    description:
+      'Master switch for `memory.extract`. When false, the command returns a structured error.',
+  }),
+  'extraction.dedup.threshold': defineKey({
+    schema: Probability,
+    default: 0.85,
+    mutable: true,
+    description:
+      'Cosine similarity floor for dedup consideration during extraction. Candidates below this are written as new.',
+  }),
+  'extraction.dedup.identicalThreshold': defineKey({
+    schema: Probability,
+    default: 0.95,
+    mutable: true,
+    description:
+      'Cosine similarity above which a candidate is treated as a duplicate and skipped (same kind required).',
+  }),
+  'extraction.defaultConfidence': defineKey({
+    schema: Probability,
+    default: 0.8,
+    mutable: true,
+    description:
+      'Default `storedConfidence` for memories written via `memory.extract`. Lower than manual writes so extracted memories decay faster.',
+  }),
+  'extraction.autoTag': defineKey({
+    schema: z.string(),
+    default: 'source:extracted',
+    mutable: true,
+    description:
+      'Tag automatically added to memories written via `memory.extract`. Empty string to disable.',
+  }),
+  'extraction.maxCandidatesPerCall': defineKey({
+    schema: PositiveInt,
+    default: 20,
+    mutable: true,
+    description: 'Maximum number of candidates accepted by a single `memory.extract` call.',
+  }),
+
+  // — Context —
+  // Query-less ranked retrieval per design proposal
+  // `docs/design-proposals/auto-extraction-and-context-injection.md`.
+  // Surfaces the most relevant memories for the current session
+  // without requiring a search query.
+  'context.defaultLimit': defineKey({
+    schema: PositiveInt,
+    default: 20,
+    mutable: true,
+    description:
+      'Default number of memories returned by `memory.context` when no limit is supplied.',
+  }),
+  'context.maxLimit': defineKey({
+    schema: PositiveInt,
+    default: 100,
+    mutable: true,
+    description: 'Hard upper bound on `memory.context` result count.',
+  }),
+  'context.includeKinds': defineKey({
+    schema: z.array(z.enum(['fact', 'preference', 'decision', 'todo', 'snippet'])),
+    default: ['fact', 'preference', 'decision'],
+    mutable: true,
+    description:
+      'Which memory kinds `memory.context` includes by default. Todos and snippets are often transient.',
+  }),
+  'context.ranker.weights.confidence': defineKey({
+    schema: z.number().min(0).finite(),
+    default: 1.0,
+    mutable: true,
+    description: 'Context ranker weight on effective confidence.',
+  }),
+  'context.ranker.weights.recency': defineKey({
+    schema: z.number().min(0).finite(),
+    default: 1.5,
+    mutable: true,
+    description: 'Context ranker weight on recency (higher than search — context favours fresh).',
+  }),
+  'context.ranker.weights.scope': defineKey({
+    schema: z.number().min(0).finite(),
+    default: 2.0,
+    mutable: true,
+    description: 'Context ranker weight on scope match (strong: prefer local context).',
+  }),
+  'context.ranker.weights.pinned': defineKey({
+    schema: z.number().min(0).finite(),
+    default: 3.0,
+    mutable: true,
+    description: 'Context ranker weight for pinned memories (always surface).',
+  }),
+  'context.ranker.weights.frequency': defineKey({
+    schema: z.number().min(0).finite(),
+    default: 0.5,
+    mutable: true,
+    description:
+      'Context ranker weight for confirmation frequency (memories confirmed often rank higher).',
+  }),
+
   // — Export —
   // Per ADR-0013. The export format is `memento-export/v1`; the
   // two knobs below tune the *defaults* the lifecycle commands

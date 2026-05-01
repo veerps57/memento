@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Canonical instructions for AI coding agents working on Memento.
+> Canonical instructions for AI agents working on the Memento codebase.
 
 This file is read by tools that follow the [agents.md](https://agents.md) convention — Cursor, Cline, Aider, Claude Code, OpenCode, and others. `CLAUDE.md` is a symlink to this file. `.github/copilot-instructions.md` points back here.
 
@@ -110,7 +110,7 @@ The cost of asking is small. The cost of a confidently wrong PR is large.
 
 ## For AI agents specifically
 
-If you are an AI coding agent, please:
+If you are an AI agent, please:
 
 - **Disclose your involvement** in the PR description (the PR template has a section for this).
 - **Verify every line you generate.** Hallucinated imports, fabricated API calls, and invented config keys are the most common failure modes.

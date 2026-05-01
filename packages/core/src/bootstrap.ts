@@ -50,6 +50,8 @@ import {
   createConflictCommands,
   createEmbeddingCommands,
   createMemoryCommands,
+  createMemoryContextCommand,
+  createMemoryExtractCommand,
   createMemorySearchCommand,
   createRegistry,
   createSystemCommands,
@@ -228,6 +230,43 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     // construction.
     ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
   });
+  const contextCommand = createMemoryContextCommand({
+    db: db.db,
+    memoryRepository,
+    configStore,
+  });
+  const extractCommand = createMemoryExtractCommand({
+    db: db.db,
+    memoryRepository,
+    configStore,
+    ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
+    afterWrite: (memory, ctx) => {
+      // Same fire-and-forget hook chain as the main write path:
+      // conflict detection + auto-embed.
+      void runConflictHook(memory, { memoryRepository, conflictRepository }, hookConfig, {
+        actor: ctx.actor,
+        maxCandidates,
+      });
+      if (embeddingProvider !== undefined && configStore.get('embedding.autoEmbed')) {
+        void (async () => {
+          try {
+            const vector = await embeddingProvider.embed(memory.content);
+            await memoryRepository.setEmbedding(
+              memory.id,
+              {
+                model: embeddingProvider.model,
+                dimension: embeddingProvider.dimension,
+                vector,
+              },
+              { actor: ctx.actor },
+            );
+          } catch {
+            // Best-effort: same as the main write path.
+          }
+        })();
+      }
+    },
+  });
   const conflictCommands = createConflictCommands({
     conflictRepository,
     memoryRepository,
@@ -263,6 +302,8 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
   let builder = createRegistry();
   for (const cmd of memoryCommands) builder = builder.register(cmd);
   builder = builder.register(searchCommand);
+  builder = builder.register(contextCommand);
+  builder = builder.register(extractCommand);
   for (const cmd of conflictCommands) builder = builder.register(cmd);
   for (const cmd of compactCommands) builder = builder.register(cmd);
   for (const cmd of configCommands) builder = builder.register(cmd);

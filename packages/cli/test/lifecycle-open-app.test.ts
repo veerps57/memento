@@ -168,4 +168,135 @@ describe('openAppForSurface', () => {
     expect(result.error.message).toContain('/no/such/path.db');
     expect(result.error.message).toContain('disk on fire');
   });
+
+  it('returns CONFIG_ERROR when vector is enabled but no resolver is supplied', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'memento-openapp-'));
+    const dbPath = join(dir, 'memento.db');
+    try {
+      const seeded = await createMementoApp({ dbPath });
+      try {
+        await seeded.configRepository.set(
+          { key: 'retrieval.vector.enabled', value: true, source: 'cli' },
+          { actor: { type: 'cli' } },
+        );
+      } finally {
+        seeded.close();
+      }
+
+      // No resolveEmbedder at all.
+      const deps: LifecycleDeps = {
+        createApp: createMementoApp,
+        migrateStore: rejectMigrateStore,
+        serveStdio: rejectServeStdio,
+      };
+      const result = await openAppForSurface(deps, { dbPath });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('CONFIG_ERROR');
+      expect(result.error.message).toContain('no embedder resolver');
+    } finally {
+      const { rmTmpSync } = await import('./_helpers/rm-tmp.js');
+      rmTmpSync(dir);
+    }
+  });
+
+  it('returns CONFIG_ERROR when the embedder resolver throws', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'memento-openapp-'));
+    const dbPath = join(dir, 'memento.db');
+    try {
+      const seeded = await createMementoApp({ dbPath });
+      try {
+        await seeded.configRepository.set(
+          { key: 'retrieval.vector.enabled', value: true, source: 'cli' },
+          { actor: { type: 'cli' } },
+        );
+      } finally {
+        seeded.close();
+      }
+
+      const deps: LifecycleDeps = {
+        createApp: createMementoApp,
+        migrateStore: rejectMigrateStore,
+        serveStdio: rejectServeStdio,
+        resolveEmbedder: async () => {
+          throw new Error('dlopen failed');
+        },
+      };
+      const result = await openAppForSurface(deps, { dbPath });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('CONFIG_ERROR');
+      expect(result.error.message).toContain('failed to load');
+      expect(result.error.message).toContain('dlopen failed');
+    } finally {
+      const { rmTmpSync } = await import('./_helpers/rm-tmp.js');
+      rmTmpSync(dir);
+    }
+  });
+
+  it('includes ABI rebuild hint when createApp fails with NODE_MODULE_VERSION', async () => {
+    const deps: LifecycleDeps = {
+      createApp: async () => {
+        throw new Error('ERR_DLOPEN_FAILED: was compiled against a different Node.js version');
+      },
+      migrateStore: rejectMigrateStore,
+      serveStdio: rejectServeStdio,
+    };
+    const result = await openAppForSurface(deps, { dbPath: '/tmp/test.db' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('STORAGE_ERROR');
+    expect(result.error.hint).toContain('npm rebuild');
+  });
+
+  it('includes ENOENT hint when createApp fails with missing path', async () => {
+    const deps: LifecycleDeps = {
+      createApp: async () => {
+        throw new Error('ENOENT: no such file or directory');
+      },
+      migrateStore: rejectMigrateStore,
+      serveStdio: rejectServeStdio,
+    };
+    const result = await openAppForSurface(deps, { dbPath: '/no/such/dir/test.db' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('STORAGE_ERROR');
+    expect(result.error.hint).toContain('mkdir');
+  });
+
+  it('includes permission hint when createApp fails with EACCES', async () => {
+    const deps: LifecycleDeps = {
+      createApp: async () => {
+        throw new Error('EACCES: permission denied');
+      },
+      migrateStore: rejectMigrateStore,
+      serveStdio: rejectServeStdio,
+    };
+    const result = await openAppForSurface(deps, { dbPath: '/tmp/test.db' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('STORAGE_ERROR');
+    expect(result.error.hint).toContain('permission');
+  });
+
+  it('includes SQLITE_NOTADB hint when the path is not a database', async () => {
+    const deps: LifecycleDeps = {
+      createApp: async () => {
+        throw new Error('SQLITE_NOTADB: file is not a database');
+      },
+      migrateStore: rejectMigrateStore,
+      serveStdio: rejectServeStdio,
+    };
+    const result = await openAppForSurface(deps, { dbPath: '/tmp/test.db' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('STORAGE_ERROR');
+    expect(result.error.hint).toContain('not a SQLite database');
+  });
 });

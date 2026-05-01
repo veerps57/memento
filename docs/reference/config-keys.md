@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 53 keys.
+Total: 67 keys.
 
 ## `decay.*`
 
@@ -125,6 +125,30 @@ Total: 53 keys.
 | --- | --- | --- | --- |
 | `safety.batchWriteLimit` | `100` | yes | Maximum number of items accepted by a single `memory.write_many` call. Requests exceeding this limit are rejected with `INVALID_INPUT` before any write runs. |
 | `safety.bulkDestructiveLimit` | `1000` | yes | Maximum number of memories a single bulk-destructive call (`memory.forget_many`, `memory.archive_many`) may transition. Applied when `dryRun: false`; rehearsals are uncapped. Requests exceeding the cap are rejected with `INVALID_INPUT` before any row is touched. |
+
+## `extraction.*`
+
+| Key | Default | Mutable | Description |
+| --- | --- | --- | --- |
+| `extraction.enabled` | `true` | yes | Master switch for `memory.extract`. When false, the command returns a structured error. |
+| `extraction.dedup.threshold` | `0.85` | yes | Cosine similarity floor for dedup consideration during extraction. Candidates below this are written as new. |
+| `extraction.dedup.identicalThreshold` | `0.95` | yes | Cosine similarity above which a candidate is treated as a duplicate and skipped (same kind required). |
+| `extraction.defaultConfidence` | `0.8` | yes | Default `storedConfidence` for memories written via `memory.extract`. Lower than manual writes so extracted memories decay faster. |
+| `extraction.autoTag` | `"source:extracted"` | yes | Tag automatically added to memories written via `memory.extract`. Empty string to disable. |
+| `extraction.maxCandidatesPerCall` | `20` | yes | Maximum number of candidates accepted by a single `memory.extract` call. |
+
+## `context.*`
+
+| Key | Default | Mutable | Description |
+| --- | --- | --- | --- |
+| `context.defaultLimit` | `20` | yes | Default number of memories returned by `memory.context` when no limit is supplied. |
+| `context.maxLimit` | `100` | yes | Hard upper bound on `memory.context` result count. |
+| `context.includeKinds` | `["fact","preference","decision"]` | yes | Which memory kinds `memory.context` includes by default. Todos and snippets are often transient. |
+| `context.ranker.weights.confidence` | `1` | yes | Context ranker weight on effective confidence. |
+| `context.ranker.weights.recency` | `1.5` | yes | Context ranker weight on recency (higher than search — context favours fresh). |
+| `context.ranker.weights.scope` | `2` | yes | Context ranker weight on scope match (strong: prefer local context). |
+| `context.ranker.weights.pinned` | `3` | yes | Context ranker weight for pinned memories (always surface). |
+| `context.ranker.weights.frequency` | `0.5` | yes | Context ranker weight for confirmation frequency (memories confirmed often rank higher). |
 
 ## `export.*`
 

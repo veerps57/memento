@@ -15,7 +15,7 @@
 // command refuses to overwrite an existing file otherwise so a
 // fat-fingered path doesn't silently destroy a previous backup.
 
-import { existsSync, mkdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 
 import { type Result, err, ok } from '@psraghuveer/memento-schema';
@@ -59,6 +59,12 @@ export async function runBackup(
       code: 'INVALID_INPUT',
       message: `backup destination '${absDest}' already exists; pass --force to overwrite`,
     });
+  }
+  // VACUUM INTO cannot overwrite an existing file — SQLite raises
+  // "output file already exists". Remove the stale destination so
+  // --force semantics work as advertised.
+  if (force && existsSync(absDest)) {
+    unlinkSync(absDest);
   }
   mkdirSync(path.dirname(absDest), { recursive: true });
 

@@ -81,6 +81,8 @@ describe('createMementoApp', () => {
         'memory.archive_many',
         'memory.set_embedding',
         'memory.search',
+        'memory.context',
+        'memory.extract',
         'conflict.list',
         'conflict.read',
         'conflict.events',
@@ -248,5 +250,152 @@ describe('createMementoApp', () => {
     if (!result.ok) return;
     const stored = await app.memoryRepository.read(result.value.id);
     expect(stored?.content).toBe(content);
+  });
+
+  it('auto-embeds a memory on write when embeddingProvider is supplied and autoEmbed is true', async () => {
+    const embeds: string[] = [];
+    const provider: EmbeddingProvider = {
+      model: 'test-embed-model',
+      dimension: 3,
+      embed: async (text: string) => {
+        embeds.push(text);
+        return [0.1, 0.2, 0.3];
+      },
+    };
+    const app = await newApp({
+      embeddingProvider: provider,
+      configOverrides: { 'embedding.autoEmbed': true },
+    });
+    const write = app.registry.get('memory.write');
+    if (!write) throw new Error('memory.write missing');
+
+    const result = await executeCommand(
+      write,
+      { ...baseWriteInput, content: 'embed me please' },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // The hook is fire-and-forget; poll briefly until it completes.
+    const deadline = Date.now() + 1_000;
+    let stored = await app.memoryRepository.read(result.value.id);
+    while (stored?.embedding === null && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      stored = await app.memoryRepository.read(result.value.id);
+    }
+    expect(stored?.embedding).not.toBeNull();
+    expect(stored?.embedding?.model).toBe('test-embed-model');
+    expect(stored?.embedding?.dimension).toBe(3);
+    expect(stored?.embedding?.vector).toEqual([0.1, 0.2, 0.3]);
+    expect(embeds).toContain('embed me please');
+  });
+
+  it('does not auto-embed when embedding.autoEmbed is false', async () => {
+    const embeds: string[] = [];
+    const provider: EmbeddingProvider = {
+      model: 'test-embed-model',
+      dimension: 3,
+      embed: async (text: string) => {
+        embeds.push(text);
+        return [0.1, 0.2, 0.3];
+      },
+    };
+    const app = await newApp({
+      embeddingProvider: provider,
+      configOverrides: { 'embedding.autoEmbed': false },
+    });
+    const write = app.registry.get('memory.write');
+    if (!write) throw new Error('memory.write missing');
+
+    const result = await executeCommand(
+      write,
+      { ...baseWriteInput, content: 'should not embed' },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Give a tick for any stray async to fire.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const stored = await app.memoryRepository.read(result.value.id);
+    expect(stored?.embedding).toBeNull();
+    expect(embeds).not.toContain('should not embed');
+  });
+
+  it('auto-embeds via the extract command afterWrite hook', async () => {
+    const embeds: string[] = [];
+    const provider: EmbeddingProvider = {
+      model: 'test-embed-model',
+      dimension: 3,
+      embed: async (text: string) => {
+        embeds.push(text);
+        return [0.4, 0.5, 0.6];
+      },
+    };
+    const app = await newApp({
+      embeddingProvider: provider,
+      configOverrides: { 'embedding.autoEmbed': true },
+    });
+    const extract = app.registry.get('memory.extract');
+    if (!extract) throw new Error('memory.extract missing');
+
+    const result = await executeCommand(
+      extract,
+      {
+        candidates: [{ kind: 'fact', content: 'extracted fact for embed test' }],
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Poll for the embedding to land.
+    const written = (result.value as { written: Array<{ id: string }> }).written;
+    expect(written.length).toBe(1);
+    const memId = written[0]?.id as unknown as Parameters<typeof app.memoryRepository.read>[0];
+    if (!memId) throw new Error('no written memory id');
+
+    const deadline = Date.now() + 1_000;
+    let stored = await app.memoryRepository.read(memId);
+    while (stored?.embedding === null && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      stored = await app.memoryRepository.read(memId);
+    }
+    expect(stored?.embedding).not.toBeNull();
+    expect(stored?.embedding?.model).toBe('test-embed-model');
+    expect(stored?.embedding?.vector).toEqual([0.4, 0.5, 0.6]);
+    expect(embeds).toContain('extracted fact for embed test');
+  });
+
+  it('swallows embedding errors gracefully (memory still persisted)', async () => {
+    const provider: EmbeddingProvider = {
+      model: 'broken-model',
+      dimension: 3,
+      embed: async () => {
+        throw new Error('embedding service unavailable');
+      },
+    };
+    const app = await newApp({
+      embeddingProvider: provider,
+      configOverrides: { 'embedding.autoEmbed': true },
+    });
+    const write = app.registry.get('memory.write');
+    if (!write) throw new Error('memory.write missing');
+
+    const result = await executeCommand(
+      write,
+      { ...baseWriteInput, content: 'embed will fail' },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Give the async hook time to run and fail.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const stored = await app.memoryRepository.read(result.value.id);
+    // Memory persisted but embedding remains null.
+    expect(stored?.content).toBe('embed will fail');
+    expect(stored?.embedding).toBeNull();
   });
 });

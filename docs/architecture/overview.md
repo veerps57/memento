@@ -81,6 +81,8 @@ Detail: [`data-model.md`](data-model.md).
 
 `memory.search` runs FTS5 over the content column with a configurable ranker. If `retrieval.vector.enabled=true` and `@psraghuveer/memento-embedder-local` is installed, results are augmented with a vector search and re-ranked by a configurable function of `(ftsScore, vectorScore, effectiveConfidence, recencyBoost)`. The default ranker is one of several config-selectable strategies; users can pin a strategy and tune its weights without touching code.
 
+`memory.context` complements `memory.search` by providing query-less ranked retrieval: it returns the most relevant memories for the current scope without requiring the caller to formulate a search query.
+
 Detail: [`retrieval.md`](retrieval.md).
 
 ### 5. Scrubber

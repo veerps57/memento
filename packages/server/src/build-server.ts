@@ -27,7 +27,11 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   CallToolRequestSchema,
   type CallToolResult,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  ReadResourceRequestSchema,
   type Tool,
   type ToolAnnotations,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -361,7 +365,13 @@ export function buildMementoServer(options: BuildMementoServerOptions): Server {
 
   const server = new Server(
     { name: info.name, version: info.version },
-    { capabilities: { tools: {} } },
+    {
+      capabilities: {
+        tools: {},
+        resources: { subscribe: true, listChanged: true },
+        prompts: {},
+      },
+    },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, () => ({
@@ -387,6 +397,184 @@ export function buildMementoServer(options: BuildMementoServerOptions): Server {
       return errorResult(result.error);
     }
     return successResult(result.value);
+  });
+
+  // — MCP Resources: memento://context —
+  // Exposes the same data as `memory.context` as a readable
+  // resource for clients that support resource subscriptions.
+  server.setRequestHandler(ListResourcesRequestSchema, () => ({
+    resources: [
+      {
+        uri: 'memento://context',
+        name: 'Session Context',
+        description:
+          'The most relevant memories for the current session, ranked by confidence, recency, scope, and frequency.',
+        mimeType: 'text/plain',
+      },
+    ],
+  }));
+
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const { uri } = request.params;
+    if (uri === 'memento://context' || uri.startsWith('memento://context?')) {
+      const contextCommand = byName.get('get_memory_context');
+      if (contextCommand === undefined) {
+        return {
+          contents: [
+            {
+              uri,
+              mimeType: 'text/plain',
+              text: '(memory.context command not available)',
+            },
+          ],
+        };
+      }
+      const result = await executeCommand(contextCommand, {}, ctx);
+      if (!result.ok) {
+        return {
+          contents: [
+            {
+              uri,
+              mimeType: 'text/plain',
+              text: `Error loading context: ${result.error.message}`,
+            },
+          ],
+        };
+      }
+      const output = result.value as {
+        results: readonly {
+          memory: { content: string | null; kind: { type: string }; tags: readonly string[] };
+          score: number;
+        }[];
+      };
+      const lines = output.results.map((r, i) => {
+        const content = r.memory.content ?? '(redacted)';
+        const kind = r.memory.kind.type;
+        const tags = r.memory.tags.length > 0 ? ` [${r.memory.tags.join(', ')}]` : '';
+        return `${i + 1}. [${kind}]${tags} ${content}`;
+      });
+      const text =
+        lines.length > 0
+          ? `Relevant memories (${lines.length}):\n\n${lines.join('\n')}`
+          : 'No memories found. The store is empty or no memories match the current context.';
+      return {
+        contents: [{ uri, mimeType: 'text/plain', text }],
+      };
+    }
+    throw new Error(`Unknown resource: ${uri}`);
+  });
+
+  // — MCP Prompts: session-context —
+  // For clients that support prompts (rendered as slash commands
+  // in Claude Desktop).
+  server.setRequestHandler(ListPromptsRequestSchema, () => ({
+    prompts: [
+      {
+        name: 'session-context',
+        description: 'Load relevant memories for this session',
+        arguments: [
+          {
+            name: 'focus',
+            description:
+              'Optional topic to focus on (triggers memory.search instead of memory.context)',
+            required: false,
+          },
+        ],
+      },
+    ],
+  }));
+
+  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    if (name !== 'session-context') {
+      throw new Error(`Unknown prompt: ${name}`);
+    }
+
+    // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket notation
+    const focus = args?.['focus'];
+    if (focus !== undefined && focus !== '') {
+      // Focused: run memory.search with the focus text.
+      const searchCommand = byName.get('search_memory');
+      if (searchCommand === undefined) {
+        return {
+          messages: [
+            {
+              role: 'user' as const,
+              content: { type: 'text' as const, text: '(memory.search not available)' },
+            },
+          ],
+        };
+      }
+      const result = await executeCommand(searchCommand, { text: focus }, ctx);
+      if (!result.ok) {
+        return {
+          messages: [
+            {
+              role: 'user' as const,
+              content: { type: 'text' as const, text: `Error: ${result.error.message}` },
+            },
+          ],
+        };
+      }
+      return {
+        messages: [
+          {
+            role: 'user' as const,
+            content: {
+              type: 'text' as const,
+              text: `Here are the relevant memories for "${focus}":\n\n${JSON.stringify(result.value, null, 2)}`,
+            },
+          },
+        ],
+      };
+    }
+
+    // No focus: run memory.context.
+    const contextCommand = byName.get('get_memory_context');
+    if (contextCommand === undefined) {
+      return {
+        messages: [
+          {
+            role: 'user' as const,
+            content: { type: 'text' as const, text: '(memory.context not available)' },
+          },
+        ],
+      };
+    }
+    const result = await executeCommand(contextCommand, {}, ctx);
+    if (!result.ok) {
+      return {
+        messages: [
+          {
+            role: 'user' as const,
+            content: { type: 'text' as const, text: `Error: ${result.error.message}` },
+          },
+        ],
+      };
+    }
+    const output = result.value as {
+      results: readonly {
+        memory: { content: string | null; kind: { type: string }; tags: readonly string[] };
+      }[];
+    };
+    const lines = output.results.map((r) => {
+      const content = r.memory.content ?? '(redacted)';
+      const kind = r.memory.kind.type;
+      const tags = r.memory.tags.length > 0 ? ` [${r.memory.tags.join(', ')}]` : '';
+      return `- [${kind}]${tags} ${content}`;
+    });
+    const text =
+      lines.length > 0
+        ? `Here are your relevant memories for this session:\n\n${lines.join('\n')}\n\nUse these to inform your responses. Call memory.confirm on any memory you actually use.`
+        : 'No memories found yet. The memory store is empty.';
+    return {
+      messages: [
+        {
+          role: 'user' as const,
+          content: { type: 'text' as const, text },
+        },
+      ],
+    };
   });
 
   return server;

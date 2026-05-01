@@ -2,7 +2,7 @@
 
 Thank you for considering a contribution. This document covers how to set up the project locally, the workflow for landing a change, and the standards every PR must meet.
 
-If you are an AI coding agent, **also read [`AGENTS.md`](AGENTS.md)** — it contains rules that are mandatory for any agent-authored change.
+If you are an AI agent, **also read [`AGENTS.md`](AGENTS.md)** — it contains rules that are mandatory for any agent-authored change.
 
 ## TL;DR
 

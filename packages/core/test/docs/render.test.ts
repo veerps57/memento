@@ -181,6 +181,100 @@ describe('renderConfigKeysDoc', () => {
   });
 });
 
+describe('renderMcpToolsDoc — metadata branches', () => {
+  it('renders longDescription, since, deprecated, and mcp hints when present', () => {
+    const decorated: AnyCommand = {
+      name: 'test.decorated',
+      sideEffect: 'read',
+      surfaces: ['mcp'],
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      metadata: {
+        description: 'Short description.',
+        longDescription: 'Extended explanation paragraph.',
+        since: '1.2.0',
+        deprecated: 'Use test.better instead.',
+        mcp: {
+          title: 'Decorated Tool',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+        },
+      },
+      handler: async () => ({ ok: true, value: {} }),
+    };
+    const doc = renderMcpToolsDoc([decorated]);
+    expect(doc).toContain('Extended explanation paragraph.');
+    expect(doc).toContain('**Since:** 1.2.0');
+    expect(doc).toContain('**Deprecated:** Use test.better instead.');
+    expect(doc).toContain('**MCP hints:**');
+    expect(doc).toContain('title=`Decorated Tool`');
+    expect(doc).toContain('readOnlyHint=`true`');
+    expect(doc).toContain('destructiveHint=`false`');
+    expect(doc).toContain('idempotentHint=`true`');
+  });
+});
+
+describe('renderCliDoc — metadata branches', () => {
+  it('renders longDescription, since, and deprecated when present on CLI commands', () => {
+    const decorated: AnyCommand = {
+      name: 'test.fancy',
+      sideEffect: 'write',
+      surfaces: ['cli'],
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      metadata: {
+        description: 'Basic.',
+        longDescription: 'Expanded info for CLI.',
+        since: '2.0.0',
+        deprecated: 'Superseded by test.fancier.',
+      },
+      handler: async () => ({ ok: true, value: {} }),
+    };
+    const doc = renderCliDoc([decorated]);
+    expect(doc).toContain('Expanded info for CLI.');
+    expect(doc).toContain('**Since:** 2.0.0');
+    expect(doc).toContain('**Deprecated:** Superseded by test.fancier.');
+  });
+});
+
+describe('renderConfigKeysDoc — formatDefault branches', () => {
+  it('formats a key whose default is very long with truncation', () => {
+    const long: Record<
+      string,
+      { default: unknown; mutable: boolean; description: string; schema: z.ZodType<unknown> }
+    > = {
+      'test.longDefault': {
+        default: 'a'.repeat(200),
+        mutable: true,
+        description: 'A key with a very long default.',
+        schema: z.string(),
+      },
+    };
+    const doc = renderConfigKeysDoc(long as never);
+    // The rendered default should be truncated (the full 200-char
+    // string would exceed DEFAULT_PREVIEW_LIMIT).
+    expect(doc).toContain('…');
+  });
+
+  it('formats a key whose default contains backticks', () => {
+    const backtick: Record<
+      string,
+      { default: unknown; mutable: boolean; description: string; schema: z.ZodType<unknown> }
+    > = {
+      'test.backtick': {
+        default: 'value with `ticks` inside',
+        mutable: true,
+        description: 'A key whose default has backticks.',
+        schema: z.string(),
+      },
+    };
+    const doc = renderConfigKeysDoc(backtick as never);
+    // Backtick inside code span → switched to <code> wrapper.
+    expect(doc).toContain('<code>');
+  });
+});
+
 describe('renderErrorCodesDoc', () => {
   it('lists every ERROR_CODES entry exactly once', () => {
     const doc = renderErrorCodesDoc();
