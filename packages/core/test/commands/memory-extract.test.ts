@@ -48,6 +48,7 @@ async function fixture(configOverrides: Record<string, unknown> = {}) {
     'extraction.defaultConfidence': 0.8,
     'extraction.autoTag': 'source:extracted',
     'extraction.maxCandidatesPerCall': 25,
+    'extraction.processing': 'sync',
     'retrieval.vector.enabled': false,
     ...configOverrides,
   });
@@ -348,6 +349,217 @@ describe('memory.extract', () => {
     expect(result.error.code).toBe('INVALID_INPUT');
   });
 
+  it('calls embedBatch on the provider for batch-embed dedup', async () => {
+    const handle = openDatabase({ path: ':memory:' });
+    handles.push(handle);
+    await migrateToLatest(handle.db, MIGRATIONS);
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M5') as never,
+      eventIdFactory: counterFactory('E5'),
+    });
+    const configStore = createConfigStore({
+      'extraction.enabled': true,
+      'extraction.dedup.threshold': 0.85,
+      'extraction.dedup.identicalThreshold': 0.95,
+      'extraction.defaultConfidence': 0.8,
+      'extraction.autoTag': 'source:extracted',
+      'extraction.maxCandidatesPerCall': 25,
+      'extraction.processing': 'sync',
+      'retrieval.vector.enabled': false,
+    });
+
+    let embedBatchCalls = 0;
+    let individualEmbedCalls = 0;
+    const batchProvider = {
+      model: 'test-model',
+      dimension: 3,
+      embed: async (_text: string) => {
+        individualEmbedCalls += 1;
+        return [0.1, 0.2, 0.3] as readonly number[];
+      },
+      embedBatch: async (texts: readonly string[]) => {
+        embedBatchCalls += 1;
+        return texts.map(() => [0.1, 0.2, 0.3] as readonly number[]);
+      },
+    };
+
+    const command = createMemoryExtractCommand({
+      db: handle.db,
+      memoryRepository: repo,
+      configStore,
+      embeddingProvider: batchProvider,
+    });
+
+    const result = await executeCommand(
+      command,
+      {
+        candidates: [
+          { kind: 'fact', content: 'Fact alpha' },
+          { kind: 'fact', content: 'Fact beta' },
+          { kind: 'fact', content: 'Fact gamma' },
+        ],
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // The batch embed path should have been called once upfront.
+    expect(embedBatchCalls).toBe(1);
+    // Individual embed should not be called — the batch path handles it.
+    expect(individualEmbedCalls).toBe(0);
+    expect(result.value.written.length).toBe(3);
+  });
+
+  it('falls back to exact-match dedup when batch embed fails (no crash)', async () => {
+    const handle = openDatabase({ path: ':memory:' });
+    handles.push(handle);
+    await migrateToLatest(handle.db, MIGRATIONS);
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M6') as never,
+      eventIdFactory: counterFactory('E6'),
+    });
+    const configStore = createConfigStore({
+      'extraction.enabled': true,
+      'extraction.dedup.threshold': 0.85,
+      'extraction.dedup.identicalThreshold': 0.95,
+      'extraction.defaultConfidence': 0.8,
+      'extraction.autoTag': 'source:extracted',
+      'extraction.maxCandidatesPerCall': 25,
+      'extraction.processing': 'sync',
+      'retrieval.vector.enabled': false,
+    });
+
+    const failingBatchProvider = {
+      model: 'broken-model',
+      dimension: 3,
+      embed: async (_text: string): Promise<readonly number[]> => {
+        throw new Error('individual embed also fails');
+      },
+      embedBatch: async (_texts: readonly string[]): Promise<readonly (readonly number[])[]> => {
+        throw new Error('batch embed OOM');
+      },
+    };
+
+    const command = createMemoryExtractCommand({
+      db: handle.db,
+      memoryRepository: repo,
+      configStore,
+      embeddingProvider: failingBatchProvider,
+    });
+
+    // Should not crash — falls back to exact-match dedup.
+    const result = await executeCommand(
+      command,
+      {
+        candidates: [{ kind: 'fact', content: 'Still works despite embed failure' }],
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.written.length).toBe(1);
+  });
+
+  it('async processing mode returns immediately with batchId and status accepted', async () => {
+    const handle = openDatabase({ path: ':memory:' });
+    handles.push(handle);
+    await migrateToLatest(handle.db, MIGRATIONS);
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M7') as never,
+      eventIdFactory: counterFactory('E7'),
+    });
+    const configStore = createConfigStore({
+      'extraction.enabled': true,
+      'extraction.dedup.threshold': 0.85,
+      'extraction.dedup.identicalThreshold': 0.95,
+      'extraction.defaultConfidence': 0.8,
+      'extraction.autoTag': 'source:extracted',
+      'extraction.maxCandidatesPerCall': 25,
+      'retrieval.vector.enabled': false,
+      'extraction.processing': 'async',
+    });
+
+    const command = createMemoryExtractCommand({
+      db: handle.db,
+      memoryRepository: repo,
+      configStore,
+    });
+
+    const result = await executeCommand(
+      command,
+      {
+        candidates: [
+          { kind: 'fact', content: 'Async fact alpha' },
+          { kind: 'fact', content: 'Async fact beta' },
+        ],
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('accepted');
+    expect(result.value.batchId).toBeDefined();
+    expect(typeof result.value.batchId).toBe('string');
+    expect(result.value.batchId!.length).toBeGreaterThan(0);
+    expect(result.value.written).toEqual([]);
+    expect(result.value.skipped).toEqual([]);
+    expect(result.value.superseded).toEqual([]);
+  });
+
+  it('async processing mode eventually writes memories in the background', async () => {
+    const handle = openDatabase({ path: ':memory:' });
+    handles.push(handle);
+    await migrateToLatest(handle.db, MIGRATIONS);
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M8') as never,
+      eventIdFactory: counterFactory('E8'),
+    });
+    const configStore = createConfigStore({
+      'extraction.enabled': true,
+      'extraction.dedup.threshold': 0.85,
+      'extraction.dedup.identicalThreshold': 0.95,
+      'extraction.defaultConfidence': 0.8,
+      'extraction.autoTag': 'source:extracted',
+      'extraction.maxCandidatesPerCall': 25,
+      'retrieval.vector.enabled': false,
+      'extraction.processing': 'async',
+    });
+
+    const command = createMemoryExtractCommand({
+      db: handle.db,
+      memoryRepository: repo,
+      configStore,
+    });
+
+    const result = await executeCommand(
+      command,
+      {
+        candidates: [
+          { kind: 'fact', content: 'Background fact one' },
+          { kind: 'fact', content: 'Background fact two' },
+        ],
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('accepted');
+
+    // Background processing is fire-and-forget. Give the event
+    // loop a few ticks to let it complete.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const memories = await repo.list({ status: 'active', limit: 10 });
+    expect(memories).toHaveLength(2);
+    const contents = memories.map((m) => m.content).sort();
+    expect(contents).toEqual(['Background fact one', 'Background fact two']);
+  });
+
   it('supersedes when embedding similarity is in supersede range (same kind)', async () => {
     const handle = openDatabase({ path: ':memory:' });
     handles.push(handle);
@@ -364,6 +576,7 @@ describe('memory.extract', () => {
       'extraction.defaultConfidence': 0.8,
       'extraction.autoTag': 'source:extracted',
       'extraction.maxCandidatesPerCall': 25,
+      'extraction.processing': 'sync',
       'retrieval.vector.enabled': false,
     });
 
@@ -430,6 +643,7 @@ describe('memory.extract', () => {
       'extraction.defaultConfidence': 0.8,
       'extraction.autoTag': 'source:extracted',
       'extraction.maxCandidatesPerCall': 25,
+      'extraction.processing': 'sync',
       'retrieval.vector.enabled': false,
     });
 
@@ -494,6 +708,7 @@ describe('memory.extract', () => {
       'extraction.defaultConfidence': 0.8,
       'extraction.autoTag': 'source:extracted',
       'extraction.maxCandidatesPerCall': 25,
+      'extraction.processing': 'sync',
       'retrieval.vector.enabled': false,
     });
 
@@ -559,6 +774,7 @@ describe('memory.extract', () => {
       'extraction.defaultConfidence': 0.8,
       'extraction.autoTag': 'source:extracted',
       'extraction.maxCandidatesPerCall': 25,
+      'extraction.processing': 'sync',
       'retrieval.vector.enabled': false,
     });
 

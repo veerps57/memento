@@ -104,11 +104,11 @@ describe('runStoreMigrate (real, in-memory DB)', () => {
       // First run: every migration is `applied`.
       const first = await migrateToLatest(handle.db, MIGRATIONS);
       expect(first.length).toBe(MIGRATIONS.length);
-      expect(first.every((o) => o.status === 'applied')).toBe(true);
+      expect(first.every((o: MigrationOutcome) => o.status === 'applied')).toBe(true);
       // Second run: every migration is `skipped`.
       const second = await migrateToLatest(handle.db, MIGRATIONS);
       expect(second.length).toBe(MIGRATIONS.length);
-      expect(second.every((o) => o.status === 'skipped')).toBe(true);
+      expect(second.every((o: MigrationOutcome) => o.status === 'skipped')).toBe(true);
     } finally {
       handle.close();
     }

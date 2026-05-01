@@ -25,6 +25,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
+  type AnyCommand,
   type CommandContext,
   createMementoApp,
   createRegistry,
@@ -75,7 +76,7 @@ describe('deprecation policy (ADR-0015)', () => {
     const tools = await listMcpTools();
     const cli = buildCliAdapter({ registry, ctx });
 
-    const cmd = registry.list().find((c) => c.name === 'parity.deprecatedBoth');
+    const cmd = registry.list().find((c: AnyCommand) => c.name === 'parity.deprecatedBoth');
     expect(cmd).toBeDefined();
     if (cmd === undefined) return;
 
@@ -116,7 +117,9 @@ describe('deprecation policy (ADR-0015)', () => {
     // `metadata.deprecated`, this loop adds it to the contract
     // surface without anyone editing this test.
     const app = await createMementoApp({ dbPath: ':memory:' });
-    const deprecated = app.registry.list().filter((c) => c.metadata.deprecated !== undefined);
+    const deprecated = app.registry
+      .list()
+      .filter((c: AnyCommand) => c.metadata.deprecated !== undefined);
     if (deprecated.length === 0) {
       // No real deprecated commands in v1; the fixture above
       // carries the contract for now.

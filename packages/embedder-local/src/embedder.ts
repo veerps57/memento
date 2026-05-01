@@ -110,18 +110,35 @@ export function createLocalEmbedder(options: LocalEmbedderOptions = {}): Embeddi
     return pending;
   };
 
+  const validateVector = (vector: readonly number[], label: string): readonly number[] => {
+    if (vector.length !== dimension) {
+      throw new Error(
+        `Local embedder produced a vector of length ${vector.length}, expected ${dimension} (model='${model}', input='${label}'). The configured model and dimension are out of sync.`,
+      );
+    }
+    return vector;
+  };
+
   return {
     model,
     dimension,
     async embed(text: string): Promise<readonly number[]> {
       const embedFn = await ensureReady();
-      const vector = await embedFn(text);
-      if (vector.length !== dimension) {
-        throw new Error(
-          `Local embedder produced a vector of length ${vector.length}, expected ${dimension} (model='${model}'). The configured model and dimension are out of sync.`,
-        );
+      return validateVector(await embedFn(text), 'single');
+    },
+    async embedBatch(texts: readonly string[]): Promise<readonly (readonly number[])[]> {
+      const embedFn = await ensureReady();
+      // Sequential under the hood for now — the transformers.js
+      // pipeline does not yet expose a true batch API for
+      // feature-extraction. The win is having the interface so
+      // callers batch upfront rather than interleaving embed +
+      // dedup per candidate. When transformers.js adds batching,
+      // this is the one place to change.
+      const results: (readonly number[])[] = [];
+      for (const text of texts) {
+        results.push(validateVector(await embedFn(text), `batch[${results.length}]`));
       }
-      return vector;
+      return results;
     },
   };
 }

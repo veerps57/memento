@@ -359,8 +359,10 @@ function errorResult(error: {
 export function buildMementoServer(options: BuildMementoServerOptions): Server {
   const { registry, ctx, info = DEFAULT_INFO } = options;
 
-  const mcpCommands = registry.list().filter((cmd) => cmd.surfaces.includes(SURFACE));
-  const byName = new Map<string, AnyCommand>(mcpCommands.map((cmd) => [deriveMcpName(cmd), cmd]));
+  const mcpCommands = registry.list().filter((cmd: AnyCommand) => cmd.surfaces.includes(SURFACE));
+  const byName = new Map<string, AnyCommand>(
+    mcpCommands.map((cmd: AnyCommand) => [deriveMcpName(cmd), cmd]),
+  );
   const tools: readonly Tool[] = mcpCommands.map(commandToTool);
 
   const server = new Server(

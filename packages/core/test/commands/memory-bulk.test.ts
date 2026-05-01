@@ -495,3 +495,131 @@ describe('memory.archive_many', () => {
     expect((result.value as { applied: number }).applied).toBe(1);
   });
 });
+
+describe('batch repo methods', () => {
+  it('forgetBatch forgets multiple active memories and emits events', async () => {
+    const { repo, eventRepo } = await fixture();
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const m = await repo.write({ ...baseWrite, content: `note ${i}` }, ctx);
+      ids.push(m.id as unknown as string);
+    }
+
+    const result = await repo.forgetBatch(
+      ids as unknown as import('@psraghuveer/memento-schema').MemoryId[],
+      'batch cleanup',
+      ctx,
+    );
+    expect(result.applied).toBe(3);
+
+    // Verify all memories are now forgotten.
+    for (const id of ids) {
+      const m = await repo.read(id as unknown as import('@psraghuveer/memento-schema').MemoryId);
+      expect(m).not.toBeNull();
+      expect(m!.status).toBe('forgotten');
+    }
+
+    // Verify forgotten events were emitted.
+    const events = await eventRepo.listRecent({ types: ['forgotten'] });
+    expect(events).toHaveLength(3);
+  });
+
+  it('archiveBatch archives multiple memories, skips already-archived', async () => {
+    const { repo } = await fixture();
+    const ids: import('@psraghuveer/memento-schema').MemoryId[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const m = await repo.write({ ...baseWrite, content: `note ${i}` }, ctx);
+      ids.push(m.id);
+    }
+
+    // Archive the first one individually.
+    await repo.archive(ids[0]!, ctx);
+
+    // Batch-archive all three — the first should be silently skipped.
+    const result = await repo.archiveBatch(ids, ctx);
+    expect(result.applied).toBe(2);
+
+    // All three should be archived.
+    for (const id of ids) {
+      const m = await repo.read(id);
+      expect(m).not.toBeNull();
+      expect(m!.status).toBe('archived');
+    }
+  });
+
+  it('confirmBatch confirms multiple active memories', async () => {
+    const { repo } = await fixture();
+    const ids: import('@psraghuveer/memento-schema').MemoryId[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const m = await repo.write({ ...baseWrite, content: `note ${i}` }, ctx);
+      ids.push(m.id);
+    }
+
+    const result = await repo.confirmBatch(ids, ctx);
+    expect(result.applied).toBe(3);
+
+    // All memories should still be active.
+    for (const id of ids) {
+      const m = await repo.read(id);
+      expect(m).not.toBeNull();
+      expect(m!.status).toBe('active');
+    }
+  });
+
+  it('confirmBatch skips non-active memories and returns their ids', async () => {
+    const { repo } = await fixture();
+    const ids: import('@psraghuveer/memento-schema').MemoryId[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const m = await repo.write({ ...baseWrite, content: `note ${i}` }, ctx);
+      ids.push(m.id);
+    }
+
+    // Forget the middle one so it's no longer active.
+    await repo.forget(ids[1]!, null, ctx);
+
+    const result = await repo.confirmBatch(ids, ctx);
+    expect(result.applied).toBe(2);
+    expect(result.skippedIds).toHaveLength(1);
+    expect(result.skippedIds[0]).toBe(ids[1]);
+
+    // The active ones were confirmed; the forgotten one is untouched.
+    const first = await repo.read(ids[0]!);
+    expect(first!.status).toBe('active');
+    const second = await repo.read(ids[1]!);
+    expect(second!.status).toBe('forgotten');
+  });
+
+  it('confirmBatch returns empty skippedIds when all succeed', async () => {
+    const { repo } = await fixture();
+    const m = await repo.write({ ...baseWrite, content: 'solo' }, ctx);
+    const result = await repo.confirmBatch([m.id], ctx);
+    expect(result.applied).toBe(1);
+    expect(result.skippedIds).toHaveLength(0);
+  });
+
+  it('forgetBatch on non-active memory rolls back entire transaction', async () => {
+    const { repo } = await fixture();
+    const ids: import('@psraghuveer/memento-schema').MemoryId[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const m = await repo.write({ ...baseWrite, content: `note ${i}` }, ctx);
+      ids.push(m.id);
+    }
+
+    // Forget the second one individually so it's no longer active.
+    await repo.forget(ids[1]!, null, ctx);
+
+    // forgetBatch should throw and roll back — none of the three
+    // should be affected by the batch.
+    await expect(repo.forgetBatch(ids, 'bad batch', ctx)).rejects.toThrow(
+      /status=forgotten not in \[active\]/,
+    );
+
+    // The first memory should still be active (rollback).
+    const first = await repo.read(ids[0]!);
+    expect(first!.status).toBe('active');
+
+    // The third memory should still be active (rollback).
+    const third = await repo.read(ids[2]!);
+    expect(third!.status).toBe('active');
+  });
+});

@@ -29,7 +29,9 @@ import type { Kysely } from 'kysely';
 import { z } from 'zod';
 import type { ConfigStore } from '../../config/index.js';
 import type { EmbeddingProvider } from '../../embedding/provider.js';
+import { embedBatchFallback } from '../../embedding/provider.js';
 import type { MemoryRepository } from '../../repository/memory-repository.js';
+import { ulid } from '../../repository/ulid.js';
 import type { MementoSchema } from '../../storage/schema.js';
 import type { Command, CommandContext } from '../types.js';
 
@@ -107,6 +109,10 @@ const MemoryExtractOutputSchema = z
     written: z.array(WrittenEntrySchema),
     skipped: z.array(SkippedEntrySchema),
     superseded: z.array(SupersededEntrySchema),
+    /** Present only in async mode. A ULID identifying the background batch. */
+    batchId: z.string().optional(),
+    /** Present only in async mode. `'accepted'` means the batch is processing in background. */
+    status: z.enum(['accepted']).optional(),
   })
   .strict();
 
@@ -159,11 +165,37 @@ export function createMemoryExtractCommand(
         });
       }
 
+      const processingMode = cfg.get('extraction.processing');
       const scope: Scope = input.scope ?? { type: 'global' };
       const autoTag = cfg.get('extraction.autoTag');
       const defaultConfidence = cfg.get('extraction.defaultConfidence');
       const dedupThreshold = cfg.get('extraction.dedup.threshold');
       const identicalThreshold = cfg.get('extraction.dedup.identicalThreshold');
+
+      // ADR-0017 §2: when async mode is active and this is not a
+      // dry-run, return a receipt immediately and process in
+      // background. Dry-run is always synchronous.
+      if (processingMode === 'async' && !input.dryRun) {
+        const batchId = ulid();
+        // Fire background processing — errors are swallowed; they
+        // surface as memory events (or not-written memories).
+        void processInBackground(input.candidates, {
+          scope,
+          autoTag,
+          defaultConfidence,
+          dedupThreshold,
+          identicalThreshold,
+          deps,
+          ctx,
+        });
+        return ok({
+          written: [],
+          skipped: [],
+          superseded: [],
+          batchId,
+          status: 'accepted' as const,
+        });
+      }
 
       const written: { id: MemoryId; content: string }[] = [];
       const skipped: {
@@ -173,8 +205,34 @@ export function createMemoryExtractCommand(
       }[] = [];
       const superseded: { id: MemoryId; content: string; previousId: MemoryId }[] = [];
 
-      for (const candidate of input.candidates) {
+      // ADR-0017 §1: pre-compute all candidate contents, then
+      // batch-embed upfront so the per-candidate loop never calls
+      // the embedder. This turns N sequential forward passes into
+      // one batch call.
+      const candidateContents = input.candidates.map((c) => buildContent(c));
+      let precomputedVectors: ReadonlyMap<number, readonly number[]> | undefined;
+      if (deps.embeddingProvider !== undefined) {
         try {
+          const vectors = await embedBatchFallback(deps.embeddingProvider, candidateContents);
+          const map = new Map<number, readonly number[]>();
+          for (let i = 0; i < vectors.length; i += 1) {
+            const v = vectors[i];
+            if (v !== undefined) map.set(i, v);
+          }
+          precomputedVectors = map;
+        } catch {
+          // Batch embed failed — fall back to per-candidate exact
+          // match dedup (no vectors). This is the same degradation
+          // path as when no provider is configured.
+          precomputedVectors = undefined;
+        }
+      }
+
+      for (let i = 0; i < input.candidates.length; i += 1) {
+        const candidate = input.candidates[i];
+        if (candidate === undefined) continue;
+        try {
+          const vec = precomputedVectors?.get(i);
           const result = await processCandidate(candidate, {
             scope,
             autoTag,
@@ -184,6 +242,7 @@ export function createMemoryExtractCommand(
             dryRun: input.dryRun,
             deps,
             ctx,
+            ...(vec !== undefined ? { precomputedVector: vec } : {}),
           });
 
           switch (result.outcome) {
@@ -231,6 +290,8 @@ interface CandidateProcessingOptions {
   readonly dryRun: boolean;
   readonly deps: CreateMemoryExtractCommandDeps;
   readonly ctx: CommandContext;
+  /** Pre-computed embedding vector from the batch-embed pass (ADR-0017). */
+  readonly precomputedVector?: readonly number[];
 }
 
 type CandidateResult =
@@ -241,6 +302,22 @@ type CandidateResult =
       readonly reason: 'duplicate' | 'scrubbed' | 'invalid';
       readonly existingId: MemoryId | null;
     };
+
+/**
+ * Build the final content string for a candidate. Extracted so
+ * the handler can pre-compute contents for batch embedding
+ * (ADR-0017) without duplicating the rationale/language logic.
+ */
+function buildContent(candidate: z.infer<typeof ExtractionCandidateSchema>): string {
+  let content = candidate.content;
+  if (candidate.kind === 'decision' && candidate.rationale) {
+    content = `${content}\n\nRationale: ${candidate.rationale}`;
+  }
+  if (candidate.kind === 'snippet' && candidate.language) {
+    content = `[${candidate.language}] ${content}`;
+  }
+  return content;
+}
 
 /**
  * Build a fully-typed `MemoryKind` from the extraction candidate.
@@ -274,6 +351,7 @@ async function processCandidate(
     dryRun,
     deps,
     ctx,
+    precomputedVector,
   } = options;
 
   // Build tags.
@@ -282,21 +360,16 @@ async function processCandidate(
     tags.push(autoTag);
   }
 
-  // Build content — for decisions, append rationale if provided.
-  let content = candidate.content;
-  if (candidate.kind === 'decision' && candidate.rationale) {
-    content = `${content}\n\nRationale: ${candidate.rationale}`;
-  }
-  if (candidate.kind === 'snippet' && candidate.language) {
-    // Prefix language info to help with search.
-    content = `[${candidate.language}] ${content}`;
-  }
+  const content = buildContent(candidate);
 
-  // Dedup check via embedding similarity.
+  // Dedup check via embedding similarity. When a pre-computed
+  // vector is available (ADR-0017 batch-embed pass), skip the
+  // per-candidate embed call inside checkDedup.
   const dedupResult = await checkDedup(content, candidate.kind, scope, {
     dedupThreshold,
     identicalThreshold,
     deps,
+    ...(precomputedVector !== undefined ? { precomputedVector } : {}),
   });
 
   if (dedupResult.action === 'skip') {
@@ -395,9 +468,11 @@ async function checkDedup(
     dedupThreshold: number;
     identicalThreshold: number;
     deps: CreateMemoryExtractCommandDeps;
+    /** Pre-computed embedding vector from the batch-embed pass (ADR-0017). */
+    precomputedVector?: readonly number[];
   },
 ): Promise<DedupResult> {
-  const { deps, dedupThreshold, identicalThreshold } = options;
+  const { deps, dedupThreshold, identicalThreshold, precomputedVector } = options;
 
   // If no embedding provider, fall back to exact content match.
   if (deps.embeddingProvider === undefined) {
@@ -405,7 +480,9 @@ async function checkDedup(
   }
 
   try {
-    const queryVector = await deps.embeddingProvider.embed(content);
+    // ADR-0017: use the pre-computed vector when available,
+    // avoiding a redundant per-candidate embed call.
+    const queryVector = precomputedVector ?? (await deps.embeddingProvider.embed(content));
 
     // Search existing active memories for similarity.
     const { searchVector } = await import('../../retrieval/vector.js');
@@ -492,6 +569,70 @@ async function checkExactContentDedup(
   } catch {
     // If even FTS fails, just write.
     return { action: 'write' };
+  }
+}
+
+// — Async background processing (ADR-0017 §2) —
+
+interface BackgroundProcessingOptions {
+  readonly scope: Scope;
+  readonly autoTag: string;
+  readonly defaultConfidence: number;
+  readonly dedupThreshold: number;
+  readonly identicalThreshold: number;
+  readonly deps: CreateMemoryExtractCommandDeps;
+  readonly ctx: CommandContext;
+}
+
+/**
+ * Process candidates in background. Errors per-candidate are
+ * swallowed — they will surface as memory events or simply as
+ * not-written memories. The caller has already returned the
+ * receipt to the client.
+ */
+async function processInBackground(
+  candidates: readonly z.infer<typeof ExtractionCandidateSchema>[],
+  options: BackgroundProcessingOptions,
+): Promise<void> {
+  const { scope, autoTag, defaultConfidence, dedupThreshold, identicalThreshold, deps, ctx } =
+    options;
+
+  // Batch-embed upfront, same as sync path.
+  const candidateContents = candidates.map((c) => buildContent(c));
+  let precomputedVectors: ReadonlyMap<number, readonly number[]> | undefined;
+  if (deps.embeddingProvider !== undefined) {
+    try {
+      const vectors = await embedBatchFallback(deps.embeddingProvider, candidateContents);
+      const map = new Map<number, readonly number[]>();
+      for (let i = 0; i < vectors.length; i += 1) {
+        const v = vectors[i];
+        if (v !== undefined) map.set(i, v);
+      }
+      precomputedVectors = map;
+    } catch {
+      precomputedVectors = undefined;
+    }
+  }
+
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    if (candidate === undefined) continue;
+    try {
+      const vec = precomputedVectors?.get(i);
+      await processCandidate(candidate, {
+        scope,
+        autoTag,
+        defaultConfidence,
+        dedupThreshold,
+        identicalThreshold,
+        dryRun: false,
+        deps,
+        ctx,
+        ...(vec !== undefined ? { precomputedVector: vec } : {}),
+      });
+    } catch {
+      // Swallow — partial failure is acceptable in background mode.
+    }
   }
 }
 

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  type CreateMementoAppOptions,
   MIGRATIONS,
   createMementoApp,
   createMemoryRepository,
@@ -37,7 +38,7 @@ async function tmpDb(): Promise<string> {
   return join(dir, 'memento.db');
 }
 
-const createAppNoVector: typeof createMementoApp = (opts) =>
+const createAppNoVector: typeof createMementoApp = (opts: CreateMementoAppOptions) =>
   createMementoApp({
     ...opts,
     configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },

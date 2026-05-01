@@ -335,7 +335,7 @@ describe('createMementoApp', () => {
     };
     const app = await newApp({
       embeddingProvider: provider,
-      configOverrides: { 'embedding.autoEmbed': true },
+      configOverrides: { 'embedding.autoEmbed': true, 'extraction.processing': 'sync' },
     });
     const extract = app.registry.get('memory.extract');
     if (!extract) throw new Error('memory.extract missing');

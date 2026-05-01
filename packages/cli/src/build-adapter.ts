@@ -70,8 +70,8 @@ const SURFACE = 'cli' as const;
 export function buildCliAdapter(options: BuildCliAdapterOptions): CliAdapter {
   const { registry, ctx } = options;
 
-  const cliCommands = registry.list().filter((cmd) => cmd.surfaces.includes(SURFACE));
-  const byName = new Map<string, AnyCommand>(cliCommands.map((cmd) => [cmd.name, cmd]));
+  const cliCommands = registry.list().filter((cmd: AnyCommand) => cmd.surfaces.includes(SURFACE));
+  const byName = new Map<string, AnyCommand>(cliCommands.map((cmd: AnyCommand) => [cmd.name, cmd]));
   const names: readonly string[] = [...byName.keys()].sort();
 
   return {

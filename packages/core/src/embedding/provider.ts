@@ -45,4 +45,35 @@ export interface EmbeddingProvider {
    * skip with reason `error`.
    */
   embed(text: string): Promise<readonly number[]>;
+  /**
+   * Embed multiple texts in a single batch. Returns vectors in
+   * the same order as the input texts. Optional — when absent,
+   * callers use {@link embedBatchFallback} which calls `embed`
+   * sequentially. Implementations that support native batching
+   * (e.g. transformers.js pipeline) should override this for
+   * throughput.
+   *
+   * @since ADR-0017
+   */
+  embedBatch?(texts: readonly string[]): Promise<readonly (readonly number[])[]>;
+}
+
+/**
+ * Call `provider.embedBatch` if available, otherwise fall back
+ * to sequential `embed` calls. Callers should always use this
+ * helper rather than checking `embedBatch` themselves — it
+ * keeps the fallback in one place.
+ */
+export async function embedBatchFallback(
+  provider: EmbeddingProvider,
+  texts: readonly string[],
+): Promise<readonly (readonly number[])[]> {
+  if (provider.embedBatch !== undefined) {
+    return provider.embedBatch(texts);
+  }
+  const results: (readonly number[])[] = [];
+  for (const text of texts) {
+    results.push(await provider.embed(text));
+  }
+  return results;
 }

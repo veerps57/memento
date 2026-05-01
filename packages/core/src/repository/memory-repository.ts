@@ -239,6 +239,36 @@ export interface MemoryRepository {
    */
   archive(id: MemoryId, ctx: { actor: ActorRef }): Promise<Memory>;
   /**
+   * Batch counterpart to {@link forget}. All transitions run inside
+   * a single transaction: if any row fails (not found, wrong status)
+   * the entire batch rolls back — no partial progress. Returns the
+   * count of rows that were transitioned. Empty input returns
+   * `{ applied: 0 }` without opening a transaction.
+   */
+  forgetBatch(
+    ids: readonly MemoryId[],
+    reason: string | null,
+    ctx: { actor: ActorRef },
+  ): Promise<{ applied: number }>;
+  /**
+   * Batch counterpart to {@link archive}. All transitions run inside
+   * a single transaction with all-or-nothing semantics. Already-
+   * archived rows are silently skipped (idempotent, matching the
+   * single-row contract) and not counted in `applied`.
+   */
+  archiveBatch(ids: readonly MemoryId[], ctx: { actor: ActorRef }): Promise<{ applied: number }>;
+  /**
+   * Batch counterpart to {@link confirm}. All transitions run inside
+   * a single transaction. Non-active or missing rows are silently
+   * skipped and returned in `skippedIds`, allowing the batch to
+   * partially succeed — unlike {@link forgetBatch} which enforces
+   * strict all-or-nothing rollback.
+   */
+  confirmBatch(
+    ids: readonly MemoryId[],
+    ctx: { actor: ActorRef },
+  ): Promise<{ applied: number; skippedIds: readonly MemoryId[] }>;
+  /**
    * Attach (or replace) the embedding for an active memory and
    * append a `reembedded` event in the same transaction. The
    * input carries `model`, `dimension`, and `vector`; the repo
@@ -890,6 +920,141 @@ export function createMemoryRepository(
         eventType: 'reembedded',
         payload: { model: embedding.model, dimension: embedding.dimension },
         update: () => ({ embedding_json: JSON.stringify(embedding) }),
+      });
+    },
+
+    async forgetBatch(ids, reason, ctx) {
+      if (ids.length === 0) {
+        return { applied: 0 };
+      }
+      return await db.transaction().execute(async (trx) => {
+        let applied = 0;
+        for (const id of ids) {
+          const now = clock();
+          const row = await trx
+            .selectFrom('memories')
+            .selectAll()
+            .where('id', '=', id as unknown as string)
+            .executeTakeFirst();
+          if (row === undefined) {
+            throw new Error(`forgetBatch: memory not found: ${String(id)}`);
+          }
+          if (row.status !== 'active') {
+            throw new Error(
+              `forgetBatch: memory ${String(id)} status=${row.status} not in [active]`,
+            );
+          }
+          const event = MemoryEventSchema.parse({
+            id: eventIdFactory(),
+            memoryId: id,
+            at: now,
+            actor: ctx.actor,
+            scrubReport: null,
+            type: 'forgotten',
+            payload: { reason },
+          });
+          const nowStr = now as unknown as string;
+          const lastConfirmedAt = nowStr >= row.last_confirmed_at ? nowStr : row.last_confirmed_at;
+          await trx
+            .updateTable('memories')
+            .set({ status: 'forgotten' as const, last_confirmed_at: lastConfirmedAt })
+            .where('id', '=', id as unknown as string)
+            .execute();
+          await trx.insertInto('memory_events').values(eventToRow(event)).execute();
+          applied += 1;
+        }
+        return { applied };
+      });
+    },
+
+    async archiveBatch(ids, ctx) {
+      if (ids.length === 0) {
+        return { applied: 0 };
+      }
+      return await db.transaction().execute(async (trx) => {
+        let applied = 0;
+        for (const id of ids) {
+          const now = clock();
+          const row = await trx
+            .selectFrom('memories')
+            .selectAll()
+            .where('id', '=', id as unknown as string)
+            .executeTakeFirst();
+          if (row === undefined) {
+            throw new Error(`archiveBatch: memory not found: ${String(id)}`);
+          }
+          // Idempotent: already-archived rows are silently skipped,
+          // matching the single-row archive contract.
+          if (row.status === 'archived') {
+            continue;
+          }
+          const allowedStatuses: readonly string[] = ['active', 'forgotten', 'superseded'];
+          if (!allowedStatuses.includes(row.status)) {
+            throw new Error(
+              `archiveBatch: memory ${String(id)} status=${row.status} not in [${allowedStatuses.join(',')}]`,
+            );
+          }
+          const event = MemoryEventSchema.parse({
+            id: eventIdFactory(),
+            memoryId: id,
+            at: now,
+            actor: ctx.actor,
+            scrubReport: null,
+            type: 'archived',
+            payload: {},
+          });
+          const nowStr = now as unknown as string;
+          const lastConfirmedAt = nowStr >= row.last_confirmed_at ? nowStr : row.last_confirmed_at;
+          await trx
+            .updateTable('memories')
+            .set({ status: 'archived' as const, last_confirmed_at: lastConfirmedAt })
+            .where('id', '=', id as unknown as string)
+            .execute();
+          await trx.insertInto('memory_events').values(eventToRow(event)).execute();
+          applied += 1;
+        }
+        return { applied };
+      });
+    },
+
+    async confirmBatch(ids, ctx) {
+      if (ids.length === 0) {
+        return { applied: 0, skippedIds: [] };
+      }
+      return await db.transaction().execute(async (trx) => {
+        let applied = 0;
+        const skippedIds: MemoryId[] = [];
+        for (const id of ids) {
+          const now = clock();
+          const row = await trx
+            .selectFrom('memories')
+            .selectAll()
+            .where('id', '=', id as unknown as string)
+            .executeTakeFirst();
+          if (row === undefined || row.status !== 'active') {
+            skippedIds.push(id);
+            continue;
+          }
+          const event = MemoryEventSchema.parse({
+            id: eventIdFactory(),
+            memoryId: id,
+            at: now,
+            actor: ctx.actor,
+            scrubReport: null,
+            type: 'confirmed',
+            payload: {},
+          });
+          const nowStr = now as unknown as string;
+          const lastConfirmedAt = nowStr >= row.last_confirmed_at ? nowStr : row.last_confirmed_at;
+          await trx
+            .updateTable('memories')
+            .set({ last_confirmed_at: lastConfirmedAt })
+            .where('id', '=', id as unknown as string)
+            .execute();
+          await trx.insertInto('memory_events').values(eventToRow(event)).execute();
+          applied += 1;
+        }
+        return { applied, skippedIds };
       });
     },
   };
