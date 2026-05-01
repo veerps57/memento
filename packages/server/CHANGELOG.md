@@ -1,5 +1,13 @@
 # @psraghuveer/memento-server
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [d1b6aaf]
+  - @psraghuveer/memento-schema@0.4.0
+  - @psraghuveer/memento-core@0.5.0
+
 ## 0.2.0
 
 ### Minor Changes
