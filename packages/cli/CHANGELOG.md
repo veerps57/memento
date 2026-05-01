@@ -1,5 +1,11 @@
 # @psraghuveer/memento
 
+## 0.2.1
+
+### Patch Changes
+
+- f099020: Fix embedder resolution failure in global npm installs by removing the `createRequire` gate that silently returned `undefined` when the package was actually present.
+
 ## 0.2.0
 
 ### Minor Changes
