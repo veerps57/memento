@@ -43,6 +43,13 @@ export const MemorySearchInputSchema = z
       .describe(
         'Filter by memory kind types. Options: "fact", "preference", "decision", "todo", "snippet". Omit for all.',
       ),
+    tags: z
+      .array(z.string())
+      .min(1)
+      .optional()
+      .describe(
+        'Filter to memories containing ALL of these tags (AND logic). Tags are normalised to lowercase. Example: ["project:memento"].',
+      ),
     limit: z
       .number()
       .int()

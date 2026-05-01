@@ -154,6 +154,7 @@ export function createMemorySearchCommand(
               ? { includeStatuses: input.includeStatuses }
               : {}),
             ...(input.kinds !== undefined ? { kinds: input.kinds } : {}),
+            ...(input.tags !== undefined ? { tags: input.tags } : {}),
             ...(input.limit !== undefined ? { limit: input.limit } : {}),
             ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
             ...(input.now !== undefined ? { now: input.now } : {}),

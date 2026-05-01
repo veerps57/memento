@@ -139,6 +139,13 @@ export const MemoryListInputSchema = z
       .describe(
         'Filter by kind type: "fact", "preference", "decision", "todo", or "snippet". Omit for all.',
       ),
+    tags: z
+      .array(z.string())
+      .min(1)
+      .optional()
+      .describe(
+        'Filter to memories containing ALL of these tags (AND logic). Tags are normalised to lowercase. Example: ["project:memento","architecture"].',
+      ),
     pinned: z.boolean().optional().describe('Filter by pinned status. Omit for all.'),
     scope: ScopeSchema.optional().describe(
       'Filter by scope. Same shape as memory.write scope. Omit to list across all scopes.',

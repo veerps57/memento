@@ -342,6 +342,7 @@ export function createMemoryCommands(
         repo.list({
           ...(input.status !== undefined ? { status: input.status } : {}),
           ...(input.kind !== undefined ? { kind: input.kind } : {}),
+          ...(input.tags !== undefined ? { tags: input.tags } : {}),
           ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
           ...(input.scope !== undefined ? { scope: input.scope } : {}),
           ...(input.limit !== undefined ? { limit: input.limit } : {}),
