@@ -21,7 +21,29 @@
 import type { MementoError, Result } from '@psraghuveer/memento-schema';
 import { err } from '@psraghuveer/memento-schema';
 import type { z } from 'zod';
+import type { ZodIssue } from 'zod';
 import type { Command, CommandContext } from './types.js';
+
+/**
+ * Format Zod issues into a concise, actionable summary string.
+ *
+ * Produces lines like:
+ *   - scope: Required
+ *   - kind.type: Invalid literal value, expected "fact"
+ *   - storedConfidence: Number must be less than or equal to 1
+ *
+ * Capped at 5 issues to avoid overwhelming the caller.
+ */
+function formatZodIssues(issues: readonly ZodIssue[]): string {
+  const lines = issues.slice(0, 5).map((issue) => {
+    const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
+    return `  - ${path}: ${issue.message}`;
+  });
+  if (issues.length > 5) {
+    lines.push(`  ... and ${issues.length - 5} more issue(s)`);
+  }
+  return lines.join('\n');
+}
 
 /**
  * Run a command end-to-end with input + output validation.
@@ -49,9 +71,10 @@ export async function executeCommand<I extends z.ZodTypeAny, O extends z.ZodType
 ): Promise<Result<z.infer<O>>> {
   const parsedInput = command.inputSchema.safeParse(rawInput);
   if (!parsedInput.success) {
+    const summary = formatZodIssues(parsedInput.error.issues);
     return err<MementoError>({
       code: 'INVALID_INPUT',
-      message: `Invalid input for command '${command.name}'`,
+      message: `Invalid input for command '${command.name}':\n${summary}`,
       details: { issues: parsedInput.error.issues },
     });
   }
