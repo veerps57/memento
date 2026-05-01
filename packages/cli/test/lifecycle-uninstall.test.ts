@@ -3,6 +3,7 @@
 // Pure: drives `runUninstall` and asserts the returned snapshot
 // contains the expected entry labels and paths.
 
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type { CliEnv } from '../src/argv.js';
@@ -91,7 +92,7 @@ describe('runUninstall', () => {
     if (!result.ok) return;
     const dbEntry = result.value.entries.find((e) => e.label === 'Database');
     expect(dbEntry?.action).toContain('memento backup');
-    expect(dbEntry?.path).toBe('/tmp/test-memento.db');
+    expect(dbEntry?.path).toBe(path.resolve('/tmp/test-memento.db'));
   });
 
   it('resolves relative db paths to absolute', async () => {
@@ -104,8 +105,8 @@ describe('runUninstall', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const dbEntry = result.value.entries.find((e) => e.label === 'Database');
-    // Should be absolute (starts with /)
-    expect(dbEntry?.path.startsWith('/')).toBe(true);
-    expect(dbEntry?.path).toContain('relative/path.db');
+    // Should be absolute
+    expect(path.isAbsolute(dbEntry?.path ?? '')).toBe(true);
+    expect(dbEntry?.path).toContain(path.join('relative', 'path.db'));
   });
 });
