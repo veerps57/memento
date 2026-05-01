@@ -26,8 +26,6 @@ import {
 import { type Result, assertNever } from '@psraghuveer/memento-schema';
 import { serveStdio } from '@psraghuveer/memento-server';
 
-import { createRequire } from 'node:module';
-
 import { type ParsedCommand, parseArgv } from './argv.js';
 import { renderBanner, shouldUseColor } from './banner.js';
 import { ERROR_CODE_TO_EXIT, EXIT_OK, EXIT_USAGE } from './exit-codes.js';
@@ -89,32 +87,13 @@ async function defaultServeStdio(options: ServeStdioOptions): Promise<void> {
  * {@link openAppForSurface} when `retrieval.vector.enabled` is
  * true.
  *
- * The lookup is split into two stages:
- *
- *   1. `createRequire(...).resolve('@psraghuveer/memento-embedder-local')`
- *      tells us whether the peer package is present in the host
- *      environment. We use the resolve-then-import pattern (not
- *      a bare `import().catch()`) so that a missing peer maps
- *      to a clean `undefined` and a present-but-broken peer
- *      surfaces its own load error to the caller.
- *   2. Dynamic `import()` brings the module in. The bundler
- *      cannot statically follow the string, which is what we
- *      want — `@psraghuveer/memento-embedder-local` must stay an optional
- *      peer dependency, not a hard one (Rule 6: peer deps are
- *      explicit; we do not silently bundle them).
- *
- * Returns `undefined` when the package is not installed. The
- * caller (`openAppForSurface`) translates that into a
- * `CONFIG_ERROR` with an install hint.
+ * `@psraghuveer/memento-embedder-local` is a regular dependency
+ * of this package, so the import should always succeed. If it
+ * doesn't (broken install, corrupted node_modules), we let the
+ * error propagate — `openAppForSurface` wraps it in a
+ * CONFIG_ERROR with a reinstall hint.
  */
-const requireFromHere = createRequire(import.meta.url);
-
 async function defaultResolveEmbedder(): Promise<EmbeddingProvider | undefined> {
-  try {
-    requireFromHere.resolve('@psraghuveer/memento-embedder-local');
-  } catch {
-    return undefined;
-  }
   const mod = (await import('@psraghuveer/memento-embedder-local')) as {
     readonly createLocalEmbedder: () => EmbeddingProvider;
   };
