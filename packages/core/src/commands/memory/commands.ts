@@ -42,6 +42,7 @@ import type { AnyCommand, Command, CommandContext } from '../types.js';
 import {
   MemoryArchiveInputSchema,
   MemoryArchiveManyInputSchema,
+  MemoryConfirmManyInputSchema,
   MemoryEventsInputSchema,
   MemoryForgetInputSchema,
   MemoryForgetManyInputSchema,
@@ -65,6 +66,21 @@ const MemoryWriteManyOutputSchema = z
   .object({
     ids: z.array(MemoryIdSchema),
     idempotentCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const ConfirmManyOutputSchema = z
+  .object({
+    confirmed: z.number().int().nonnegative(),
+    failed: z.array(
+      z
+        .object({
+          id: z.string(),
+          code: z.string(),
+          message: z.string(),
+        })
+        .strict(),
+    ),
   })
   .strict();
 const SupersedeOutputSchema = z
@@ -421,6 +437,36 @@ export function createMemoryCommands(
       runRepo<Memory>('memory.confirm', () => repo.confirm(input.id, ctxToRepoCtx(ctx))),
   };
 
+  const confirmManyCommand: Command<
+    typeof MemoryConfirmManyInputSchema,
+    typeof ConfirmManyOutputSchema
+  > = {
+    name: 'memory.confirm_many',
+    sideEffect: 'write',
+    surfaces: SURFACES,
+    inputSchema: MemoryConfirmManyInputSchema,
+    outputSchema: ConfirmManyOutputSchema,
+    metadata: {
+      description:
+        'Bulk-confirm multiple active memories in one call (resets confidence decay for each).\n\nExample:\n\n```json\n{"ids":["01HYXZ...","01HYXY..."]}\n```',
+      mcpName: 'confirm_many_memories',
+    },
+    handler: async (input, ctx) => {
+      const confirmed: string[] = [];
+      const failed: { id: string; code: string; message: string }[] = [];
+      for (const id of input.ids) {
+        try {
+          await repo.confirm(id, ctxToRepoCtx(ctx));
+          confirmed.push(id);
+        } catch (error) {
+          const mErr = repoErrorToMementoError(error, 'memory.confirm_many');
+          failed.push({ id, code: mErr.code, message: mErr.message });
+        }
+      }
+      return ok({ confirmed: confirmed.length, failed });
+    },
+  };
+
   const updateCommand: Command<typeof MemoryUpdateInputSchema, typeof MemoryOutputSchema> = {
     name: 'memory.update',
     sideEffect: 'write',
@@ -726,6 +772,7 @@ export function createMemoryCommands(
     writeManyCommand,
     supersedeCommand,
     confirmCommand,
+    confirmManyCommand,
     updateCommand,
     restoreCommand,
     forgetCommand,

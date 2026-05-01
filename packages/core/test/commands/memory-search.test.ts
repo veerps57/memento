@@ -420,6 +420,54 @@ describe('memory.search command', () => {
     expect(result.value.nextCursor).toBeNull();
   });
 
+  it('filters results by tags (AND logic, post-hydration)', async () => {
+    const { repo, command } = await fixture();
+    await repo.write(
+      { ...baseInput, tags: ['arch', 'kafka'], content: 'kafka architecture notes' },
+      { actor },
+    );
+    await repo.write(
+      { ...baseInput, tags: ['kafka'], content: 'kafka topic partitioning' },
+      { actor },
+    );
+    await repo.write(
+      { ...baseInput, tags: ['unrelated'], content: 'kafka consumer groups' },
+      { actor },
+    );
+
+    // Without tags filter — all three match FTS for 'kafka'.
+    const all = await executeCommand(command, { text: 'kafka' }, ctx);
+    expect(all.ok).toBe(true);
+    if (!all.ok) return;
+    expect(all.value.results).toHaveLength(3);
+
+    // Single tag filter.
+    const kafkaTag = await executeCommand(command, { text: 'kafka', tags: ['kafka'] }, ctx);
+    expect(kafkaTag.ok).toBe(true);
+    if (!kafkaTag.ok) return;
+    expect(kafkaTag.value.results).toHaveLength(2);
+
+    // AND logic: both tags required.
+    const both = await executeCommand(command, { text: 'kafka', tags: ['arch', 'kafka'] }, ctx);
+    expect(both.ok).toBe(true);
+    if (!both.ok) return;
+    expect(both.value.results).toHaveLength(1);
+    expect(both.value.results[0]?.memory.content).toBe('kafka architecture notes');
+  });
+
+  it('normalises tag filter to lowercase in search', async () => {
+    const { repo, command } = await fixture();
+    await repo.write(
+      { ...baseInput, tags: ['MyProject'], content: 'kafka project notes' },
+      { actor },
+    );
+
+    const result = await executeCommand(command, { text: 'kafka', tags: ['MYPROJECT'] }, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.results).toHaveLength(1);
+  });
+
   describe('conflict.surfaceInSearch', () => {
     // The contract is documented on `CreateMemorySearchCommandDeps`:
     // every result carries a `conflicts` array (possibly empty)

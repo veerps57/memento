@@ -127,7 +127,7 @@ Print teardown instructions (config paths and database location)
 
 ## Registry commands
 
-Total: 28 commands.
+Total: 29 commands.
 
 ### `memento compact run`
 
@@ -227,6 +227,18 @@ Example:
 
 ```json
 {"id":"01HYXZ..."}
+```
+
+- **Side-effect:** `write` — Mutates state and emits an audit-log event.
+
+### `memento memory confirm_many`
+
+Bulk-confirm multiple active memories in one call (resets confidence decay for each).
+
+Example:
+
+```json
+{"ids":["01HYXZ...","01HYXY..."]}
 ```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.

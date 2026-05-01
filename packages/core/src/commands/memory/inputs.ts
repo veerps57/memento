@@ -184,6 +184,22 @@ export const MemoryIdInputSchema = z
   .strict();
 
 /**
+ * Input for `memory.confirm_many`. Accepts an array of memory
+ * ids to re-affirm in a single call. Each id is confirmed
+ * independently; failures on one id do not block others. The
+ * output reports which ids succeeded and which failed.
+ */
+export const MemoryConfirmManyInputSchema = z
+  .object({
+    ids: z
+      .array(MemoryIdSchema)
+      .min(1)
+      .max(100)
+      .describe('Array of memory ULIDs to confirm. 1–100 items.'),
+  })
+  .strict();
+
+/**
  * Input for `memory.update`. The repo's contract is "patch must
  * change at least one field"; we mirror that as a Zod refine so
  * the violation surfaces as `INVALID_INPUT` (with an actionable

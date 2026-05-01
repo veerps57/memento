@@ -10,7 +10,7 @@ Input and output schemas are defined in source as Zod schemas and validated by t
 
 this reference lists names, descriptions, side-effect class, and the MCP annotation hints each command declares.
 
-Total: 28 tools.
+Total: 29 tools.
 
 ## `run_compact`
 
@@ -140,6 +140,20 @@ Example:
 
 ```json
 {"id":"01HYXZ..."}
+```
+
+- **Side-effect:** `write` — Mutates state and emits an audit-log event.
+
+## `confirm_many_memories`
+
+Registry name: `memory.confirm_many` — CLI: `memento memory confirm_many`
+
+Bulk-confirm multiple active memories in one call (resets confidence decay for each).
+
+Example:
+
+```json
+{"ids":["01HYXZ...","01HYXY..."]}
 ```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
