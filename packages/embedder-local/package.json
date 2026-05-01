@@ -26,6 +26,7 @@
   },
   "files": ["dist", "README.md"],
   "dependencies": {
+    "@huggingface/transformers": "^3.0.0",
     "@psraghuveer/memento-core": "workspace:^",
     "@psraghuveer/memento-schema": "workspace:^"
   },

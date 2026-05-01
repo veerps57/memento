@@ -18,6 +18,12 @@ import type { CliIO } from '../src/io.js';
 import { runServe } from '../src/lifecycle/serve.js';
 import type { LifecycleDeps } from '../src/lifecycle/types.js';
 
+const createAppNoVector: typeof createMementoApp = (opts) =>
+  createMementoApp({
+    ...opts,
+    configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+  });
+
 const NULL_IO: CliIO = {
   argv: [],
   env: {},
@@ -53,7 +59,7 @@ describe('runServe', () => {
     }> = [];
     const result = await runServe(
       {
-        createApp: createMementoApp,
+        createApp: createAppNoVector,
         migrateStore: rejectMigrateStore,
         serveStdio: async (options) => {
           // `agent` only exists on the `mcp` discriminant.
@@ -102,7 +108,7 @@ describe('runServe', () => {
 
   it('returns INTERNAL when the MCP transport throws and still closes the app', async () => {
     let closed = false;
-    const real = await createMementoApp({ dbPath: ':memory:' });
+    const real = await createAppNoVector({ dbPath: ':memory:' });
     const result = await runServe(
       {
         createApp: async () => ({
@@ -130,7 +136,7 @@ describe('runServe', () => {
 
   it('closes the app on the success path', async () => {
     let closed = false;
-    const real = await createMementoApp({ dbPath: ':memory:' });
+    const real = await createAppNoVector({ dbPath: ':memory:' });
     const result = await runServe(
       {
         createApp: async () => ({
@@ -159,7 +165,7 @@ describe('runServe', () => {
     };
     const result = await runServe(
       {
-        createApp: createMementoApp,
+        createApp: createAppNoVector,
         migrateStore: rejectMigrateStore,
         serveStdio: async () => undefined,
       },
@@ -185,7 +191,7 @@ describe('runServe', () => {
     };
     const result = await runServe(
       {
-        createApp: createMementoApp,
+        createApp: createAppNoVector,
         migrateStore: rejectMigrateStore,
         serveStdio: async () => undefined,
       },

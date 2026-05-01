@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { createMementoApp } from '@psraghuveer/memento-core';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -80,6 +81,20 @@ describe('memento serve (MCP stdio end-to-end)', () => {
   it('lists tools and round-trips write_memory -> search_memory -> read_memory', async () => {
     dbDir = mkdtempSync(join(tmpdir(), 'memento-e2e-'));
     dbPath = join(dbDir, 'memento.db');
+
+    // Pre-seed the DB with `retrieval.vector.enabled=false` so
+    // the CLI's `openAppForSurface` skips the embedder resolution
+    // path. Without this, the default `true` triggers a lazy model
+    // download (~30MB from HuggingFace Hub) on the first embed()
+    // call, making the e2e test slow and network-dependent. Vector
+    // retrieval is covered by unit tests; this test exercises the
+    // MCP round-trip over FTS.
+    const seed = await createMementoApp({ dbPath });
+    await seed.configRepository.set(
+      { key: 'retrieval.vector.enabled', value: false, source: 'cli' },
+      { actor: { type: 'cli' } },
+    );
+    seed.close();
 
     // StdioClientTransport spawns and owns the child. We do
     // not pass `cwd` or `env` — the CLI must work with an

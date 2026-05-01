@@ -38,8 +38,8 @@ packages/
 ├── cli/              CLI adapter; thin projection of the registry,
 │                     plus the npx entry point and lifecycle commands
 │                     (`serve`, `context`, `doctor`, `store migrate`)
-└── embedder-local/   Optional: transformers.js + bge-small-en
-                      Lazy-loaded only when vector search is enabled
+└── embedder-local/   transformers.js + bge-base-en-v1.5
+                      Regular dep; lazy-loaded on first embed()
 ```
 
 The dependency graph is acyclic and one-way: `cli` and `server` depend on `core`; `core` depends on `schema`; `embedder-local` is loaded by `core` only at runtime through a typed interface, never imported statically.

@@ -132,7 +132,7 @@ to migrate stored vectors.
 
 **Cause.** You changed `embedder.local.model` (or `embedder.local.dimension`) after writing memories with the old model. Memento refuses to score across mismatched vector spaces — that would silently corrupt ranking. This is Rule 14 in [`AGENTS.md`](../../AGENTS.md).
 
-**Fix.** Run the rebuild command to re-embed every active memory under the new model. See [`docs/guides/embeddings.md`](embeddings.md) for the wiring; today the rebuild is library-only (the CLI does not auto-wire the embedder, see [`KNOWN_LIMITATIONS.md`](../../KNOWN_LIMITATIONS.md)).
+**Fix.** Run the rebuild command to re-embed every active memory under the new model. The CLI auto-wires the embedder when `retrieval.vector.enabled` is true (the default), so `embedding.rebuild` is available via `memento embedding rebuild`. See [`docs/guides/embeddings.md`](embeddings.md) for details.
 
 ## "Failed to load '@huggingface/transformers'"
 
@@ -145,15 +145,24 @@ dependency to use @psraghuveer/memento-embedder-local (e.g.
 packages/embedder-local/README.md for details.
 ```
 
-**Cause.** A code path tried to call `embed()` on the local embedder, but the `@huggingface/transformers` peer dependency isn't resolvable. The embedder declines to ship transformers.js as a hard dependency because the runtime is large (~100 MB cached) and only relevant when vector retrieval is opted in.
+**Cause.** A code path tried to call `embed()` on the local embedder, but `@huggingface/transformers` isn't resolvable. This typically indicates a broken or partial installation — since `@huggingface/transformers` is a regular dependency of `@psraghuveer/memento-embedder-local`, it should be present after a clean install.
 
 **Fix.**
 
 ```bash
-pnpm add -w @huggingface/transformers
+# Reinstall from scratch:
+rm -rf node_modules
+npm install -g @psraghuveer/memento
 ```
 
-Then re-run whatever triggered the embed call. The first call after install downloads the `bge-small-en-v1.5` ONNX model (~33 MB) into transformers.js's cache directory. See [`docs/guides/embeddings.md`](embeddings.md) for the full opt-in flow.
+Or, if you are developing from a clone:
+
+```bash
+rm -rf node_modules packages/*/node_modules
+pnpm install
+```
+
+Then re-run whatever triggered the embed call. The first call after install downloads the `bge-base-en-v1.5` ONNX model (~110 MB) into transformers.js's cache directory. See [`docs/guides/embeddings.md`](embeddings.md) for details.
 
 ## `pnpm dev:server` exits silently with a non-zero code
 

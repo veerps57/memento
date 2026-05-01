@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 52 keys.
+Total: 53 keys.
 
 ## `decay.*`
 
@@ -43,6 +43,7 @@ Total: 52 keys.
 | --- | --- | --- | --- |
 | `embedding.rebuild.defaultBatchSize` | `100` | yes | Default batch size for `embedding.rebuild` when no batchSize is supplied. |
 | `embedding.rebuild.maxBatchSize` | `1000` | yes | Hard upper bound on `embedding.rebuild` batch size. |
+| `embedding.autoEmbed` | `true` | yes | When true and an EmbeddingProvider is wired, newly-written memories are embedded immediately after write (fire-and-forget). Disable to defer embedding to manual `embedding rebuild` runs. |
 
 ## `compact.*`
 
@@ -75,7 +76,7 @@ Total: 52 keys.
 | Key | Default | Mutable | Description |
 | --- | --- | --- | --- |
 | `retrieval.fts.tokenizer` | `"unicode61"` | no | FTS5 tokenizer for `memories_fts`. Pinned at server start because changing it requires a reindex. |
-| `retrieval.vector.enabled` | `false` | yes | When true, retrieval unions FTS candidates with cosine-similarity matches over `embedding`. Requires an `EmbeddingProvider` to be wired into the host; `memory.search` returns CONFIG_ERROR when the flag is on and no provider is present. |
+| `retrieval.vector.enabled` | `true` | yes | When true, retrieval unions FTS candidates with cosine-similarity matches over `embedding`. Requires an `EmbeddingProvider` to be wired into the host; `memory.search` returns CONFIG_ERROR when the flag is on and no provider is present. |
 | `retrieval.vector.backend` | `"auto"` | no | Vector search backend selector. `brute-force` is the shipping backend; `auto` resolves to it. |
 | `retrieval.ranker.strategy` | `"linear"` | yes | Ranker strategy. `linear` is the shipping strategy; the enum can be widened without breaking existing configs. |
 | `retrieval.ranker.weights.fts` | `1` | yes | Linear ranker weight on the normalised FTS5 BM25 score. |
@@ -95,8 +96,8 @@ Total: 52 keys.
 
 | Key | Default | Mutable | Description |
 | --- | --- | --- | --- |
-| `embedder.local.model` | `"bge-small-en-v1.5"` | no | Hugging Face model id for `@psraghuveer/memento-embedder-local`. Resolved as `Xenova/<model>` on the Hub. Pinned at server start; changing it requires `embedding rebuild`. |
-| `embedder.local.dimension` | `384` | no | Expected vector dimension for the configured embedder model. Must match `embedder.local.model`; the embedder rejects vectors of any other length. Pinned at server start. |
+| `embedder.local.model` | `"bge-base-en-v1.5"` | no | Hugging Face model id for `@psraghuveer/memento-embedder-local`. Resolved as `Xenova/<model>` on the Hub. Pinned at server start; changing it requires `embedding rebuild`. |
+| `embedder.local.dimension` | `768` | no | Expected vector dimension for the configured embedder model. Must match `embedder.local.model`; the embedder rejects vectors of any other length. Pinned at server start. |
 
 ## `scrubber.*`
 

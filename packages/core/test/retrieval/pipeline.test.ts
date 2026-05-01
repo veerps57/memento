@@ -1,9 +1,10 @@
 import type { ActorRef } from '@psraghuveer/memento-schema';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createConfigStore } from '../../src/config/index.js';
+import type { EmbeddingProvider } from '../../src/embedding/provider.js';
 import { createMemoryRepository } from '../../src/repository/memory-repository.js';
 import type { MemoryWriteInput } from '../../src/repository/memory-repository.js';
-import { searchMemories } from '../../src/retrieval/pipeline.js';
+import { VectorRetrievalConfigError, searchMemories } from '../../src/retrieval/pipeline.js';
 import { openDatabase } from '../../src/storage/database.js';
 import { migrateToLatest } from '../../src/storage/migrate.js';
 import { MIGRATIONS } from '../../src/storage/migrations/index.js';
@@ -60,7 +61,7 @@ describe('searchMemories', () => {
       {
         db: handle.db,
         memoryRepository: repo,
-        configStore: createConfigStore(),
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
         clock: () => fixedClock,
       },
       { text: 'kafka' },
@@ -80,7 +81,7 @@ describe('searchMemories', () => {
       {
         db: handle.db,
         memoryRepository: repo,
-        configStore: createConfigStore(),
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
       },
       { text: '   ' },
     );
@@ -102,7 +103,10 @@ describe('searchMemories', () => {
       {
         db: handle.db,
         memoryRepository: repo,
-        configStore: createConfigStore({ 'retrieval.search.maxLimit': 2 }),
+        configStore: createConfigStore({
+          'retrieval.search.maxLimit': 2,
+          'retrieval.vector.enabled': false,
+        }),
         clock: () => fixedClock,
       },
       { text: 'kafka', limit: 100 },
@@ -131,7 +135,7 @@ describe('searchMemories', () => {
       {
         db: handle.db,
         memoryRepository: repo,
-        configStore: createConfigStore(),
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
         clock: () => fixedClock,
       },
       {
@@ -140,5 +144,53 @@ describe('searchMemories', () => {
       },
     );
     expect(page.results.map((r) => r.memory.id)).toEqual([ws.id]);
+  });
+
+  it('degrades gracefully to FTS-only when embed() throws at runtime', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    await repo.write({ ...baseInput, content: 'kafka transient' }, { actor });
+
+    const failingProvider: EmbeddingProvider = {
+      model: 'test-model',
+      dimension: 384,
+      embed: () => Promise.reject(new Error('network timeout')),
+    };
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({ 'retrieval.vector.enabled': true }),
+        embeddingProvider: failingProvider,
+        clock: () => fixedClock,
+      },
+      { text: 'kafka' },
+    );
+
+    // FTS still returns the match despite vector arm failing.
+    expect(page.results).toHaveLength(1);
+    expect(page.results[0]?.memory.content).toBe('kafka transient');
+  });
+
+  it('throws VectorRetrievalConfigError when vector is enabled but no provider is wired', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db);
+
+    await expect(
+      searchMemories(
+        {
+          db: handle.db,
+          memoryRepository: repo,
+          configStore: createConfigStore({ 'retrieval.vector.enabled': true }),
+          clock: () => fixedClock,
+        },
+        { text: 'anything' },
+      ),
+    ).rejects.toBeInstanceOf(VectorRetrievalConfigError);
   });
 });

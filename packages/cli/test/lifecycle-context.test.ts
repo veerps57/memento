@@ -14,6 +14,12 @@ import type { CliIO } from '../src/io.js';
 import { runContext } from '../src/lifecycle/context.js';
 import type { LifecycleDeps } from '../src/lifecycle/types.js';
 
+const createAppNoVector: typeof createMementoApp = (opts) =>
+  createMementoApp({
+    ...opts,
+    configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+  });
+
 const NULL_IO: CliIO = {
   argv: [],
   env: {},
@@ -48,7 +54,7 @@ describe('runContext', () => {
   it('returns a snapshot with version, dbPath, registry, and config', async () => {
     const result = await runContext(
       {
-        createApp: createMementoApp,
+        createApp: createAppNoVector,
         migrateStore: rejectMigrateStore,
         serveStdio: rejectServeStdio,
       },
@@ -90,7 +96,7 @@ describe('runContext', () => {
 
   it('closes the app even when the snapshot succeeds', async () => {
     let closed = false;
-    const real = await createMementoApp({ dbPath: ':memory:' });
+    const real = await createAppNoVector({ dbPath: ':memory:' });
     const result = await runContext(
       {
         createApp: async () => ({

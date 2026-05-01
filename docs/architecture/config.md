@@ -56,9 +56,11 @@ type ConfigKey =
   | "conflict.maxOpenBeforeWarning"
   | "conflict.<kind>.*" // per-kind tuning
 
+  // — Embedding —
+  | "embedding.autoEmbed" // default true; fire-and-forget embed on write
   // — Embedder —
-  | "embedder.local.model" // default 'bge-small-en-v1.5', resolved as `Xenova/<model>`
-  | "embedder.local.dimension" // expected vector length; must match the chosen model
+  | "embedder.local.model" // default 'bge-base-en-v1.5', resolved as `Xenova/<model>`
+  | "embedder.local.dimension" // default 768; must match the chosen model
 
   // — Scrubber —
   | "scrubber.enabled"

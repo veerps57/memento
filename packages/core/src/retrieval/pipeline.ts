@@ -144,9 +144,9 @@ export async function searchMemories(
 
   if (vectorEnabled && deps.embeddingProvider !== undefined) {
     const provider = deps.embeddingProvider;
-    const queryVector = await provider.embed(query.text);
     const vectorLimit = cfg.get('retrieval.candidate.vectorLimit');
     try {
+      const queryVector = await provider.embed(query.text);
       // `resolvedBackend` will branch when `sqlite-vec` lands;
       // for v1 every value resolves to `brute-force`. Reading
       // it here ties the dispatch decision to the candidate
@@ -177,7 +177,13 @@ export async function searchMemories(
         // preserved on `.cause` for diagnostics.
         throw Object.assign(new VectorRetrievalConfigError(caught.message), { cause: caught });
       }
-      throw caught;
+      // Transient vector failures (embed() network error, model
+      // download timeout, etc.) degrade gracefully to FTS-only.
+      // The FTS candidates are already collected above; vector is
+      // additive. Surfacing a hard error for a transient runtime
+      // issue would break search entirely when embeddings are
+      // best-effort. StaleEmbeddingError remains fatal because it
+      // signals a config mismatch that the user must resolve.
     }
   }
 

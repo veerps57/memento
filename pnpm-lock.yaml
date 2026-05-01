@@ -38,12 +38,12 @@ importers:
 
   packages/cli:
     dependencies:
-      '@huggingface/transformers':
-        specifier: ^3.0.0
-        version: 3.8.1
       '@psraghuveer/memento-core':
         specifier: workspace:^
         version: link:../core
+      '@psraghuveer/memento-embedder-local':
+        specifier: workspace:^
+        version: link:../embedder-local
       '@psraghuveer/memento-schema':
         specifier: workspace:^
         version: link:../schema
@@ -54,9 +54,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.29.0
         version: 1.29.0(zod@3.25.76)
-      '@psraghuveer/memento-embedder-local':
-        specifier: workspace:^
-        version: link:../embedder-local
       tsup:
         specifier: 8.3.5
         version: 8.3.5(postcss@8.5.12)(typescript@5.7.2)
@@ -97,6 +94,9 @@ importers:
 
   packages/embedder-local:
     dependencies:
+      '@huggingface/transformers':
+        specifier: ^3.0.0
+        version: 3.8.1
       '@psraghuveer/memento-core':
         specifier: workspace:^
         version: link:../core

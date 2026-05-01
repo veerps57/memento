@@ -14,6 +14,12 @@ import type { CliIO } from '../src/io.js';
 import { runDoctor } from '../src/lifecycle/doctor.js';
 import type { LifecycleDeps } from '../src/lifecycle/types.js';
 
+const createAppNoVector: typeof createMementoApp = (opts) =>
+  createMementoApp({
+    ...opts,
+    configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+  });
+
 const NULL_IO: CliIO = {
   argv: [],
   env: {},
@@ -46,7 +52,7 @@ describe('runDoctor', () => {
   it('returns ok with every check green for a healthy install', async () => {
     const result = await runDoctor(
       {
-        createApp: createMementoApp,
+        createApp: createAppNoVector,
         migrateStore: rejectMigrateStore,
         serveStdio: rejectServeStdio,
       },
@@ -124,7 +130,7 @@ describe('runDoctor', () => {
 
   it('closes the app even when checks succeed', async () => {
     let closed = false;
-    const real = await createMementoApp({ dbPath: ':memory:' });
+    const real = await createAppNoVector({ dbPath: ':memory:' });
     const result = await runDoctor(
       {
         createApp: async () => ({

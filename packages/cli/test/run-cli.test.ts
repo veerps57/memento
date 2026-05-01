@@ -140,7 +140,11 @@ describe('runCli', () => {
     const calls: Array<{ name: string; version: string; actorType: string }> = [];
     const cap = fakeIO({ argv: ['--db', ':memory:', 'serve'], isTTY: false });
     const code = await drive(cap, {
-      createApp: createMementoApp,
+      createApp: (opts) =>
+        createMementoApp({
+          ...opts,
+          configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+        }),
       migrateStore: REJECTING_DEPS.migrateStore,
       serveStdio: async (options) => {
         // Capture inputs and return immediately; production
@@ -166,7 +170,11 @@ describe('runCli', () => {
     const { createMementoApp } = await import('@psraghuveer/memento-core');
     const cap = fakeIO({ argv: ['--db', ':memory:', 'serve'], isTTY: false });
     const code = await drive(cap, {
-      createApp: createMementoApp,
+      createApp: (opts) =>
+        createMementoApp({
+          ...opts,
+          configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+        }),
       migrateStore: REJECTING_DEPS.migrateStore,
       serveStdio: async () => {
         throw new Error('transport boom');
@@ -202,7 +210,11 @@ describe('runCli', () => {
       isTTY: false,
     });
     const code = await drive(cap, {
-      createApp: createMementoApp,
+      createApp: (opts) =>
+        createMementoApp({
+          ...opts,
+          configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+        }),
       migrateStore: async ({ dbPath }) => {
         const handle = openDatabase({ path: dbPath });
         try {
@@ -235,7 +247,11 @@ describe('runCli', () => {
       isTTY: false,
     });
     const code = await drive(cap, {
-      createApp: createMementoApp,
+      createApp: (opts) =>
+        createMementoApp({
+          ...opts,
+          configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+        }),
       migrateStore: REJECTING_DEPS.migrateStore,
       serveStdio: REJECTING_DEPS.serveStdio,
     });
@@ -249,7 +265,11 @@ describe('runCli: memento context', () => {
     const { createMementoApp } = await import('@psraghuveer/memento-core');
     const cap = fakeIO({ argv: ['--db', ':memory:', 'context'], isTTY: false });
     const code = await drive(cap, {
-      createApp: createMementoApp,
+      createApp: (opts) =>
+        createMementoApp({
+          ...opts,
+          configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+        }),
       migrateStore: REJECTING_DEPS.migrateStore,
       serveStdio: REJECTING_DEPS.serveStdio,
     });
@@ -273,7 +293,11 @@ describe('runCli: memento context', () => {
       isTTY: true,
     });
     const code = await drive(cap, {
-      createApp: createMementoApp,
+      createApp: (opts) =>
+        createMementoApp({
+          ...opts,
+          configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+        }),
       migrateStore: REJECTING_DEPS.migrateStore,
       serveStdio: REJECTING_DEPS.serveStdio,
     });
@@ -306,7 +330,11 @@ describe('runCli: registry projection', () => {
       isTTY: false,
     });
     const code = await drive(cap, {
-      createApp: createMementoApp,
+      createApp: (opts) =>
+        createMementoApp({
+          ...opts,
+          configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+        }),
       migrateStore: REJECTING_DEPS.migrateStore,
       serveStdio: REJECTING_DEPS.serveStdio,
     });
@@ -344,7 +372,11 @@ describe('runCli: registry projection', () => {
       isTTY: false,
     });
     const code = await drive(cap, {
-      createApp: createMementoApp,
+      createApp: (opts) =>
+        createMementoApp({
+          ...opts,
+          configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+        }),
       migrateStore: REJECTING_DEPS.migrateStore,
       serveStdio: REJECTING_DEPS.serveStdio,
     });
@@ -365,7 +397,11 @@ describe('runCli: registry projection', () => {
       isTTY: false,
     });
     const code = await drive(cap, {
-      createApp: createMementoApp,
+      createApp: (opts) =>
+        createMementoApp({
+          ...opts,
+          configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+        }),
       migrateStore: REJECTING_DEPS.migrateStore,
       serveStdio: REJECTING_DEPS.serveStdio,
     });
@@ -399,7 +435,10 @@ describe('runCli: registry projection', () => {
     });
     const code = await drive(cap, {
       createApp: async (opts) => {
-        const app = await createMementoApp(opts ?? {});
+        const app = await createMementoApp({
+          ...opts,
+          configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+        });
         const originalClose = app.close.bind(app);
         return {
           ...app,

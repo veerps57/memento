@@ -9,7 +9,7 @@
 
 Vector search benefits from embeddings. Embedding options:
 
-- **Local model via transformers.js** (`bge-small-en-v1.5`): no network calls, model downloaded on first use, ~30MB, runs on CPU.
+- **Local model via transformers.js** (`bge-base-en-v1.5`): no network calls, model downloaded on first use, ~110 MB, runs on CPU.
 - **Cloud embedders** (OpenAI, Cohere, Voyage): higher quality, requires network and API keys, sends content to a third party.
 - **No embeddings**: ship FTS only.
 
@@ -17,7 +17,7 @@ Memento's positioning is local-first, with privacy as a load-bearing property. S
 
 ## Decision
 
-Ship `@psraghuveer/memento-embedder-local` (transformers.js + `bge-small-en-v1.5`) as the only embedding option. Vector search is **off by default**; users opt in via `retrieval.vector.enabled = true`. Cloud embedders are deliberately out of scope.
+Ship `@psraghuveer/memento-embedder-local` (transformers.js + `bge-base-en-v1.5`) as the only embedding option and a regular dependency of the CLI package. Vector search is **on by default** (`retrieval.vector.enabled = true`); users can opt out. Cloud embedders are deliberately out of scope.
 
 The embedder is exposed behind an `EmbeddingProvider` interface. Adding cloud providers later is a new package, not a refactor.
 
@@ -31,8 +31,8 @@ The embedder is exposed behind an `EmbeddingProvider` interface. Adding cloud pr
 
 ### Negative
 
-- First-use latency to download the model (~30MB, one time).
-- Local model quality is below frontier cloud models. Acceptable; FTS picks up the slack on lexical queries.
+- First-use latency to download the model (~110 MB, one time). Search degrades gracefully to FTS-only until the download completes.
+- Local model quality is below frontier cloud models. Acceptable; FTS picks up the slack on lexical queries, and `bge-base-en-v1.5` is a strong local model.
 - CPU embedding cost for large memory bases. Acceptable at the scales Memento targets.
 
 ### Risks
@@ -54,7 +54,7 @@ Attractive: simpler. Rejected: FTS misses paraphrases; the "smart memory" promis
 1. **First principles.** Local-first is non-negotiable; the embedder must respect it.
 2. **Modular.** `EmbeddingProvider` interface; the provider is replaceable.
 3. **Extensible.** Cloud providers are additive; no breaking changes required.
-4. **Config-driven.** Vector search is opt-in; the model is configurable; the backend is configurable.
+4. **Config-driven.** Vector search is on by default but configurable; the model is configurable; the backend is configurable.
 
 ## References
 

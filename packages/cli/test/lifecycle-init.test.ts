@@ -21,6 +21,12 @@ import type { CliIO } from '../src/io.js';
 import { runInit } from '../src/lifecycle/init.js';
 import type { LifecycleDeps } from '../src/lifecycle/types.js';
 
+const createAppNoVector: typeof createMementoApp = (opts) =>
+  createMementoApp({
+    ...opts,
+    configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
+  });
+
 const NULL_IO: CliIO = {
   argv: [],
   env: {},
@@ -53,7 +59,7 @@ describe('runInit', () => {
   it('returns a snapshot with snippets for every supported client', async () => {
     const result = await runInit(
       {
-        createApp: createMementoApp,
+        createApp: createAppNoVector,
         migrateStore: rejectMigrateStore,
         serveStdio: rejectServeStdio,
       },
@@ -82,7 +88,7 @@ describe('runInit', () => {
   it("preserves ':memory:' verbatim in the snapshot", async () => {
     const result = await runInit(
       {
-        createApp: createMementoApp,
+        createApp: createAppNoVector,
         migrateStore: rejectMigrateStore,
         serveStdio: rejectServeStdio,
       },
@@ -96,7 +102,7 @@ describe('runInit', () => {
   it('resolves a relative dbPath to an absolute path', async () => {
     const result = await runInit(
       {
-        createApp: createMementoApp,
+        createApp: createAppNoVector,
         migrateStore: rejectMigrateStore,
         serveStdio: rejectServeStdio,
       },
@@ -114,7 +120,7 @@ describe('runInit', () => {
   it('embeds the resolved dbPath in every snippet', async () => {
     const result = await runInit(
       {
-        createApp: createMementoApp,
+        createApp: createAppNoVector,
         migrateStore: rejectMigrateStore,
         serveStdio: rejectServeStdio,
       },
@@ -146,7 +152,7 @@ describe('runInit', () => {
 
   it('closes the app after opening it', async () => {
     let closed = false;
-    const real = await createMementoApp({ dbPath: ':memory:' });
+    const real = await createAppNoVector({ dbPath: ':memory:' });
     const result = await runInit(
       {
         createApp: async () => ({
@@ -177,7 +183,7 @@ describe('runInit', () => {
       expect(existsSync(parent)).toBe(false);
       const result = await runInit(
         {
-          createApp: createMementoApp,
+          createApp: createAppNoVector,
           migrateStore: rejectMigrateStore,
           serveStdio: rejectServeStdio,
         },

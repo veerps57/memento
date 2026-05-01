@@ -57,7 +57,7 @@ async function fixture(): Promise<{
   const command = createMemorySearchCommand({
     db: handle.db,
     memoryRepository: repo,
-    configStore: createConfigStore(),
+    configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
     clock: () => fixedClock,
   });
   return { repo, command, db: handle.db };
@@ -423,7 +423,10 @@ describe('memory.search command', () => {
     const command = createMemorySearchCommand({
       db: handle.db,
       memoryRepository: repo,
-      configStore: createConfigStore({ 'retrieval.search.maxLimit': 2 }),
+      configStore: createConfigStore({
+        'retrieval.search.maxLimit': 2,
+        'retrieval.vector.enabled': false,
+      }),
       clock: () => fixedClock,
     });
     const result = await executeCommand(command, { text: 'kafka', limit: 100 }, ctx);
@@ -529,6 +532,7 @@ describe('memory.search command', () => {
       });
       const configStore = createConfigStore({
         'conflict.surfaceInSearch': opts.surface,
+        'retrieval.vector.enabled': false,
       });
       const command = createMemorySearchCommand({
         db: handle.db,
@@ -647,6 +651,7 @@ describe('memory.search command', () => {
         memoryRepository: repo,
         configStore: createConfigStore({
           'privacy.redactSensitiveSnippets': true,
+          'retrieval.vector.enabled': false,
         }),
         clock: () => fixedClock,
       });
@@ -672,6 +677,7 @@ describe('memory.search command', () => {
         memoryRepository: repo,
         configStore: createConfigStore({
           'privacy.redactSensitiveSnippets': false,
+          'retrieval.vector.enabled': false,
         }),
         clock: () => fixedClock,
       });
