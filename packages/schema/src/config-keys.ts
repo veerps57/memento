@@ -544,6 +544,13 @@ export const CONFIG_KEYS = {
     mutable: true,
     description: 'Maximum number of candidates accepted by a single `memory.extract` call.',
   }),
+  'extraction.processing': defineKey({
+    schema: z.enum(['sync', 'async']),
+    default: 'async' as const,
+    mutable: true,
+    description:
+      'Processing mode for `memory.extract`. `async` (default) returns a receipt immediately and processes in background; `sync` blocks until all candidates are processed and returns the full results.',
+  }),
 
   // — Context —
   // Query-less ranked retrieval per design proposal

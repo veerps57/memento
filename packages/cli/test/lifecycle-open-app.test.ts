@@ -12,7 +12,11 @@
 //      (peer dep missing) — the helper returns CONFIG_ERROR
 //      with an install hint pointing at @psraghuveer/memento-embedder-local.
 
-import { type EmbeddingProvider, createMementoApp } from '@psraghuveer/memento-core';
+import {
+  type AnyCommand,
+  type EmbeddingProvider,
+  createMementoApp,
+} from '@psraghuveer/memento-core';
 import { describe, expect, it } from 'vitest';
 
 import { openAppForSurface } from '../src/lifecycle/open-app.js';
@@ -59,7 +63,7 @@ describe('openAppForSurface', () => {
       expect(openCount).toBe(1);
       expect(resolveCount).toBe(0);
       // No embedder wired → embedding.rebuild absent from registry.
-      const names = result.value.registry.list().map((c) => c.name);
+      const names = result.value.registry.list().map((c: AnyCommand) => c.name);
       expect(names).not.toContain('embedding.rebuild');
     } finally {
       result.value.close();
@@ -107,7 +111,7 @@ describe('openAppForSurface', () => {
       try {
         // probe + reopen → 2 createApp calls.
         expect(openCount).toBe(2);
-        const names = result.value.registry.list().map((c) => c.name);
+        const names = result.value.registry.list().map((c: AnyCommand) => c.name);
         expect(names).toContain('embedding.rebuild');
       } finally {
         result.value.close();

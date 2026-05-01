@@ -5,7 +5,7 @@
 // drift between command registration in `@psraghuveer/memento-core` and
 // what the CLI advertises.
 
-import { createMementoApp } from '@psraghuveer/memento-core';
+import { type CreateMementoAppOptions, createMementoApp } from '@psraghuveer/memento-core';
 import { CONFIG_KEY_NAMES } from '@psraghuveer/memento-schema';
 import { describe, expect, it } from 'vitest';
 
@@ -14,7 +14,7 @@ import type { CliIO } from '../src/io.js';
 import { runContext } from '../src/lifecycle/context.js';
 import type { LifecycleDeps } from '../src/lifecycle/types.js';
 
-const createAppNoVector: typeof createMementoApp = (opts) =>
+const createAppNoVector: typeof createMementoApp = (opts: CreateMementoAppOptions) =>
   createMementoApp({
     ...opts,
     configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },

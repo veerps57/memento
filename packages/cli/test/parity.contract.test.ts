@@ -30,7 +30,12 @@
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { type CommandContext, createRegistry, deriveMcpName } from '@psraghuveer/memento-core';
+import {
+  type AnyCommand,
+  type CommandContext,
+  createRegistry,
+  deriveMcpName,
+} from '@psraghuveer/memento-core';
 import { buildMementoServer } from '@psraghuveer/memento-server';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -117,7 +122,7 @@ describe('adapter parity (ADR 0003)', () => {
     for (const command of registry.list()) {
       if (mcpNames.has(deriveMcpName(command))) exposed.add(command.name);
     }
-    const expected = new Set(registry.list().map((cmd) => cmd.name));
+    const expected = new Set(registry.list().map((cmd: AnyCommand) => cmd.name));
     expect([...exposed].sort()).toEqual([...expected].sort());
   });
 });

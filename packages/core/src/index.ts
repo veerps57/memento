@@ -99,6 +99,7 @@ export type {
   ReembedResult,
   ReembedSkip,
 } from './embedding/index.js';
+export { embedBatchFallback } from './embedding/index.js';
 export { createRegistry, defaultMcpName, deriveMcpName, executeCommand } from './commands/index.js';
 export type {
   AnyCommand,

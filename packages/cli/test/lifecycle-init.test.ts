@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createMementoApp } from '@psraghuveer/memento-core';
+import { type CreateMementoAppOptions, createMementoApp } from '@psraghuveer/memento-core';
 import { describe, expect, it } from 'vitest';
 
 import type { CliEnv } from '../src/argv.js';
@@ -21,7 +21,7 @@ import type { CliIO } from '../src/io.js';
 import { runInit } from '../src/lifecycle/init.js';
 import type { LifecycleDeps } from '../src/lifecycle/types.js';
 
-const createAppNoVector: typeof createMementoApp = (opts) =>
+const createAppNoVector: typeof createMementoApp = (opts: CreateMementoAppOptions) =>
   createMementoApp({
     ...opts,
     configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },

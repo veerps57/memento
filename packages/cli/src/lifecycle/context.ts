@@ -28,6 +28,7 @@
 // underlying error isn't already a `Result`, and emit it through
 // the standard error pipeline.
 
+import type { AnyCommand } from '@psraghuveer/memento-core';
 import { CONFIG_KEY_NAMES, type ConfigKey, type Result, ok } from '@psraghuveer/memento-schema';
 
 import { resolveVersion } from '../version.js';
@@ -70,7 +71,7 @@ export async function runContext(
   const app = opened.value;
 
   try {
-    const commands: ContextCommandEntry[] = app.registry.list().map((cmd) => ({
+    const commands: ContextCommandEntry[] = app.registry.list().map((cmd: AnyCommand) => ({
       name: cmd.name,
       sideEffect: cmd.sideEffect,
       surfaces: [...cmd.surfaces],

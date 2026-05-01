@@ -10,7 +10,7 @@
 //   - error mapping (createApp throw → STORAGE_ERROR; serveStdio
 //     throw → INTERNAL).
 
-import { createMementoApp } from '@psraghuveer/memento-core';
+import { type CreateMementoAppOptions, createMementoApp } from '@psraghuveer/memento-core';
 import { describe, expect, it } from 'vitest';
 
 import type { CliEnv } from '../src/argv.js';
@@ -18,7 +18,7 @@ import type { CliIO } from '../src/io.js';
 import { runServe } from '../src/lifecycle/serve.js';
 import type { LifecycleDeps } from '../src/lifecycle/types.js';
 
-const createAppNoVector: typeof createMementoApp = (opts) =>
+const createAppNoVector: typeof createMementoApp = (opts: CreateMementoAppOptions) =>
   createMementoApp({
     ...opts,
     configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },

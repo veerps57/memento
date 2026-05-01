@@ -461,18 +461,20 @@ export function createMemoryCommands(
       mcpName: 'confirm_many_memories',
     },
     handler: async (input, ctx) => {
-      const confirmed: string[] = [];
-      const failed: { id: string; code: string; message: string }[] = [];
-      for (const id of input.ids) {
-        try {
-          await repo.confirm(id, ctxToRepoCtx(ctx));
-          confirmed.push(id);
-        } catch (error) {
-          const mErr = repoErrorToMementoError(error, 'memory.confirm_many');
-          failed.push({ id, code: mErr.code, message: mErr.message });
-        }
+      const repoCtx = ctxToRepoCtx(ctx);
+      const batchResult = await runRepo<{
+        applied: number;
+        skippedIds: readonly MemoryId[];
+      }>('memory.confirm_many', () => repo.confirmBatch(input.ids, repoCtx));
+      if (!batchResult.ok) {
+        return err<MementoError>(batchResult.error);
       }
-      return ok({ confirmed: confirmed.length, failed });
+      const failed = batchResult.value.skippedIds.map((id) => ({
+        id: String(id),
+        code: 'NOT_CONFIRMABLE',
+        message: `memory ${String(id)} is not active or does not exist`,
+      }));
+      return ok({ confirmed: batchResult.value.applied, failed });
     },
   };
 
@@ -597,32 +599,17 @@ export function createMemoryCommands(
           details: { limit, matched: ids.length },
         });
       }
-      let applied = 0;
       const repoCtx = ctxToRepoCtx(ctx);
-      for (const id of ids) {
-        // Best-effort per-row: if a transition fails (race
-        // with another writer flipped the status), surface the
-        // first error and report partial progress.
-        const stepResult = await runRepo<Memory>('memory.forget_many', () =>
-          repo.forget(id, input.reason, repoCtx),
-        );
-        if (!stepResult.ok) {
-          return err<MementoError>({
-            ...stepResult.error,
-            details: {
-              ...(stepResult.error.details ?? {}),
-              applied,
-              matched: ids.length,
-              partial: true,
-            },
-          });
-        }
-        applied += 1;
+      const batchResult = await runRepo<{ applied: number }>('memory.forget_many', () =>
+        repo.forgetBatch(ids, input.reason, repoCtx),
+      );
+      if (!batchResult.ok) {
+        return batchResult;
       }
       return ok({
         dryRun: false,
         matched: ids.length,
-        applied,
+        applied: batchResult.value.applied,
         idempotent: 0,
         ids,
       });
@@ -648,19 +635,26 @@ export function createMemoryCommands(
       // archive is legal from active | forgotten | superseded;
       // already-archived rows are excluded from the match set
       // so `idempotent` reflects within-batch idempotency only.
+      //
+      // ADR-0017 §3: run the 3 status queries in parallel — they
+      // are independent reads against the same snapshot.
+      const filterBase = {
+        ...(input.filter.scope !== undefined ? { scope: input.filter.scope } : {}),
+        ...(input.filter.kind !== undefined ? { kind: input.filter.kind } : {}),
+        ...(input.filter.pinned !== undefined ? { pinned: input.filter.pinned } : {}),
+        ...(input.filter.createdAtLte !== undefined
+          ? { createdAtLte: input.filter.createdAtLte }
+          : {}),
+      };
+      const listResults = await Promise.all(
+        (['active', 'forgotten', 'superseded'] as const).map((status) =>
+          runRepo<MemoryId[]>('memory.archive_many', () =>
+            repo.listIdsForBulk({ status, ...filterBase }),
+          ),
+        ),
+      );
       const matched: MemoryId[] = [];
-      for (const status of ['active', 'forgotten', 'superseded'] as const) {
-        const r = await runRepo<MemoryId[]>('memory.archive_many', () =>
-          repo.listIdsForBulk({
-            status,
-            ...(input.filter.scope !== undefined ? { scope: input.filter.scope } : {}),
-            ...(input.filter.kind !== undefined ? { kind: input.filter.kind } : {}),
-            ...(input.filter.pinned !== undefined ? { pinned: input.filter.pinned } : {}),
-            ...(input.filter.createdAtLte !== undefined
-              ? { createdAtLte: input.filter.createdAtLte }
-              : {}),
-          }),
-        );
+      for (const r of listResults) {
         if (!r.ok) {
           return r;
         }
@@ -683,29 +677,17 @@ export function createMemoryCommands(
           details: { limit, matched: matched.length },
         });
       }
-      let applied = 0;
       const repoCtx = ctxToRepoCtx(ctx);
-      for (const id of matched) {
-        const stepResult = await runRepo<Memory>('memory.archive_many', () =>
-          repo.archive(id, repoCtx),
-        );
-        if (!stepResult.ok) {
-          return err<MementoError>({
-            ...stepResult.error,
-            details: {
-              ...(stepResult.error.details ?? {}),
-              applied,
-              matched: matched.length,
-              partial: true,
-            },
-          });
-        }
-        applied += 1;
+      const batchResult = await runRepo<{ applied: number }>('memory.archive_many', () =>
+        repo.archiveBatch(matched, repoCtx),
+      );
+      if (!batchResult.ok) {
+        return batchResult;
       }
       return ok({
         dryRun: false,
         matched: matched.length,
-        applied,
+        applied: batchResult.value.applied,
         idempotent: 0,
         ids: matched,
       });

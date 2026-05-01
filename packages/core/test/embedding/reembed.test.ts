@@ -224,4 +224,98 @@ describe('reembedAll', () => {
     await expect(reembedAll(repo, provider, { actor, batchSize: 0 })).rejects.toThrow(RangeError);
     await expect(reembedAll(repo, provider, { actor, batchSize: -1 })).rejects.toThrow(RangeError);
   });
+
+  it('uses batch embed path — embed is not called individually per memory', async () => {
+    const handle = await fixture();
+    const repo = await makeRepo(handle);
+    await repo.write(baseInput('alpha'), { actor });
+    await repo.write(baseInput('beta'), { actor });
+    await repo.write(baseInput('gamma'), { actor });
+
+    let individualEmbedCalls = 0;
+    let batchCalls = 0;
+    const provider: EmbeddingProvider = {
+      model: 'bge-small-en-v1.5',
+      dimension: 4,
+      embed: async (_text: string) => {
+        individualEmbedCalls += 1;
+        return [0.1, 0.2, 0.3, 0.4];
+      },
+      embedBatch: async (texts: readonly string[]) => {
+        batchCalls += 1;
+        return texts.map(() => [0.1, 0.2, 0.3, 0.4]);
+      },
+    };
+
+    const result = await reembedAll(repo, provider, { actor });
+
+    expect(result.embedded).toHaveLength(3);
+    expect(batchCalls).toBe(1);
+    expect(individualEmbedCalls).toBe(0);
+  });
+
+  it('marks all stale memories as error skips when both batch and per-row embed fail', async () => {
+    const handle = await fixture();
+    const repo = await makeRepo(handle);
+    const a = await repo.write(baseInput('alpha'), { actor });
+    const b = await repo.write(baseInput('beta'), { actor });
+
+    const provider: EmbeddingProvider = {
+      model: 'bge-small-en-v1.5',
+      dimension: 4,
+      embed: async (_text: string) => {
+        throw new Error('embed unavailable');
+      },
+      embedBatch: async (_texts: readonly string[]) => {
+        throw new Error('OOM: batch embed failed');
+      },
+    };
+
+    const result = await reembedAll(repo, provider, { actor });
+
+    // Batch fails → per-row fallback also fails → all are error skips.
+    expect(result.embedded).toHaveLength(0);
+    expect(result.skipped).toHaveLength(2);
+    const skippedIds = new Set(result.skipped.map((s) => s.id));
+    expect(skippedIds).toContain(a.id);
+    expect(skippedIds).toContain(b.id);
+    for (const skip of result.skipped) {
+      expect(skip.reason).toBe('error');
+      expect(skip.error).toBeInstanceOf(Error);
+    }
+  });
+
+  it('falls back to per-row embed when batch fails, isolating individual errors', async () => {
+    const handle = await fixture();
+    const repo = await makeRepo(handle);
+    const a = await repo.write(baseInput('boom'), { actor });
+    const b = await repo.write(baseInput('beta'), { actor });
+    const c = await repo.write(baseInput('gamma'), { actor });
+
+    let batchAttempted = false;
+    const provider: EmbeddingProvider = {
+      model: 'bge-small-en-v1.5',
+      dimension: 4,
+      embed: async (text: string) => {
+        if (text === 'boom') throw new Error('bad content');
+        return [0.1, 0.2, 0.3, 0.4];
+      },
+      embedBatch: async (_texts: readonly string[]) => {
+        batchAttempted = true;
+        throw new Error('batch unavailable');
+      },
+    };
+
+    const result = await reembedAll(repo, provider, { actor });
+
+    // Batch was attempted first, then per-row fallback kicked in.
+    expect(batchAttempted).toBe(true);
+    // 'boom' failed per-row; 'beta' and 'gamma' succeeded.
+    expect(result.embedded).toHaveLength(2);
+    expect(result.embedded).toContain(b.id);
+    expect(result.embedded).toContain(c.id);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]!.id).toBe(a.id);
+    expect(result.skipped[0]!.reason).toBe('error');
+  });
 });

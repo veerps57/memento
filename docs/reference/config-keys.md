@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 67 keys.
+Total: 68 keys.
 
 ## `decay.*`
 
@@ -136,6 +136,7 @@ Total: 67 keys.
 | `extraction.defaultConfidence` | `0.8` | yes | Default `storedConfidence` for memories written via `memory.extract`. Lower than manual writes so extracted memories decay faster. |
 | `extraction.autoTag` | `"source:extracted"` | yes | Tag automatically added to memories written via `memory.extract`. Empty string to disable. |
 | `extraction.maxCandidatesPerCall` | `20` | yes | Maximum number of candidates accepted by a single `memory.extract` call. |
+| `extraction.processing` | `"async"` | yes | Processing mode for `memory.extract`. `async` (default) returns a receipt immediately and processes in background; `sync` blocks until all candidates are processed and returns the full results. |
 
 ## `context.*`
 

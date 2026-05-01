@@ -43,7 +43,7 @@ const echoCommand: Command<z.ZodObject<{ msg: z.ZodString }>, z.ZodObject<{ msg:
   inputSchema: z.object({ msg: z.string().min(1) }).strict(),
   outputSchema: z.object({ msg: z.string() }).strict(),
   metadata: { description: 'Echo the input message back' },
-  handler: async (input) => ok({ msg: input.msg }),
+  handler: async (input: { msg: string }) => ok({ msg: input.msg }),
 };
 
 const failingCommand: Command<z.ZodObject<Record<string, never>>, z.ZodString> = {
@@ -188,7 +188,8 @@ const searchCommand: Command<z.ZodObject<{ text: z.ZodString }>, z.ZodAny> = {
     description: 'Search memories',
     mcpName: 'search_memory',
   },
-  handler: async (input) => ok({ searched: true, query: `searched for: ${input.text}` }),
+  handler: async (input: { text: string }) =>
+    ok({ searched: true, query: `searched for: ${input.text}` }),
 };
 
 // Error-returning variants for testing error branches.

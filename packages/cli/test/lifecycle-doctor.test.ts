@@ -6,7 +6,7 @@
 // to assert the command does not regress when the engine is
 // healthy; failure paths use injected fakes.
 
-import { createMementoApp } from '@psraghuveer/memento-core';
+import { type CreateMementoAppOptions, createMementoApp } from '@psraghuveer/memento-core';
 import { describe, expect, it } from 'vitest';
 
 import type { CliEnv } from '../src/argv.js';
@@ -14,7 +14,7 @@ import type { CliIO } from '../src/io.js';
 import { runDoctor } from '../src/lifecycle/doctor.js';
 import type { LifecycleDeps } from '../src/lifecycle/types.js';
 
-const createAppNoVector: typeof createMementoApp = (opts) =>
+const createAppNoVector: typeof createMementoApp = (opts: CreateMementoAppOptions) =>
   createMementoApp({
     ...opts,
     configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },

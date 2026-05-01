@@ -8,6 +8,16 @@
 // failure mid-corpus leaves a consistent on-disk state and a
 // re-run picks up where the previous run left off.
 //
+// Embedding strategy (ADR-0017 §1): two-path with graceful
+// degradation.
+//   Fast path — `embedBatchFallback` succeeds: all stale texts
+//   are embedded in one call, then each vector is written
+//   individually.
+//   Slow path — batch throws: the driver retries each stale
+//   memory via `provider.embed()` one at a time, catching
+//   per-row failures as error skips. A single bad input
+//   doesn't take down the entire batch.
+//
 // This powers the `memento embeddings rebuild` CLI command
 // (wired in #11). Like `detectConflicts` (#9), it is a
 // standalone callable — there is no automatic post-write
@@ -25,6 +35,7 @@ import { CONFIG_KEYS } from '@psraghuveer/memento-schema';
 
 import type { MemoryRepository } from '../repository/memory-repository.js';
 import type { EmbeddingProvider } from './provider.js';
+import { embedBatchFallback } from './provider.js';
 
 const DEFAULT_BATCH_SIZE = CONFIG_KEYS['embedding.rebuild.defaultBatchSize'].default;
 const MAX_BATCH_SIZE = CONFIG_KEYS['embedding.rebuild.maxBatchSize'].default;
@@ -73,30 +84,75 @@ export async function reembedAll(
   const embedded: MemoryId[] = [];
   const skipped: ReembedSkip[] = [];
 
+  // Partition into stale (need re-embed) and fresh (skip).
+  const staleMemories: Memory[] = [];
   for (const memory of memories) {
     if (!options.force && isFresh(memory, provider)) {
       skipped.push({ id: memory.id, reason: 'up-to-date' });
-      continue;
+    } else {
+      staleMemories.push(memory);
     }
+  }
 
-    let vector: readonly number[];
-    try {
-      vector = await provider.embed(memory.content);
-    } catch (cause) {
-      skipped.push({
-        id: memory.id,
-        reason: 'error',
-        error: cause instanceof Error ? cause : new Error(String(cause)),
-      });
-      continue;
+  if (staleMemories.length === 0) {
+    return { scanned: memories.length, embedded, skipped };
+  }
+
+  // ADR-0017 §1: batch-embed all stale memories in one call
+  // instead of N sequential forward passes.
+  const texts = staleMemories.map((m) => m.content);
+  let vectors: readonly (readonly number[])[] | null = null;
+  try {
+    vectors = await embedBatchFallback(provider, texts);
+  } catch {
+    // Batch failed — fall back to per-row embedding below so
+    // individual failures are isolated instead of taking down
+    // the entire batch.
+  }
+
+  if (vectors !== null) {
+    // Fast path: batch succeeded. Write each embedding; individual
+    // setEmbedding failures are per-row skips, not batch-fatal.
+    for (let i = 0; i < staleMemories.length; i += 1) {
+      const memory = staleMemories[i];
+      const vector = vectors[i];
+      if (memory === undefined || vector === undefined) continue;
+
+      try {
+        await repo.setEmbedding(
+          memory.id,
+          { model: provider.model, dimension: provider.dimension, vector },
+          { actor: options.actor },
+        );
+        embedded.push(memory.id);
+      } catch (cause) {
+        skipped.push({
+          id: memory.id,
+          reason: 'error',
+          error: cause instanceof Error ? cause : new Error(String(cause)),
+        });
+      }
     }
-
-    await repo.setEmbedding(
-      memory.id,
-      { model: provider.model, dimension: provider.dimension, vector },
-      { actor: options.actor },
-    );
-    embedded.push(memory.id);
+  } else {
+    // Slow path: batch embed threw. Retry each memory individually
+    // so a single bad input doesn't take down the entire batch.
+    for (const memory of staleMemories) {
+      try {
+        const vector = await provider.embed(memory.content);
+        await repo.setEmbedding(
+          memory.id,
+          { model: provider.model, dimension: provider.dimension, vector },
+          { actor: options.actor },
+        );
+        embedded.push(memory.id);
+      } catch (cause) {
+        skipped.push({
+          id: memory.id,
+          reason: 'error',
+          error: cause instanceof Error ? cause : new Error(String(cause)),
+        });
+      }
+    }
   }
 
   return { scanned: memories.length, embedded, skipped };
