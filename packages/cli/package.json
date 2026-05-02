@@ -1,6 +1,6 @@
 {
   "name": "@psraghuveer/memento",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Local-first, LLM-agnostic memory layer for AI assistants. Run via npx @psraghuveer/memento.",
   "keywords": ["memento", "memory", "ai", "assistant", "mcp", "local-first", "sqlite"],
   "license": "Apache-2.0",
