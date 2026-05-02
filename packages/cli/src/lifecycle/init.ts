@@ -81,6 +81,7 @@ import {
   isInitClientId,
   renderClientSnippets,
 } from '../init-clients.js';
+import { resolveSkillSourceDir, suggestedSkillTargetDir } from '../skill-source.js';
 import { resolveVersion } from '../version.js';
 import { openAppForSurface } from './open-app.js';
 import type { LifecycleCommand, LifecycleDeps, LifecycleInput } from './types.js';
@@ -94,6 +95,25 @@ export interface InitCheck {
   readonly name: string;
   readonly ok: boolean;
   readonly message: string;
+}
+
+/**
+ * Optional skill bundle install info surfaced by `init` to
+ * clients that load Anthropic-format skills.
+ *
+ * The renderer shows the skill section iff `capableClients` is
+ * non-empty; on Cursor / VS Code Agent / OpenCode the section
+ * is suppressed. `source` is `null` in dev environments where
+ * the build did not stage the skill — the renderer falls back
+ * to a docs link rather than printing a broken path.
+ */
+export interface SkillInstallInfo {
+  /** IDs of capable clients in the rendered set. Empty → suppress. */
+  readonly capableClients: readonly InitClientId[];
+  /** Absolute path to the bundled skill source, or null when not bundled. */
+  readonly source: string | null;
+  /** Suggested target directory for the skill (display-only). */
+  readonly suggestedTarget: string;
 }
 
 /** Stable contract for `memento init`. */
@@ -123,6 +143,13 @@ export interface InitSnapshot {
    */
   readonly checks: readonly InitCheck[];
   readonly clients: readonly ClientSnippet[];
+  /**
+   * Optional skill bundle install info — see {@link SkillInstallInfo}.
+   * Always populated; `capableClients` is empty when the
+   * rendered client set has no Anthropic-skill-capable client,
+   * which signals the renderer to suppress the skill section.
+   */
+  readonly skill: SkillInstallInfo;
 }
 
 const MIN_NODE_MAJOR = 20;
@@ -163,16 +190,30 @@ export async function runInit(
   if (!opened.ok) return opened;
   opened.value.close();
 
+  const clients = renderClientSnippets(dbPath, {
+    ...(clientFilter !== undefined ? { clients: clientFilter } : {}),
+    ...(name !== undefined ? { name } : {}),
+  });
+
+  // Skill section is gated on the rendered set: only show it
+  // when at least one capable client is present. We still
+  // resolve the source even when capable is empty, because the
+  // shape stays stable across snapshots.
+  const capableClients = clients.filter((c) => c.supportsSkills).map((c) => c.id);
+  const skill: SkillInstallInfo = {
+    capableClients,
+    source: resolveSkillSourceDir(),
+    suggestedTarget: suggestedSkillTargetDir(),
+  };
+
   return ok({
     version: resolveVersion(),
     dbPath,
     dbFromEnv,
     dbFromDefault,
     checks,
-    clients: renderClientSnippets(dbPath, {
-      ...(clientFilter !== undefined ? { clients: clientFilter } : {}),
-      ...(name !== undefined ? { name } : {}),
-    }),
+    clients,
+    skill,
   });
 }
 

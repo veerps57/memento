@@ -54,3 +54,7 @@ docs/reference/*.generated.md
 # Stryker (mutation testing)
 .stryker-tmp/
 reports/
+
+# Skills bundle staged by the CLI build (source of truth lives at
+# /skills/; packages/cli/skills/ is a per-build copy for the npm tarball).
+packages/cli/skills/

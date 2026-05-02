@@ -44,7 +44,7 @@ You can also point at an existing database with the `MEMENTO_DB` environment var
 
 **Vector retrieval** (paraphrase matching on top of FTS) is on by default. The first search triggers a one-time model download (~110 MB); after that, both FTS and vector arms run automatically. If the model has not yet downloaded, search degrades gracefully to FTS-only. For configuration options and library-wiring details, see [docs/guides/embeddings.md](docs/guides/embeddings.md).
 
-**Operating the store** day-to-day — `compact`, `backup`, `status`, scheduling — is covered in [docs/guides/operations.md](docs/guides/operations.md). The conflict workflow is in [docs/guides/conflicts.md](docs/guides/conflicts.md). To prime an AI assistant on how to use Memento well, see [docs/guides/teach-your-assistant.md](docs/guides/teach-your-assistant.md).
+**Operating the store** day-to-day — `compact`, `backup`, `status`, scheduling — is covered in [docs/guides/operations.md](docs/guides/operations.md). The conflict workflow is in [docs/guides/conflicts.md](docs/guides/conflicts.md). To prime an AI assistant on how to use Memento well, see [docs/guides/teach-your-assistant.md](docs/guides/teach-your-assistant.md) — or, if your client supports Anthropic skills (Claude Code, Cowork), install the bundled [skill](skills/memento/SKILL.md) for a no-config alternative.
 
 **Stuck?** Common failure modes (better-sqlite3 build errors, `command not found: memento`, `STORAGE_ERROR`s, embedder peer-dep errors) are covered in [docs/guides/troubleshooting.md](docs/guides/troubleshooting.md).
 
