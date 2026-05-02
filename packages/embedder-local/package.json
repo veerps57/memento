@@ -1,6 +1,6 @@
 {
   "name": "@psraghuveer/memento-embedder-local",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Local-only embedding provider for Memento, backed by transformers.js (bge-small-en-v1.5). Lazy-loaded.",
   "keywords": ["memento", "memory", "ai", "assistant", "mcp", "local-first", "sqlite"],
   "license": "Apache-2.0",
