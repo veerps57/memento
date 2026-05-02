@@ -27,6 +27,7 @@ The template is at [`template.md`](template.md). Use it.
 | 0015 | [Deprecation policy for registry commands](0015-deprecation-policy.md) | Accepted |
 | 0016 | [Assisted Extraction and Context Injection](0016-assisted-extraction-and-context-injection.md) | Accepted |
 | 0017 | [Async Extraction, Batched Embeddings, and Bulk Repository Operations](0017-async-extraction-batched-embeddings-bulk-ops.md) | Accepted |
+| 0018 | [Memento Dashboard as a sibling package](0018-dashboard-package.md) | Accepted |
 
 ## When an ADR is required
 

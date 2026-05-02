@@ -13,7 +13,10 @@
 
     // Long prose lines are intentional. Hard-wrapping at 80 columns
     // makes diffs noisier and discourages writing in paragraphs. We
-    // rely on editor soft-wrap instead.
+    // rely on editor soft-wrap instead. Enforcement lives outside
+    // markdownlint (which has no rule for "no hard-wrap in prose")
+    // in `scripts/reflow-md.mjs` — wired into `pnpm verify` via
+    // `docs:reflow:check`.
     "MD013": false,
 
     // Inline HTML is occasionally needed for callouts, <details>

@@ -64,6 +64,30 @@ pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer
 node packages/cli/dist/cli.js serve --db ./memento.db
 ```
 
+### Running the dashboard locally
+
+The dashboard package (`@psraghuveer/memento-dashboard`) ships two artefacts: a Hono server bundle (`dist/`) and a Vite-built React SPA (`dist-ui/`). For a quick look against your real store:
+
+```bash
+pnpm dev:dashboard
+```
+
+That builds the four packages the dashboard needs (`@psraghuveer/memento-schema`, `@psraghuveer/memento-core`, `@psraghuveer/memento-server`, `@psraghuveer/memento-dashboard`) plus the CLI, then launches `memento dashboard` against your default `MEMENTO_DB`. Same shape as `pnpm dev:server`. `Ctrl-C` stops it.
+
+For UI iteration with hot module reload, use the two-terminal workflow:
+
+```bash
+# terminal A — backend on the fixed port the Vite proxy expects
+node packages/cli/dist/cli.js dashboard --port 4747 --no-open
+
+# terminal B — Vite dev server (HMR for the SPA)
+pnpm -F @psraghuveer/memento-dashboard dev
+```
+
+Then open `http://localhost:5173` in your browser. Vite proxies `/api/*` to the backend on `:4747`. UI edits hot-reload instantly; backend edits require a Terminal A restart.
+
+The user-facing walkthrough (what each view shows, the Cmd-K command palette, the inline config editor, troubleshooting) lives in [`docs/guides/dashboard.md`](docs/guides/dashboard.md). The architectural decision is [ADR-0018](docs/adr/0018-dashboard-package.md).
+
 ## Workflow
 
 ### 1. Open an issue first (for non-trivial changes)
@@ -122,17 +146,20 @@ The canonical pre-push command mirrors the CI gate:
 pnpm verify
 ```
 
-`pnpm verify` runs, in order: `lint` → `typecheck` → `build` → `test` → `test:e2e` → `docs:lint` → `docs:check`. If it passes locally, CI on the same commit should pass too (modulo OS-specific surprises in the matrix).
+`pnpm verify` runs, in order: `lint` → `typecheck` → `build` → `test` → `test:e2e` → `docs:lint` → `docs:reflow:check` → `docs:check`. If it passes locally, CI on the same commit should pass too (modulo OS-specific surprises in the matrix).
 
 The individual steps are also available for tighter loops while iterating:
 
 ```bash
-pnpm lint        # biome check (lint + format)
-pnpm typecheck   # tsc --noEmit
-pnpm test        # full vitest run
-pnpm docs:lint   # markdownlint across all *.md
-pnpm docs:check  # verify docs/reference/ is in sync with the registry
+pnpm lint               # biome check (lint + format)
+pnpm typecheck          # tsc --noEmit
+pnpm test               # full vitest run
+pnpm docs:lint          # markdownlint across all *.md
+pnpm docs:reflow:check  # enforce one-paragraph-per-line markdown (long-line / soft-wrap)
+pnpm docs:check         # verify docs/reference/ is in sync with the registry
 ```
+
+If `docs:reflow:check` fails, run `pnpm docs:reflow` to apply the fix. The convention (long-line, no hard-wrap; one paragraph per line, editor soft-wraps) is documented in `.markdownlint-cli2.jsonc` and enforced by [`scripts/reflow-md.mjs`](scripts/reflow-md.mjs).
 
 If you change anything that the doc generator cares about (a command's metadata, a `ConfigKey`, an error code), regenerate and commit:
 
@@ -239,24 +266,13 @@ A change needs an ADR if it:
 
 ## Deprecating a registry command
 
-When you rename or supersede a registry command, set
-`metadata.deprecated = "<rationale + replacement + target removal release>"`
-on the old command rather than deleting it. Per
-[ADR-0015](docs/adr/0015-deprecation-policy.md), the deprecated
-command must:
+When you rename or supersede a registry command, set `metadata.deprecated = "<rationale + replacement + target removal release>"` on the old command rather than deleting it. Per [ADR-0015](docs/adr/0015-deprecation-policy.md), the deprecated command must:
 
-- Stay registered on every surface it shipped on for at least
-  one full minor release.
-- Keep its existing input/output schemas and error semantics
-  unchanged for that window.
-- Carry a rationale string that names the replacement (when
-  one exists) and the planned removal release
-  (e.g. `"use memory.write_many instead; removed in v2.0.0"`).
+- Stay registered on every surface it shipped on for at least one full minor release.
+- Keep its existing input/output schemas and error semantics unchanged for that window.
+- Carry a rationale string that names the replacement (when one exists) and the planned removal release (e.g. `"use memory.write_many instead; removed in v2.0.0"`).
 
-The MCP description and the generated CLI / MCP reference docs
-project the deprecation note automatically. The contract test
-[`packages/cli/test/deprecation.contract.test.ts`](packages/cli/test/deprecation.contract.test.ts)
-pins this behaviour for every command that carries the flag.
+The MCP description and the generated CLI / MCP reference docs project the deprecation note automatically. The contract test [`packages/cli/test/deprecation.contract.test.ts`](packages/cli/test/deprecation.contract.test.ts) pins this behaviour for every command that carries the flag.
 
 ## Reporting bugs
 

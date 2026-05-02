@@ -77,6 +77,65 @@ export interface LifecycleDeps {
    * (`run.ts`) always supplies the real implementation.
    */
   readonly resolveEmbedder?: () => Promise<EmbeddingProvider | undefined>;
+  /**
+   * Spawn the dashboard server, bind it to the requested
+   * host:port, open the browser if requested, and block until
+   * SIGINT / SIGTERM. Returns the resolved bind information
+   * once shutdown completes.
+   *
+   * Owns the entire "server lifetime" — start, run, stop —
+   * so `runDashboard` can stay declarative. Production
+   * (`run.ts`) supplies a default that dynamic-imports
+   * `@psraghuveer/memento-dashboard`, `@hono/node-server`, and
+   * `open`; tests inject a fake that resolves immediately
+   * without binding a port or installing signal handlers.
+   *
+   * Optional only because lifecycle commands other than
+   * `dashboard` never call it. `runDashboard` requires it.
+   */
+  readonly launchDashboard?: (options: LaunchDashboardOptions) => Promise<LaunchDashboardResult>;
+}
+
+/**
+ * Options handed to {@link LifecycleDeps.launchDashboard}.
+ *
+ * `registry` and `ctx` are the engine surface the dashboard
+ * server wraps. `port`, `host`, and `shouldOpen` are the
+ * caller-supplied (or defaulted) launch parameters. `io` lets
+ * the launcher emit the "dashboard ready · <url>" readiness
+ * line on stderr without `runDashboard` having to know about
+ * the surface.
+ */
+export interface LaunchDashboardOptions {
+  readonly registry: CommandRegistry;
+  readonly ctx: CommandContext;
+  /** Requested port; `0` means "OS picks". The launcher returns the resolved port in the result. */
+  readonly port: number;
+  /** Bind host. The launcher accepts only `127.0.0.1` (canonicalised from `localhost` upstream). */
+  readonly host: string;
+  /** Whether to open the user's default browser after binding. */
+  readonly shouldOpen: boolean;
+  /** Used to emit the readiness line on stderr when `isStderrTTY`. */
+  readonly io: CliIO;
+  /** Memento package version, embedded in the readiness line. */
+  readonly version: string;
+}
+
+/**
+ * Result of a completed dashboard launch — populated after the
+ * server has bound, served traffic, and shut down via SIGINT /
+ * SIGTERM. Returned by {@link LifecycleDeps.launchDashboard}
+ * and forwarded verbatim into the lifecycle command's snapshot.
+ */
+export interface LaunchDashboardResult {
+  /** Final URL the server was reachable at (e.g. `http://localhost:51234`). */
+  readonly url: string;
+  /** Resolved port — equal to `port` when nonzero, otherwise the OS-picked port. */
+  readonly port: number;
+  /** Bind host as supplied. */
+  readonly host: string;
+  /** Whether the browser-open call actually succeeded. */
+  readonly opened: boolean;
 }
 
 /** Options accepted by {@link LifecycleDeps.migrateStore}. */

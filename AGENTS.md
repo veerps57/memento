@@ -94,7 +94,7 @@ These are deliberate omissions. Do not add them. The architecture leaves the doo
 - Encryption at rest.
 - Sync across machines.
 - Single-binary distribution.
-- Web UI / TUI.
+- TUI for browsing memory. The web dashboard (ADR-0018, `@psraghuveer/memento-dashboard`) covers the same need.
 
 If you believe Memento needs one of these, open a [design proposal](.github/ISSUE_TEMPLATE/design_proposal.yml) — do not just implement it.
 

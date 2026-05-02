@@ -21,6 +21,7 @@ export function renderHelp(topic?: string): string {
     'Lifecycle commands:',
     '  init               Initialise the database and print MCP client setup snippets',
     '  serve              Run the MCP server over stdio',
+    '  dashboard          Launch the local web dashboard (browser UI; ADR-0018)',
     '  context            Print runtime context (db, version, registered commands)',
     '  doctor             Run diagnostic checks (node version, db, peer deps; --quick, --mcp)',
     '  status             One-screen summary (counts, last event, db size)',

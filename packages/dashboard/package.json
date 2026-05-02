@@ -1,0 +1,68 @@
+{
+  "name": "@psraghuveer/memento-dashboard",
+  "version": "0.0.0",
+  "description": "Local-first web dashboard for Memento. Read your memories, audit history, triage conflicts, tune config — all in your browser, against your local SQLite store.",
+  "keywords": ["memento", "memory", "dashboard", "ui", "local-first"],
+  "license": "Apache-2.0",
+  "author": "veerps57",
+  "homepage": "https://github.com/veerps57/memento#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/veerps57/memento.git",
+    "directory": "packages/dashboard"
+  },
+  "bugs": {
+    "url": "https://github.com/veerps57/memento/issues"
+  },
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "dist-ui", "README.md"],
+  "dependencies": {
+    "@hono/node-server": "1.13.7",
+    "hono": "4.6.14",
+    "open": "10.1.0",
+    "@psraghuveer/memento-core": "workspace:^",
+    "@psraghuveer/memento-schema": "workspace:^"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "5.62.7",
+    "@tanstack/react-router": "1.95.1",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "@fontsource/inter": "5.1.0",
+    "@fontsource/jetbrains-mono": "5.1.0",
+    "@vitejs/plugin-react": "4.3.4",
+    "autoprefixer": "10.4.20",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "postcss": "8.4.49",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tailwind-merge": "2.5.5",
+    "tailwindcss": "3.4.17",
+    "tsup": "8.3.5",
+    "typescript": "5.7.2",
+    "vite": "6.0.5",
+    "vitest": "2.1.8",
+    "zod": "3.25.76"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "pnpm run build:server && pnpm run build:ui",
+    "build:server": "tsup",
+    "build:ui": "vite build",
+    "clean": "rm -rf dist dist-ui .turbo *.tsbuildinfo",
+    "dev": "vite",
+    "test": "vitest run"
+  }
+}

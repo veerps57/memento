@@ -29,7 +29,10 @@
   },
   "files": ["dist", "scripts", "skills", "README.md"],
   "dependencies": {
+    "@hono/node-server": "1.13.7",
+    "open": "10.1.0",
     "@psraghuveer/memento-core": "workspace:^",
+    "@psraghuveer/memento-dashboard": "workspace:^",
     "@psraghuveer/memento-embedder-local": "workspace:^",
     "@psraghuveer/memento-schema": "workspace:^",
     "@psraghuveer/memento-server": "workspace:^"

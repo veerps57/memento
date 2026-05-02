@@ -10,6 +10,7 @@ import type { LifecycleName } from '../argv.js';
 import { backupCommand } from './backup.js';
 import { completionsCommand } from './completions.js';
 import { contextCommand } from './context.js';
+import { dashboardCommand } from './dashboard.js';
 import { doctorCommand } from './doctor.js';
 import { explainCommand } from './explain.js';
 import { exportCommand } from './export.js';
@@ -36,6 +37,7 @@ export const LIFECYCLE_COMMANDS: Record<LifecycleName, LifecycleCommand> = {
   backup: backupCommand,
   completions: completionsCommand,
   explain: explainCommand,
+  dashboard: dashboardCommand,
 };
 
 export type {
@@ -109,4 +111,9 @@ export {
   type ExplainSnapshot,
 } from './explain.js';
 export { serveCommand, runServe } from './serve.js';
+export {
+  dashboardCommand,
+  runDashboard,
+  type DashboardSnapshot,
+} from './dashboard.js';
 export { openAppForSurface, type OpenAppOptions } from './open-app.js';

@@ -4,7 +4,7 @@ This document describes the runtime topology, the major modules, and the data fl
 
 ## Runtime topology
 
-Memento runs entirely on the user's machine. There is no daemon, no background sync, and no telemetry. A single process — the MCP server — is launched on demand by the AI client and lives only for the duration of the session.
+Memento runs entirely on the user's machine. There is no daemon, no background sync, and no telemetry. The most common process is the MCP server (`memento serve`), launched on demand by an AI client and living for the duration of the session. A second optional process is the web dashboard (`memento dashboard`, see [ADR-0018](../adr/0018-dashboard-package.md)) — a localhost-only Hono server + Vite-built React SPA that the user launches when they want to browse, audit, or curate their store in a browser. Both processes wrap the same command registry through the same `executeCommand` path; they are presentation surfaces, not different engines.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐

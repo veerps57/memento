@@ -1,19 +1,10 @@
 # @psraghuveer/memento-core
 
-The Memento engine. Owns the storage scaffold, repositories, the
-scope resolver, the scrubber, the decay engine, the conflict
-detection workflow, and the embedding hook.
+The Memento engine. Owns the storage scaffold, repositories, the scope resolver, the scrubber, the decay engine, the conflict detection workflow, and the embedding hook.
 
-This package is **transport-agnostic**. Nothing in here speaks MCP
-or CLI; adapters live in [`@psraghuveer/memento-server`](../server) and
-[`@psraghuveer/memento`](../cli). See ADR
-[0003 — Single command registry](../../docs/adr/0003-single-command-registry.md).
+This package is **transport-agnostic**. Nothing in here speaks MCP or CLI; adapters live in [`@psraghuveer/memento-server`](../server) and [`@psraghuveer/memento`](../cli). See ADR [0003 — Single command registry](../../docs/adr/0003-single-command-registry.md).
 
-The retrieval pipeline ships as the `memory.search` command with FTS
-always-on; brute-force vector candidate generation activates behind
-`retrieval.vector.enabled` when an `EmbeddingProvider` is wired into
-the host (the native `sqlite-vec` backend is still pending) — see
-[`docs/architecture/retrieval.md`](../../docs/architecture/retrieval.md).
+The retrieval pipeline ships as the `memory.search` command with FTS always-on; brute-force vector candidate generation activates behind `retrieval.vector.enabled` when an `EmbeddingProvider` is wired into the host (the native `sqlite-vec` backend is still pending) — see [`docs/architecture/retrieval.md`](../../docs/architecture/retrieval.md).
 
 ## Install
 
@@ -21,10 +12,7 @@ the host (the native `sqlite-vec` backend is still pending) — see
 pnpm add @psraghuveer/memento-core @psraghuveer/memento-schema better-sqlite3
 ```
 
-`better-sqlite3` is also a direct dep here, so most callers do not
-need to install it explicitly. `@psraghuveer/memento-schema` is the source of
-truth for the data shapes (`Memory`, `MemoryEvent`, `Conflict`,
-`Embedding`, `Scope`, etc.); import those types from there.
+`better-sqlite3` is also a direct dep here, so most callers do not need to install it explicitly. `@psraghuveer/memento-schema` is the source of truth for the data shapes (`Memory`, `MemoryEvent`, `Conflict`, `Embedding`, `Scope`, etc.); import those types from there.
 
 ## Public API
 
@@ -89,9 +77,7 @@ await migrateToLatest(handle.db, MIGRATIONS);
 | `ulid()`                                                                                                                                                  | Crockford ULID generator with per-process intra-millisecond monotonicity.                                                                                                                             |
 | `MemoryRepository`, `MemoryWriteInput`, `MemoryListFilter`, `MemoryUpdatePatch`, `EmbeddingInput`, `EventRepository`, `EventListFilter`, `RepositoryDeps` | Types.                                                                                                                                                                                                |
 
-`RepositoryDeps` accepts injectable `clock`, `memoryIdFactory`,
-`eventIdFactory`, and `scrubber` — used by tests and by adapters
-that want a non-default scrubber configuration.
+`RepositoryDeps` accepts injectable `clock`, `memoryIdFactory`, `eventIdFactory`, and `scrubber` — used by tests and by adapters that want a non-default scrubber configuration.
 
 ```ts
 import { createMemoryRepository, DEFAULT_SCRUBBER_RULES } from "@psraghuveer/memento-core";
@@ -132,9 +118,7 @@ const memory = await repo.write(
 | `DEFAULT_SCRUBBER_RULES`     | The shipped rule set (emails, JWTs, secrets, etc. — see [`scrubber.md`](../../docs/architecture/scrubber.md)). |
 | `ScrubResult`                | Type.                                                                                                          |
 
-The repository wires the scrubber into `write` and `supersede` when
-`RepositoryDeps.scrubber.enabled` is `true`; the resulting
-`ScrubReport` is persisted on the corresponding `MemoryEvent`.
+The repository wires the scrubber into `write` and `supersede` when `RepositoryDeps.scrubber.enabled` is `true`; the resulting `ScrubReport` is persisted on the corresponding `MemoryEvent`.
 
 ### Decay & compaction (ADR 0004)
 
@@ -147,9 +131,7 @@ The repository wires the scrubber into `write` and `supersede` when
 | `MS_PER_DAY`                                                      | Convenience constant.                                                                                                                                                                                                                                                  |
 | `DecayConfig`, `HalfLifeByKind`, `CompactOptions`, `CompactStats` | Types.                                                                                                                                                                                                                                                                 |
 
-Decay is **lazy**: `effectiveConfidence` is computed at query time
-and never persisted. `compact` is the only writer that uses decay
-and runs as a scheduled pass.
+Decay is **lazy**: `effectiveConfidence` is computed at query time and never persisted. `compact` is the only writer that uses decay and runs as a scheduled pass.
 
 ### Conflict detection (ADR 0005)
 
@@ -162,10 +144,7 @@ and runs as a scheduled pass.
 | `DEFAULT_POLICY_CONFIG`                                                                                                                                                                                | `{ factOverlapThreshold: 3 }`.                                                                                                                       |
 | `ConflictRepository`, `ConflictRepositoryDeps`, `ConflictListFilter`, `ConflictOpenInput`, `ConflictPolicy`, `ConflictPolicyConfig`, `DetectConflictsOptions`, `DetectConflictsResult`, `PolicyResult` | Types.                                                                                                                                               |
 
-`detectConflicts` is **not** automatically called from
-`MemoryRepository.write`. Adapters compose the two: write the
-memory, then call `detectConflicts` (post-commit, time-bounded).
-This is by design (see ADR 0005).
+`detectConflicts` is **not** automatically called from `MemoryRepository.write`. Adapters compose the two: write the memory, then call `detectConflicts` (post-commit, time-bounded). This is by design (see ADR 0005).
 
 ```ts
 import {
@@ -194,12 +173,7 @@ const { scanned, opened } = await detectConflicts(
 | `EmbeddingProvider`                              | The contract every embedder satisfies — `model`, `dimension`, `embed(text)`, and an optional `embedBatch(texts)` for batch inference. The local implementation lives in `@psraghuveer/memento-embedder-local`.                                                          |
 | `ReembedOptions`, `ReembedResult`, `ReembedSkip` | Types.                                                                                                                                                                                                                                                     |
 
-`MemoryRepository.setEmbedding(id, input, ctx)` is the single
-write surface for embeddings. It validates through
-`EmbeddingSchema` (catches dimension mismatch before opening a
-transaction) and emits a `reembedded` event in the same
-transaction as the row update. Allowed only on `active`
-memories.
+`MemoryRepository.setEmbedding(id, input, ctx)` is the single write surface for embeddings. It validates through `EmbeddingSchema` (catches dimension mismatch before opening a transaction) and emits a `reembedded` event in the same transaction as the row update. Allowed only on `active` memories.
 
 ```ts
 import { reembedAll } from "@psraghuveer/memento-core";
@@ -213,12 +187,7 @@ const result = await reembedAll(repo, provider, {
 
 ### Commands (ADR 0003)
 
-The single command registry. Every operation Memento exposes is
-defined exactly **once** as a `Command` — name, side-effect
-class, Zod input/output schemas, and a `Result`-returning
-handler. Adapters (`@psraghuveer/memento-server` for MCP,
-`@psraghuveer/memento` for the CLI) bind to the same registry; a
-contract test will assert parity once the adapters land.
+The single command registry. Every operation Memento exposes is defined exactly **once** as a `Command` — name, side-effect class, Zod input/output schemas, and a `Result`-returning handler. Adapters (`@psraghuveer/memento-server` for MCP, `@psraghuveer/memento` for the CLI) bind to the same registry; a contract test will assert parity once the adapters land.
 
 | Export                                                         | Purpose                                                                                                                                                                                                                                                                 |
 | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -230,12 +199,7 @@ contract test will assert parity once the adapters land.
 | `CommandSurface`                                               | Closed enum: `'mcp' \| 'cli'`. Each command lists the surfaces it must appear on.                                                                                                                                                                                       |
 | `CommandRegistry`, `CommandRegistryBuilder`, `CommandMetadata` | Supporting types.                                                                                                                                                                                                                                                       |
 
-The registry only owns the contract here — concrete commands
-(memory, conflict, embedding, compact) are registered via the
-factory helpers exported alongside (`createMemoryCommands`,
-`createConflictCommands`, `createEmbeddingCommands`,
-`createCompactCommands`); adapters in `@psraghuveer/memento-server` and
-`@psraghuveer/memento` consume the frozen registry.
+The registry only owns the contract here — concrete commands (memory, conflict, embedding, compact) are registered via the factory helpers exported alongside (`createMemoryCommands`, `createConflictCommands`, `createEmbeddingCommands`, `createCompactCommands`); adapters in `@psraghuveer/memento-server` and `@psraghuveer/memento` consume the frozen registry.
 
 ```ts
 import { createRegistry, executeCommand } from "@psraghuveer/memento-core";
@@ -252,27 +216,10 @@ const out = await executeCommand(registry.get("memory.write")!, rawInput, {
 
 ## Design notes
 
-- **Schema-parsed everything.** Every row is parsed by the schema
-  on the way out of the repository. Drift is impossible to
-  observe from the public surface; failures surface at the
-  parser, not deep in business logic.
-- **Single-transaction writes.** Every state mutation is one
-  transaction over `(row update, event insert)`. Failures roll
-  back both halves.
-- **Standalone callables.** `detectConflicts` and `reembedAll`
-  do not auto-fire from `MemoryRepository.write`. Higher layers
-  compose the pieces; this keeps the engine layer's contract
-  simple and the timing decisions (post-commit, time-bounded)
-  where they belong.
-- **Retrieval ships as `memory.search`.** FTS is always on; the
-  ranker composes BM25 with decay-aware effective confidence,
-  pinned bias, and recency. Vector candidate generation is
-  gated on `retrieval.vector.enabled`; when on (with an
-  `EmbeddingProvider` wired in), the brute-force scanner
-  unions cosine-similarity hits with FTS hits and the ranker
-  scores the union. The native `sqlite-vec` backend is still
-  pending. Adapters get retrieval for free by re-projecting
-  the registry.
+- **Schema-parsed everything.** Every row is parsed by the schema on the way out of the repository. Drift is impossible to observe from the public surface; failures surface at the parser, not deep in business logic.
+- **Single-transaction writes.** Every state mutation is one transaction over `(row update, event insert)`. Failures roll back both halves.
+- **Standalone callables.** `detectConflicts` and `reembedAll` do not auto-fire from `MemoryRepository.write`. Higher layers compose the pieces; this keeps the engine layer's contract simple and the timing decisions (post-commit, time-bounded) where they belong.
+- **Retrieval ships as `memory.search`.** FTS is always on; the ranker composes BM25 with decay-aware effective confidence, pinned bias, and recency. Vector candidate generation is gated on `retrieval.vector.enabled`; when on (with an `EmbeddingProvider` wired in), the brute-force scanner unions cosine-similarity hits with FTS hits and the ranker scores the union. The native `sqlite-vec` backend is still pending. Adapters get retrieval for free by re-projecting the registry.
 
 ## References
 
@@ -283,8 +230,4 @@ const out = await executeCommand(registry.get("memory.write")!, rawInput, {
 - [Conflict detection](../../docs/architecture/conflict-detection.md)
 - [Scrubber](../../docs/architecture/scrubber.md)
 - [Retrieval](../../docs/architecture/retrieval.md)
-- ADR [0001](../../docs/adr/0001-sqlite-as-storage-engine.md),
-  [0003](../../docs/adr/0003-single-command-registry.md),
-  [0004](../../docs/adr/0004-lazy-query-time-decay.md),
-  [0005](../../docs/adr/0005-conflict-detection-post-write-hook.md),
-  [0006](../../docs/adr/0006-local-embeddings-only-in-v1.md)
+- ADR [0001](../../docs/adr/0001-sqlite-as-storage-engine.md), [0003](../../docs/adr/0003-single-command-registry.md), [0004](../../docs/adr/0004-lazy-query-time-decay.md), [0005](../../docs/adr/0005-conflict-detection-post-write-hook.md), [0006](../../docs/adr/0006-local-embeddings-only-in-v1.md)

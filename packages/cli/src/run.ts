@@ -100,11 +100,116 @@ async function defaultResolveEmbedder(): Promise<EmbeddingProvider | undefined> 
   return mod.createLocalEmbedder();
 }
 
+/**
+ * Default `launchDashboard` implementation. Owns the entire
+ * "spawn HTTP server, bind, open browser, wait for SIGINT,
+ * shut down" lifetime so `runDashboard` itself stays
+ * declarative and testable.
+ *
+ * Uses dynamic imports for `@psraghuveer/memento-dashboard`,
+ * `@hono/node-server`, and `open` so non-dashboard CLI
+ * invocations (`memento serve`, `memento doctor`, etc.) do
+ * not pay the load cost.
+ *
+ * Display host: emits the readiness URL with `localhost`
+ * rather than `127.0.0.1` because some browsers treat the
+ * two differently for cookie scoping. The bound socket is
+ * still `127.0.0.1`.
+ *
+ * Failure handling: a thrown error from the dashboard
+ * package or `@hono/node-server` propagates; `runDashboard`'s
+ * caller surfaces it as `INTERNAL`. The `open` call is
+ * best-effort — failures are swallowed because the dashboard
+ * is fully usable via the printed URL even when the browser
+ * fails to launch (headless servers, missing `xdg-open`).
+ */
+async function defaultLaunchDashboard(
+  options: import('./lifecycle/types.js').LaunchDashboardOptions,
+): Promise<import('./lifecycle/types.js').LaunchDashboardResult> {
+  const dashboardModule = (await import('@psraghuveer/memento-dashboard')) as {
+    readonly createDashboardServer: (init: {
+      readonly registry: typeof options.registry;
+      readonly ctx: typeof options.ctx;
+    }) => { readonly fetch: (req: Request) => Promise<Response> };
+  };
+  type HonoServer = {
+    readonly close: (cb?: () => void) => void;
+    readonly on?: (event: string, listener: (err: Error) => void) => void;
+  };
+  const honoNode = (await import('@hono/node-server')) as {
+    readonly serve: (
+      init: {
+        readonly fetch: (req: Request) => Promise<Response>;
+        readonly hostname: string;
+        readonly port: number;
+      },
+      onListen?: (info: { readonly address: string; readonly port: number }) => void,
+    ) => HonoServer;
+  };
+
+  const serverApp = dashboardModule.createDashboardServer({
+    registry: options.registry,
+    ctx: options.ctx,
+  });
+
+  // `serve()` returns synchronously but `onListen` fires after
+  // the socket is actually bound. We need the bound port (the
+  // OS may have assigned one if `port` was 0) before we can
+  // print or open the readiness URL — so we wrap the bind in
+  // a Promise and await it. The `error` listener catches the
+  // common "port already in use" case so the caller surfaces
+  // a real error instead of hanging forever.
+  let resolvedPort = options.port;
+  const server: HonoServer = await new Promise<HonoServer>((resolveServer, rejectServer) => {
+    const candidate = honoNode.serve(
+      { fetch: serverApp.fetch, hostname: options.host, port: options.port },
+      (info) => {
+        resolvedPort = info.port;
+        resolveServer(candidate);
+      },
+    );
+    candidate.on?.('error', (err) => rejectServer(err));
+  });
+
+  const displayHost = options.host === '127.0.0.1' ? 'localhost' : options.host;
+  const url = `http://${displayHost}:${resolvedPort}`;
+
+  if (options.io.isStderrTTY) {
+    options.io.stderr.write(
+      `memento ${options.version} · dashboard ready · ${url}\npress Ctrl-C to stop\n`,
+    );
+  }
+
+  let openedBrowser = false;
+  if (options.shouldOpen) {
+    try {
+      const openModule = (await import('open')) as {
+        readonly default: (target: string) => Promise<unknown>;
+      };
+      await openModule.default(url);
+      openedBrowser = true;
+    } catch {
+      // Best-effort.
+    }
+  }
+
+  await new Promise<void>((resolveSignal) => {
+    const onSignal = (): void => {
+      server.close(() => resolveSignal());
+    };
+    process.once('SIGINT', onSignal);
+    process.once('SIGTERM', onSignal);
+  });
+
+  return { url, port: resolvedPort, host: options.host, opened: openedBrowser };
+}
+
 const DEFAULT_DEPS: RunCliDeps = {
   createApp: createMementoApp,
   migrateStore: defaultMigrateStore,
   serveStdio: defaultServeStdio,
   resolveEmbedder: defaultResolveEmbedder,
+  launchDashboard: defaultLaunchDashboard,
 };
 
 /**
