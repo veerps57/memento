@@ -17,7 +17,7 @@ These are deliberate omissions. The architecture is designed so that adding any 
 | Encryption at rest                       | Use full-disk encryption or an encrypted volume                                  | Not supported                        |
 | Sync across machines                     | `npx @psraghuveer/memento export` / `npx @psraghuveer/memento import` (ADR-0013) cover transfer; live sync is out of scope | Manual transfer only                 |
 | Single-binary distribution               | Memento ships on npm                                                             | Not supported                        |
-| Web UI / TUI for browsing memory         | Treated as a separate product                                                    | Out of scope                         |
+| TUI for browsing memory                  | The web dashboard (ADR-0018) covers the same need; a TUI duplicates effort       | Not supported                        |
 
 ## Active limitations
 

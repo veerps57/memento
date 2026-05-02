@@ -13,8 +13,18 @@
     "declaration": false,
     "declarationMap": false,
     "incremental": false,
-    "rootDir": "."
+    "rootDir": ".",
+    // The dashboard package adds React-flavoured `.tsx` UI source
+    // and DOM-typed code under `packages/dashboard/src/ui/**`. The
+    // per-package `tsc -b` typechecks them against the dashboard's
+    // own `tsconfig.json` (which sets `jsx` and the DOM lib); this
+    // sibling test config picks up the same files via the broad
+    // `packages/*/src/**` include and would fail without those
+    // settings being mirrored here. JSX setting only affects
+    // `.tsx` files, so non-UI packages are unaffected.
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
   },
   "include": ["packages/*/src/**/*", "packages/*/test/**/*"],
-  "exclude": ["**/node_modules", "**/dist"]
+  "exclude": ["**/node_modules", "**/dist", "**/dist-ui"]
 }

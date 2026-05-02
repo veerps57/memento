@@ -68,7 +68,8 @@
 //   - `--client foo` with an unknown id surfaces as
 //     `INVALID_INPUT` before the database is opened.
 
-import { constants, access, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { constants, access, mkdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
 import { type Result, err, ok } from '@psraghuveer/memento-schema';
@@ -179,7 +180,18 @@ export async function runInit(
   const dbFromDefault =
     !dbFromEnv && input.env.dbPath === resolveDefaultDbPath({ env: input.io.env });
 
-  const checks: InitCheck[] = [checkNodeVersion(), await checkDbPathWritable(input.env.dbPath)];
+  // Order matters: `checkStaleWalSidecars` runs before
+  // `checkDbPathWritable` (which mkdir's the parent dir) and
+  // before `openAppForSurface` (which would otherwise hit the
+  // SQLite WAL-recovery footgun and surface as a generic
+  // 'disk I/O error'). The cleanup is observable via the
+  // returned `InitCheck` so the user sees what happened on
+  // their behalf — no silent surprises.
+  const checks: InitCheck[] = [
+    checkNodeVersion(),
+    await checkStaleWalSidecars(input.env.dbPath),
+    await checkDbPathWritable(input.env.dbPath),
+  ];
 
   // Open + migrate. We close immediately — `init` does not
   // hold the DB beyond the success path.
@@ -295,6 +307,100 @@ function checkNodeVersion(): InitCheck {
     message: compliant
       ? `Node ${raw} satisfies >= ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}`
       : `Node ${raw} is below required >= ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}`,
+  };
+}
+
+/**
+ * Detect and clean up orphaned SQLite WAL/SHM/journal sidecar
+ * files left behind when a user deletes the main `.db` file but
+ * not its companions.
+ *
+ * Why this exists
+ * ---------------
+ *
+ * Memento opens its database in WAL mode (`PRAGMA journal_mode =
+ * WAL` in `applyPragmas`, `database.ts`). WAL mode produces three
+ * files alongside the main `.db`:
+ *
+ *   memento.db        ← main file
+ *   memento.db-wal    ← write-ahead log
+ *   memento.db-shm    ← shared memory map
+ *
+ * (And, when the rare ROLLBACK journal mode kicks in mid-write,
+ * `memento.db-journal`.) These sidecars are SQLite-owned: the
+ * library creates them as a side effect of WAL mode and recovers
+ * from them on next open.
+ *
+ * If a user deletes only `memento.db` (`rm memento.db`), the
+ * sidecars survive. The next open creates a new empty `.db`,
+ * sets WAL mode, and SQLite tries to recover from the orphan
+ * WAL whose contents do not match the new (empty) main file.
+ * The recovery fails and surfaces as a generic `disk I/O error`
+ * — a misleading message that has bitten enough users that we
+ * fix it at the Memento layer rather than expose them to the
+ * SQLite footgun.
+ *
+ * What this function does
+ * -----------------------
+ *
+ * The cleanup is sound only when the main `.db` is absent: that
+ * is the unambiguous "no consistent state to recover" signal.
+ * If the main file exists, the sidecars belong to SQLite and
+ * we leave them alone — touching them then would corrupt active
+ * databases.
+ *
+ * The function returns an `InitCheck` so the operation is
+ * observable in the snapshot. A successful cleanup names what
+ * was removed; a permission failure surfaces as a check
+ * failure (the user must remove the sidecars by hand).
+ */
+async function checkStaleWalSidecars(dbPath: string): Promise<InitCheck> {
+  if (dbPath === ':memory:') {
+    return {
+      name: 'stale-wal-sidecars',
+      ok: true,
+      message: 'in-memory database; no sidecar check',
+    };
+  }
+  const absolute = path.resolve(dbPath);
+  // If the main DB file exists, the sidecars (if any) belong
+  // to SQLite — never touch them. The cleanup is only sound
+  // when the main file is absent.
+  if (existsSync(absolute)) {
+    return {
+      name: 'stale-wal-sidecars',
+      ok: true,
+      message: 'main db exists; sidecars (if any) are owned by SQLite',
+    };
+  }
+
+  const removed: string[] = [];
+  for (const suffix of ['-wal', '-shm', '-journal'] as const) {
+    const orphan = `${absolute}${suffix}`;
+    if (!existsSync(orphan)) continue;
+    try {
+      await unlink(orphan);
+      removed.push(path.basename(orphan));
+    } catch (cause) {
+      return {
+        name: 'stale-wal-sidecars',
+        ok: false,
+        message: `could not remove orphan sidecar '${orphan}': ${describe(cause)}. Remove it by hand and re-run.`,
+      };
+    }
+  }
+
+  if (removed.length === 0) {
+    return {
+      name: 'stale-wal-sidecars',
+      ok: true,
+      message: 'no orphan WAL/SHM/journal sidecars present',
+    };
+  }
+  return {
+    name: 'stale-wal-sidecars',
+    ok: true,
+    message: `cleaned ${removed.length} orphan sidecar${removed.length === 1 ? '' : 's'} from a previous half-deleted store: ${removed.join(', ')}`,
   };
 }
 

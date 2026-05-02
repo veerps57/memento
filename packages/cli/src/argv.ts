@@ -77,7 +77,8 @@ export type LifecycleName =
   | 'uninstall'
   | 'backup'
   | 'completions'
-  | 'explain';
+  | 'explain'
+  | 'dashboard';
 
 export type ParsedCommand =
   | { kind: 'version' }
@@ -235,7 +236,8 @@ export function parseArgv({ argv, env }: ParseArgvOptions): ParsedCommand {
     head === 'uninstall' ||
     head === 'backup' ||
     head === 'completions' ||
-    head === 'explain'
+    head === 'explain' ||
+    head === 'dashboard'
   ) {
     return {
       kind: 'lifecycle',

@@ -119,6 +119,25 @@ touch /abs/path/to/memento.db.test && rm /abs/path/to/memento.db.test
 
 For corrupt-database recovery, the standard SQLite recipe applies: `sqlite3 <file> .recover > dump.sql`, then replay `dump.sql` into a fresh file. Memento's audit log is append-only, so a recovered dump that loses the most recent events is still internally consistent.
 
+## "STORAGE_ERROR: ... disk I/O error" right after deleting `memento.db`
+
+**Symptom.** You ran `rm ~/.local/share/memento/memento.db` to "start over," and the next `memento init` (or any open) prints:
+
+```text
+STORAGE_ERROR: failed to open database at '<path>': disk I/O error
+```
+
+**Cause.** Memento opens its database in WAL mode, which produces sidecar files (`memento.db-wal`, `memento.db-shm`, occasionally `memento.db-journal`) alongside the main `.db`. SQLite owns those sidecars and recovers from them on next open. If you remove only the main `.db`, SQLite finds a half-deleted store on the next open — a brand-new `.db` plus old WAL/SHM files that no longer match — and the recovery surfaces as the misleading `disk I/O error` above.
+
+**Fix.** Modern Memento (`memento init` from this version onward) detects the half-deleted-store state and removes the orphan sidecars automatically. The cleanup is observable in the init snapshot as a `stale-wal-sidecars` `InitCheck`. If you're on an older release, the manual fix is:
+
+```bash
+rm ~/.local/share/memento/memento.db-wal ~/.local/share/memento/memento.db-shm
+memento init
+```
+
+The cleanup is sound only when the main `.db` is absent; if the file exists, the sidecars belong to a live SQLite session and must not be touched.
+
 ## "CONFIG_ERROR: stored embedding for memory ..."
 
 **Symptom.** A `memory.search` call (after enabling vector retrieval) returns:

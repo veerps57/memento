@@ -1,0 +1,120 @@
+/*
+ * Dashboard theme tokens.
+ *
+ * The CSS variables drive Tailwind's semantic colours (declared
+ * in tailwind.config.ts via `rgb(var(--name) / <alpha-value>)`).
+ * Two non-grey colours total:
+ *
+ *   --accent   — soft amber. "Preserved / durable." Active state,
+ *                primary CTA, the active row in a list.
+ *   --synapse  — desaturated cyan-teal. "Confirm / synaptic."
+ *                Used for the confirm action and active scope
+ *                indicators.
+ *
+ * Status colours (--warn, --destructive, --conflict) are muted
+ * spectrum — never saturated. Bright red for "forget" reads as
+ * Bootstrap admin theme; muted rust says "this matters" without
+ * shouting.
+ *
+ * Light mode reverses the bg/fg pair and slightly darkens the
+ * accents for contrast. We default to dark; users opt in to
+ * light by adding `class="light"` to <html> (no theme switcher
+ * in v0; only the OS preference via `prefers-color-scheme` and
+ * a future toggle).
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: 14 14 16;
+    --fg: 230 230 230;
+    --muted: 122 122 122;
+    --border: 38 38 42;
+    --accent: 232 184 108;
+    --accent-fg: 14 14 16;
+    --synapse: 127 179 179;
+    --warn: 212 160 90;
+    --destructive: 199 113 94;
+    --conflict: 181 134 200;
+  }
+
+  .light,
+  :root.light {
+    --bg: 250 248 244;
+    --fg: 28 28 31;
+    --muted: 110 110 110;
+    --border: 220 217 211;
+    --accent: 184 122 36;
+    --accent-fg: 250 248 244;
+    --synapse: 78 134 134;
+    --warn: 168 116 46;
+    --destructive: 156 70 50;
+    --conflict: 138 92 158;
+  }
+
+  /* When the user prefers light mode and hasn't explicitly
+     forced .dark on <html>, swap to the light palette. The
+     dashboard defaults to dark feel, but respect OS preference. */
+  @media (prefers-color-scheme: light) {
+    :root:not(.dark) {
+      --bg: 250 248 244;
+      --fg: 28 28 31;
+      --muted: 110 110 110;
+      --border: 220 217 211;
+      --accent: 184 122 36;
+      --accent-fg: 250 248 244;
+      --synapse: 78 134 134;
+      --warn: 168 116 46;
+      --destructive: 156 70 50;
+      --conflict: 138 92 158;
+    }
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    /* The font family is set on <body> (with `font-sans`) by the
+       template; `font-feature-settings` is a small typographic
+       improvement that pays for itself on dense data UIs. */
+    font-feature-settings: "cv11", "ss01", "ss03", "ss06";
+  }
+
+  /* Selection uses the accent so picked text reads as picked. */
+  ::selection {
+    background-color: rgb(var(--accent) / 0.35);
+  }
+}
+
+@layer components {
+  /*
+   * `.term-prompt` — the lowercase, dot-prefixed nav label style
+   * that mirrors Memento's command namespaces (`memory`,
+   * `conflicts`, `config`, `system`, `audit`).
+   */
+  .term-prompt {
+    @apply font-mono text-sm tracking-widish lowercase;
+  }
+
+  /*
+   * `.term-id` — for memory ids, event ids, conflict ids, scope
+   * paths. Slightly smaller, very mono, muted by default.
+   */
+  .term-id {
+    @apply font-mono text-xs tracking-tight text-muted;
+  }
+
+  /*
+   * `.term-stat` — the large-ish numerals on stat tiles. We
+   * keep them mono so digits visually align across cards.
+   */
+  .term-stat {
+    @apply font-mono text-3xl tabular-nums;
+  }
+}

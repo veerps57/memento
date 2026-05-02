@@ -1,66 +1,33 @@
 # User Stories
 
-> The "why" behind Memento, expressed as outcomes for the people and agents
-> that interact with it. This document is **deliberately implementation-free**:
-> it describes what each persona needs from a memory layer and why, without
-> reference to MCP, SQLite, command registries, schemas, or any specific
-> moving part of the codebase. It exists so we can repeatedly cross-check
-> the implementation against intent — and notice when we have drifted.
+> The "why" behind Memento, expressed as outcomes for the people and agents that interact with it. This document is **deliberately implementation-free**: it describes what each persona needs from a memory layer and why, without reference to MCP, SQLite, command registries, schemas, or any specific moving part of the codebase. It exists so we can repeatedly cross-check the implementation against intent — and notice when we have drifted.
 
 ## How to read this document
 
-- **Personas** are kept narrow and named. A story belongs to exactly one
-  primary persona; secondary personas are noted when relevant.
-- **Stories** follow `As a <persona>, I want <outcome>, so that <reason>`.
-  The reason is the load-bearing half — it survives changes in implementation
-  and even changes in feature surface. If a story's "so that" stops being
-  true, the story is wrong, not the code.
-- **"We know it works when …"** is observable behaviour from the persona's
-  point of view. It avoids naming files, commands, error codes, or any
-  internal artefact. Mechanism is for design docs and ADRs; this document
-  is about effects.
-- Stories are **not** prioritised here. Roadmap and scope live elsewhere.
-  This document is a checklist for "did we serve the user," not a backlog.
+- **Personas** are kept narrow and named. A story belongs to exactly one primary persona; secondary personas are noted when relevant.
+- **Stories** follow `As a <persona>, I want <outcome>, so that <reason>`. The reason is the load-bearing half — it survives changes in implementation and even changes in feature surface. If a story's "so that" stops being true, the story is wrong, not the code.
+- **"We know it works when …"** is observable behaviour from the persona's point of view. It avoids naming files, commands, error codes, or any internal artefact. Mechanism is for design docs and ADRs; this document is about effects.
+- Stories are **not** prioritised here. Roadmap and scope live elsewhere. This document is a checklist for "did we serve the user," not a backlog.
 
 ## Personas
 
 ### P1 — The human user
 
-A person who uses one or more AI assistants — for coding, writing,
-research, planning, or any domain where continuity matters. They install
-Memento because re-explaining themselves at the start of every session is
-exhausting and because the per-tool memory stores (one assistant's "rules
-file," another's "project memory," a third's "custom instructions")
-fragment knowledge they consider their own.
+A person who uses one or more AI assistants — for coding, writing, research, planning, or any domain where continuity matters. They install Memento because re-explaining themselves at the start of every session is exhausting and because the per-tool memory stores (one assistant's "rules file," another's "project memory," a third's "custom instructions") fragment knowledge they consider their own.
 
-What they care about: continuity, control, privacy, portability across
-tools, and not being surprised by what an assistant has remembered.
+What they care about: continuity, control, privacy, portability across tools, and not being surprised by what an assistant has remembered.
 
 ### P2 — The AI assistant (agent user)
 
-An LLM-driven assistant — a desktop chat client, an in-IDE agent, a
-research bot, a writing companion — that calls Memento on the user's
-behalf. It does not have eyes; it consumes structured input/output and
-reacts to structured errors. Its goals are quality of context (recall
-what's relevant, ignore what isn't), safety (don't write nonsense, don't
-lose data, don't violate the user's expectations), and self-correction
-(notice when prior memory is stale and fix it).
+An LLM-driven assistant — a desktop chat client, an in-IDE agent, a research bot, a writing companion — that calls Memento on the user's behalf. It does not have eyes; it consumes structured input/output and reacts to structured errors. Its goals are quality of context (recall what's relevant, ignore what isn't), safety (don't write nonsense, don't lose data, don't violate the user's expectations), and self-correction (notice when prior memory is stale and fix it).
 
-What it cares about: a small, predictable surface; deterministic
-behaviour; informative errors; idempotency under retry; explicit
-disambiguation when the same question has different answers in different
-contexts.
+What it cares about: a small, predictable surface; deterministic behaviour; informative errors; idempotency under retry; explicit disambiguation when the same question has different answers in different contexts.
 
 ### P3 — The maintainer / code owner
 
-Anyone — human or AI contributor — extending, debugging, or operating
-Memento. They are not the end user but they are the reason the end-user
-experience continues to hold over time.
+Anyone — human or AI contributor — extending, debugging, or operating Memento. They are not the end user but they are the reason the end-user experience continues to hold over time.
 
-What they care about: a small surface to keep correct, decisions that are
-recoverable from documentation alone, low-cost evolution, an honest
-record of what is intentional versus accidental, and a runtime that fails
-loudly rather than silently.
+What they care about: a small surface to keep correct, decisions that are recoverable from documentation alone, low-cost evolution, an honest record of what is intentional versus accidental, and a runtime that fails loudly rather than silently.
 
 ---
 
@@ -68,525 +35,313 @@ loudly rather than silently.
 
 ### P1.1 Continuity across sessions
 
-> As a user, I want my AI assistant to remember decisions, preferences,
-> and conventions between sessions, so that I don't re-explain myself
-> every time I open a new chat.
+> As a user, I want my AI assistant to remember decisions, preferences, and conventions between sessions, so that I don't re-explain myself every time I open a new chat.
 
-**We know it works when:** starting a fresh session in any compatible
-assistant, the assistant can answer "what have you remembered about this
-project?" without me re-supplying that context.
+**We know it works when:** starting a fresh session in any compatible assistant, the assistant can answer "what have you remembered about this project?" without me re-supplying that context.
 
 ### P1.2 Continuity across tools
 
-> As a user, I want the same memory to be available regardless of which
-> AI assistant I am using today, so that switching tools (or trying a
-> new one) does not cost me my accumulated context.
+> As a user, I want the same memory to be available regardless of which AI assistant I am using today, so that switching tools (or trying a new one) does not cost me my accumulated context.
 
-**We know it works when:** I can answer the same question — "what's our
-team's stance on X?" — through assistant A on Monday and assistant B on
-Tuesday, and get the same recalled facts.
+**We know it works when:** I can answer the same question — "what's our team's stance on X?" — through assistant A on Monday and assistant B on Tuesday, and get the same recalled facts.
 
 ### P1.3 Local-first by default
 
-> As a user, I want my memory to live on my machine and never leave it
-> without my explicit action, so that I can use this with sensitive work
-> without re-evaluating a vendor's data policy.
+> As a user, I want my memory to live on my machine and never leave it without my explicit action, so that I can use this with sensitive work without re-evaluating a vendor's data policy.
 
-**We know it works when:** with no extra configuration, no network
-traffic is generated by ordinary memory operations, and I can verify
-that without specialised tooling.
+**We know it works when:** with no extra configuration, no network traffic is generated by ordinary memory operations, and I can verify that without specialised tooling.
 
 ### P1.4 No vendor lock-in
 
-> As a user, I want my memory to be portable in a documented,
-> self-describing format, so that I can leave at any time and take it
-> with me.
+> As a user, I want my memory to be portable in a documented, self-describing format, so that I can leave at any time and take it with me.
 
-**We know it works when:** I can produce a complete export of my memory
-in a format I can read myself, and a fresh install can re-import it
-without loss.
+**We know it works when:** I can produce a complete export of my memory in a format I can read myself, and a fresh install can re-import it without loss.
 
 ### P1.5 See and audit what was remembered
 
-> As a user, I want to see exactly what an assistant has stored about
-> me, when, and why, so that I can trust — or correct — the memory
-> layer.
+> As a user, I want to see exactly what an assistant has stored about me, when, and why, so that I can trust — or correct — the memory layer.
 
-**We know it works when:** for any remembered item I can answer "when
-did this come into existence, what action introduced it, and what has
-happened to it since?" without reading source code.
+**We know it works when:** for any remembered item I can answer "when did this come into existence, what action introduced it, and what has happened to it since?" without reading source code.
 
 ### P1.6 Correct or remove memory at will
 
-> As a user, I want to forget, archive, or replace any individual
-> memory, so that I can fix mistakes the assistant or I made earlier
-> without losing the rest of the history.
+> As a user, I want to forget, archive, or replace any individual memory, so that I can fix mistakes the assistant or I made earlier without losing the rest of the history.
 
-**We know it works when:** removing or replacing one memory does not
-disturb others, and the change itself is observable in the audit trail.
+**We know it works when:** removing or replacing one memory does not disturb others, and the change itself is observable in the audit trail.
 
 ### P1.7 Bulk-destructive operations are not surprising
 
-> As a user, I want bulk forget/archive/clear operations to default to
-> a preview, so that I never lose data because I mistyped a filter.
+> As a user, I want bulk forget/archive/clear operations to default to a preview, so that I never lose data because I mistyped a filter.
 
-**We know it works when:** an unconfirmed bulk destructive call shows
-me what *would* happen and changes nothing, and I have to opt in
-explicitly to make it real.
+**We know it works when:** an unconfirmed bulk destructive call shows me what *would* happen and changes nothing, and I have to opt in explicitly to make it real.
 
 ### P1.8 Secrets never sit in memory in the clear
 
-> As a user, I want common secrets to be redacted before they are
-> persisted, so that an assistant pasting a token into "memory" doesn't
-> turn my memory store into a credential leak.
+> As a user, I want common secrets to be redacted before they are persisted, so that an assistant pasting a token into "memory" doesn't turn my memory store into a credential leak.
 
-**We know it works when:** if I ask the assistant to remember something
-that contains a recognisable secret, the persisted record has the secret
-replaced and the audit record notes that redaction happened.
+**We know it works when:** if I ask the assistant to remember something that contains a recognisable secret, the persisted record has the secret replaced and the audit record notes that redaction happened.
 
 ### P1.9 The redaction layer is conservative and tunable
 
-> As a user, I want to control what counts as a secret and to be told
-> when redaction altered something, so that I can adjust the defaults
-> to my context (work vs. personal, strict vs. permissive).
+> As a user, I want to control what counts as a secret and to be told when redaction altered something, so that I can adjust the defaults to my context (work vs. personal, strict vs. permissive).
 
-**We know it works when:** I can extend or narrow the redaction rule
-set without modifying source code, and I can review the difference in
-behaviour after I do.
+**We know it works when:** I can extend or narrow the redaction rule set without modifying source code, and I can review the difference in behaviour after I do.
 
 ### P1.10 Different contexts have different memory
 
-> As a user, I want memory to be scoped — a work preference about one
-> project should not leak into a different context — so that recalled
-> context is relevant and not noisy.
+> As a user, I want memory to be scoped — a work preference about one project should not leak into a different context — so that recalled context is relevant and not noisy.
 
-**We know it works when:** the same question asked in two different
-project contexts can return different answers, and I can predict which
-context will produce which.
+**We know it works when:** the same question asked in two different project contexts can return different answers, and I can predict which context will produce which.
 
 ### P1.11 Layered context I can reason about
 
-> As a user, I want broader-context memory (about me as a person) to
-> remain visible inside narrower contexts (a specific project), so
-> that universal preferences are recalled everywhere they apply.
+> As a user, I want broader-context memory (about me as a person) to remain visible inside narrower contexts (a specific project), so that universal preferences are recalled everywhere they apply.
 
-**We know it works when:** narrowing context never silently loses
-universally-true facts, and broadening context never silently injects
-project-specific noise.
+**We know it works when:** narrowing context never silently loses universally-true facts, and broadening context never silently injects project-specific noise.
 
 ### P1.12 Zero-friction install and verify
 
-> As a user, I want to install and verify Memento in under a minute, so
-> that I'll actually try it instead of putting it off.
+> As a user, I want to install and verify Memento in under a minute, so that I'll actually try it instead of putting it off.
 
-**We know it works when:** a single command is enough to start using
-it, and a separate single command tells me whether everything is wired
-up correctly.
+**We know it works when:** a single command is enough to start using it, and a separate single command tells me whether everything is wired up correctly.
 
 ### P1.13 Honest reporting of what doesn't work
 
-> As a user, I want failure modes to be surfaced in writing, so that I
-> don't waste an afternoon assuming a feature works when it doesn't.
+> As a user, I want failure modes to be surfaced in writing, so that I don't waste an afternoon assuming a feature works when it doesn't.
 
-**We know it works when:** every limitation I hit in practice is
-already documented as a limitation, and the documentation explicitly
-distinguishes "not yet" from "intentionally not."
+**We know it works when:** every limitation I hit in practice is already documented as a limitation, and the documentation explicitly distinguishes "not yet" from "intentionally not."
 
 ### P1.14 Optional, opt-in capability
 
-> As a user, I want richer features (e.g. paraphrase-aware recall) to
-> be opt-in, so that the default install stays minimal and
-> dependency-light.
+> As a user, I want richer features (e.g. paraphrase-aware recall) to be opt-in, so that the default install stays minimal and dependency-light.
 
-**We know it works when:** I can run usefully without ever opting in,
-and opting in does not silently change unrelated behaviour.
+**We know it works when:** I can run usefully without ever opting in, and opting in does not silently change unrelated behaviour.
 
 ### P1.15 Pick up where I left off on a new machine
 
-> As a user, I want to carry my memory from one machine to another, so
-> that switching laptops, reinstalling an OS, or working from a second
-> workstation does not cost me the context I have accumulated.
+> As a user, I want to carry my memory from one machine to another, so that switching laptops, reinstalling an OS, or working from a second workstation does not cost me the context I have accumulated.
 
-**We know it works when:** on a fresh install on a new machine, I can
-hand the system the artefact I produced on the old machine and resume
-work with the same memories, the same scopes, and the same audit
-history visible to me — no manual re-entry, no silently dropped items,
-and a clear up-front message if any item cannot be carried forward and
-why.
+**We know it works when:** on a fresh install on a new machine, I can hand the system the artefact I produced on the old machine and resume work with the same memories, the same scopes, and the same audit history visible to me — no manual re-entry, no silently dropped items, and a clear up-front message if any item cannot be carried forward and why.
 
-This story is adjacent to P1.4 (no vendor lock-in) but distinct in
-intent: P1.4 is about being able to *leave*; P1.15 is about staying —
-specifically, staying continuous across hardware changes. The two
-share a mechanism but answer different questions.
+This story is adjacent to P1.4 (no vendor lock-in) but distinct in intent: P1.4 is about being able to *leave*; P1.15 is about staying — specifically, staying continuous across hardware changes. The two share a mechanism but answer different questions.
 
 ---
 
 ## P2 — AI assistant stories
 
-These are stories about the calling agent's needs. The agent is not a
-user in the traditional sense, but its behaviour determines whether the
-human perceives the system as useful.
+These are stories about the calling agent's needs. The agent is not a user in the traditional sense, but its behaviour determines whether the human perceives the system as useful.
 
 ### P2.1 A small, learnable surface
 
-> As an AI assistant, I want the set of things I can do with memory to
-> be small, named consistently, and stable, so that I can use it
-> reliably without being re-prompted on every release.
+> As an AI assistant, I want the set of things I can do with memory to be small, named consistently, and stable, so that I can use it reliably without being re-prompted on every release.
 
-**We know it works when:** the operations I can perform are nameable
-in a single paragraph; their names are stable across patch and minor
-releases; and a deprecated operation continues to work for at least one
-release with a structured deprecation signal I can react to.
+**We know it works when:** the operations I can perform are nameable in a single paragraph; their names are stable across patch and minor releases; and a deprecated operation continues to work for at least one release with a structured deprecation signal I can react to.
 
 ### P2.2 Predictable, structured input and output
 
-> As an AI assistant, I want every operation to declare what it
-> accepts and what it returns in a machine-readable way, so that I can
-> validate before calling and parse without guessing.
+> As an AI assistant, I want every operation to declare what it accepts and what it returns in a machine-readable way, so that I can validate before calling and parse without guessing.
 
-**We know it works when:** I can introspect the surface to discover
-operation shapes; passing malformed input is rejected at the boundary
-with an error class I can program against; and successful results
-have a fixed shape regardless of which surface called them.
+**We know it works when:** I can introspect the surface to discover operation shapes; passing malformed input is rejected at the boundary with an error class I can program against; and successful results have a fixed shape regardless of which surface called them.
 
 ### P2.3 Errors I can act on
 
-> As an AI assistant, I want errors to be classified — invalid input,
-> missing data, configuration error, conflict, transient — so that I
-> can choose between retry, ask the user, fix the call, and abort.
+> As an AI assistant, I want errors to be classified — invalid input, missing data, configuration error, conflict, transient — so that I can choose between retry, ask the user, fix the call, and abort.
 
-**We know it works when:** every error reaches me with a stable class,
-a human-readable message, and (where applicable) the field or value
-that triggered it. No error of mine ever requires reading server logs.
+**We know it works when:** every error reaches me with a stable class, a human-readable message, and (where applicable) the field or value that triggered it. No error of mine ever requires reading server logs.
 
 ### P2.4 Idempotency under retry
 
-> As an AI assistant, I want write operations to be idempotent when I
-> say so, so that a retry after a network blip does not produce
-> duplicate memories.
+> As an AI assistant, I want write operations to be idempotent when I say so, so that a retry after a network blip does not produce duplicate memories.
 
-**We know it works when:** repeating the same write with the same
-client-supplied token returns the same identifier and produces no
-duplicate, while a different token produces a new memory.
+**We know it works when:** repeating the same write with the same client-supplied token returns the same identifier and produces no duplicate, while a different token produces a new memory.
 
 ### P2.5 Batching without loss of safety
 
-> As an AI assistant, I want to write multiple memories in a single
-> request, so that I can persist a coherent set of facts atomically
-> instead of leaving the store in a partial state when one item fails.
+> As an AI assistant, I want to write multiple memories in a single request, so that I can persist a coherent set of facts atomically instead of leaving the store in a partial state when one item fails.
 
-**We know it works when:** if any item in a batch is rejected, none of
-the items in that batch are persisted, and the rejection identifies
-which item caused it. The maximum batch size is configurable and
-documented.
+**We know it works when:** if any item in a batch is rejected, none of the items in that batch are persisted, and the rejection identifies which item caused it. The maximum batch size is configurable and documented.
 
 ### P2.6 Disambiguation by context
 
-> As an AI assistant, I want to fetch and write memory bound to a
-> specific context (this user, this workspace, this repository, this
-> session), so that the same question can resolve differently in
-> different places without bleed-through.
+> As an AI assistant, I want to fetch and write memory bound to a specific context (this user, this workspace, this repository, this session), so that the same question can resolve differently in different places without bleed-through.
 
-**We know it works when:** I can express the context I am operating
-in, and the system honours it both on read and on write — never
-returning an answer scoped to a context I did not request.
+**We know it works when:** I can express the context I am operating in, and the system honours it both on read and on write — never returning an answer scoped to a context I did not request.
 
 ### P2.7 Recall that ranks relevance
 
-> As an AI assistant, I want recall to return the most relevant items
-> first, with a score I can use to threshold, so that I can include
-> top results in a prompt without exceeding a context budget.
+> As an AI assistant, I want recall to return the most relevant items first, with a score I can use to threshold, so that I can include top results in a prompt without exceeding a context budget.
 
-**We know it works when:** ranking is deterministic for fixed inputs,
-the score is comparable across calls in the same configuration, and
-two semantically similar phrasings of the same query return strongly
-overlapping result sets.
+**We know it works when:** ranking is deterministic for fixed inputs, the score is comparable across calls in the same configuration, and two semantically similar phrasings of the same query return strongly overlapping result sets.
 
 ### P2.8 Lifecycle that I can drive
 
-> As an AI assistant, I want every memory to have an explicit lifecycle
-> — newly captured, currently believed, superseded, retired — so that
-> I can reason about whether a recalled item is still authoritative.
+> As an AI assistant, I want every memory to have an explicit lifecycle — newly captured, currently believed, superseded, retired — so that I can reason about whether a recalled item is still authoritative.
 
-**We know it works when:** I can ask "is this still true?" and the
-lifecycle answers it, and superseding a memory leaves a traceable
-pointer from the old item to the new.
+**We know it works when:** I can ask "is this still true?" and the lifecycle answers it, and superseding a memory leaves a traceable pointer from the old item to the new.
 
 ### P2.9 Conflict surfacing without blocking
 
-> As an AI assistant, I want to be told when something I just wrote
-> contradicts something already stored, so that I can either reconcile
-> the two or surface the contradiction to the user.
+> As an AI assistant, I want to be told when something I just wrote contradicts something already stored, so that I can either reconcile the two or surface the contradiction to the user.
 
-**We know it works when:** writes are not delayed by contradiction
-checks, but contradictions are reachable as a separate signal soon
-after the write, with both items linked.
+**We know it works when:** writes are not delayed by contradiction checks, but contradictions are reachable as a separate signal soon after the write, with both items linked.
 
 ### P2.10 Self-correcting decay
 
-> As an AI assistant, I want stored memory to age in a principled way,
-> so that "I prefer X" from two years ago doesn't outweigh "I prefer
-> Y" from last week.
+> As an AI assistant, I want stored memory to age in a principled way, so that "I prefer X" from two years ago doesn't outweigh "I prefer Y" from last week.
 
-**We know it works when:** older items rank lower than newer ones for
-the same content, all else equal, and I can surface that age signal
-to the user without computing it myself.
+**We know it works when:** older items rank lower than newer ones for the same content, all else equal, and I can surface that age signal to the user without computing it myself.
 
 ### P2.11 Pinning what must not decay
 
-> As an AI assistant, I want to mark a memory as durable, so that
-> facts the user has explicitly said "remember this" don't quietly
-> fade.
+> As an AI assistant, I want to mark a memory as durable, so that facts the user has explicitly said "remember this" don't quietly fade.
 
-**We know it works when:** pinned items are not subject to the same
-decay as ordinary ones, and the audit trail records who pinned them
-and when.
+**We know it works when:** pinned items are not subject to the same decay as ordinary ones, and the audit trail records who pinned them and when.
 
 ### P2.12 Self-introspection
 
-> As an AI assistant, I want to ask "what surface do I have, and what
-> is the current configuration," so that I can adapt my behaviour
-> without the user having to tell me.
+> As an AI assistant, I want to ask "what surface do I have, and what is the current configuration," so that I can adapt my behaviour without the user having to tell me.
 
-**We know it works when:** I can discover capabilities and
-configuration through the same channel I use for ordinary operations,
-without privileged access.
+**We know it works when:** I can discover capabilities and configuration through the same channel I use for ordinary operations, without privileged access.
 
 ### P2.13 Privacy-aware writes
 
-> As an AI assistant, I want a way to mark a write as containing
-> sensitive material, so that the system can apply stricter handling
-> than the default — and so that, on recall, I can choose to omit it
-> from speculative output.
+> As an AI assistant, I want a way to mark a write as containing sensitive material, so that the system can apply stricter handling than the default — and so that, on recall, I can choose to omit it from speculative output.
 
-**We know it works when:** sensitivity is a first-class property of a
-memory, recall surfaces it, and the system's own behaviour around
-that property is documented (not implicit).
+**We know it works when:** sensitivity is a first-class property of a memory, recall surfaces it, and the system's own behaviour around that property is documented (not implicit).
 
 ---
 
 ## P3 — Maintainer stories
 
-These are stories about the people who keep Memento sustainable. They
-are not user-facing in the strict sense, but their satisfaction is a
-leading indicator of the user-facing health of the system.
+These are stories about the people who keep Memento sustainable. They are not user-facing in the strict sense, but their satisfaction is a leading indicator of the user-facing health of the system.
 
 ### P3.1 The "why" survives the "how"
 
-> As a maintainer, I want every load-bearing decision to have a written
-> reason, so that the next maintainer (human or AI) does not have to
-> re-derive the design from the code.
+> As a maintainer, I want every load-bearing decision to have a written reason, so that the next maintainer (human or AI) does not have to re-derive the design from the code.
 
-**We know it works when:** for any non-obvious choice I can find a
-short document explaining the alternatives considered, the reason for
-the choice, and the consequences accepted.
+**We know it works when:** for any non-obvious choice I can find a short document explaining the alternatives considered, the reason for the choice, and the consequences accepted.
 
 ### P3.2 Surfaces evolve in lockstep
 
-> As a maintainer, I want the user-facing surfaces to stay in parity by
-> construction, so that I cannot accidentally ship a feature on one
-> surface and forget the other.
+> As a maintainer, I want the user-facing surfaces to stay in parity by construction, so that I cannot accidentally ship a feature on one surface and forget the other.
 
-**We know it works when:** adding a capability shows up on every
-intended surface in the same change, and a contract test fails the
-build if it doesn't.
+**We know it works when:** adding a capability shows up on every intended surface in the same change, and a contract test fails the build if it doesn't.
 
 ### P3.3 Quality bar is mechanically enforced
 
-> As a maintainer, I want test coverage, formatting, type strictness,
-> and documentation freshness to be enforced by the build, so that
-> reviewers spend their attention on substance.
+> As a maintainer, I want test coverage, formatting, type strictness, and documentation freshness to be enforced by the build, so that reviewers spend their attention on substance.
 
-**We know it works when:** the build is the single gate; "looks fine
-on my machine" is never enough; and the gate runs in well under the
-patience window of a typical reviewer.
+**We know it works when:** the build is the single gate; "looks fine on my machine" is never enough; and the gate runs in well under the patience window of a typical reviewer.
 
 ### P3.4 Schema and storage evolve safely
 
-> As a maintainer, I want changes to data shape and on-disk layout to
-> be additive and reversible, so that an upgrade never asks the user
-> to choose between losing data and not upgrading.
+> As a maintainer, I want changes to data shape and on-disk layout to be additive and reversible, so that an upgrade never asks the user to choose between losing data and not upgrading.
 
-**We know it works when:** an upgrade leaves an older client able to
-read the data it understood before, and a downgrade either works or
-fails up-front with a clear message.
+**We know it works when:** an upgrade leaves an older client able to read the data it understood before, and a downgrade either works or fails up-front with a clear message.
 
 ### P3.5 Configuration is a contract
 
-> As a maintainer, I want every user-tunable knob to be declared in
-> one place with its type, default, mutability, and meaning, so that
-> users and tools can discover the surface without reading source.
+> As a maintainer, I want every user-tunable knob to be declared in one place with its type, default, mutability, and meaning, so that users and tools can discover the surface without reading source.
 
-**We know it works when:** I can produce, from a single source of
-truth, an authoritative reference of every knob — and that reference
-is part of the published artefact.
+**We know it works when:** I can produce, from a single source of truth, an authoritative reference of every knob — and that reference is part of the published artefact.
 
 ### P3.6 Failures are loud and scoped
 
-> As a maintainer, I want failure modes to be specific and localised,
-> so that I can tell which subsystem is unhappy without spelunking.
+> As a maintainer, I want failure modes to be specific and localised, so that I can tell which subsystem is unhappy without spelunking.
 
-**We know it works when:** error classes match subsystem boundaries;
-a doctor-style self-check tells the user which subsystem failed and
-how to begin investigating; nothing important fails silently.
+**We know it works when:** error classes match subsystem boundaries; a doctor-style self-check tells the user which subsystem failed and how to begin investigating; nothing important fails silently.
 
 ### P3.7 Boundaries are typed once and projected
 
-> As a maintainer, I want the data shapes used by storage, the API,
-> and the documentation to come from a single declaration, so that a
-> change in one place can never silently disagree with the others.
+> As a maintainer, I want the data shapes used by storage, the API, and the documentation to come from a single declaration, so that a change in one place can never silently disagree with the others.
 
-**We know it works when:** changing a field's type or constraint in
-its declaration ripples through validation, persistence, generated
-documentation, and tests in a single change set, and the build
-catches any place that fell out of step.
+**We know it works when:** changing a field's type or constraint in its declaration ripples through validation, persistence, generated documentation, and tests in a single change set, and the build catches any place that fell out of step.
 
 ### P3.8 New surfaces are additive
 
-> As a maintainer, I want to add a new way of talking to Memento (e.g.
-> a different transport, a future programmatic API) without
-> reimplementing the operations, so that the cost of new surfaces is
-> proportional to the new surface's own concerns, not to Memento's.
+> As a maintainer, I want to add a new way of talking to Memento (e.g. a different transport, a future programmatic API) without reimplementing the operations, so that the cost of new surfaces is proportional to the new surface's own concerns, not to Memento's.
 
-**We know it works when:** writing a new adapter is a pure projection
-of the existing operation set, with no operation logic duplicated.
+**We know it works when:** writing a new adapter is a pure projection of the existing operation set, with no operation logic duplicated.
 
 ### P3.9 Optional dependencies stay optional
 
-> As a maintainer, I want enabling an optional capability to be the
-> only thing that pulls in its dependency, so that the default install
-> stays small and the supply-chain footprint is bounded.
+> As a maintainer, I want enabling an optional capability to be the only thing that pulls in its dependency, so that the default install stays small and the supply-chain footprint is bounded.
 
-**We know it works when:** a default install that has never opted into
-an optional capability does not download or load that capability's
-code at any point.
+**We know it works when:** a default install that has never opted into an optional capability does not download or load that capability's code at any point.
 
 ### P3.10 Performance characteristics are knowable
 
-> As a maintainer, I want to know how each operation scales, so that I
-> can answer "will this still feel fast at 10× the data" without
-> running a benchmark mid-PR.
+> As a maintainer, I want to know how each operation scales, so that I can answer "will this still feel fast at 10× the data" without running a benchmark mid-PR.
 
-**We know it works when:** every long-lived operation has a documented
-big-O behaviour and a known break-even where its strategy should be
-swapped for a different one.
+**We know it works when:** every long-lived operation has a documented big-O behaviour and a known break-even where its strategy should be swapped for a different one.
 
 ### P3.11 Honesty about limits
 
-> As a maintainer, I want known limitations and deliberate omissions
-> to be tracked in a single document, so that contributors don't
-> "discover" them by re-implementing them.
+> As a maintainer, I want known limitations and deliberate omissions to be tracked in a single document, so that contributors don't "discover" them by re-implementing them.
 
-**We know it works when:** any contributor can answer "is this in
-scope?" by reading one file, and the file has been updated within
-the last release.
+**We know it works when:** any contributor can answer "is this in scope?" by reading one file, and the file has been updated within the last release.
 
 ### P3.12 Onboard human and AI contributors equivalently
 
-> As a maintainer, I want the contribution rules to be equally
-> useful to a human developer and an AI agent, so that both produce
-> work the team can review with the same lens.
+> As a maintainer, I want the contribution rules to be equally useful to a human developer and an AI agent, so that both produce work the team can review with the same lens.
 
-**We know it works when:** an agent following the published
-contribution guide produces a change that passes the same gates as
-a human's, and the review checklist applies identically to both.
+**We know it works when:** an agent following the published contribution guide produces a change that passes the same gates as a human's, and the review checklist applies identically to both.
 
 ### P3.13 Reversibility of operational actions
 
-> As a maintainer, I want destructive operations to be either
-> recoverable from the audit trail or gated behind explicit
-> confirmation, so that no single mistaken action can be permanent.
+> As a maintainer, I want destructive operations to be either recoverable from the audit trail or gated behind explicit confirmation, so that no single mistaken action can be permanent.
 
-**We know it works when:** any state change can be answered
-"who did this, when, and what was here before?" — or, if it
-cannot, that operation required explicit user confirmation
-beforehand.
+**We know it works when:** any state change can be answered "who did this, when, and what was here before?" — or, if it cannot, that operation required explicit user confirmation beforehand.
 
 ### P3.14 Documentation is generated, not narrated
 
-> As a maintainer, I want reference documentation (config keys,
-> error codes, operations, etc.) to be generated from the source of
-> truth, so that the docs cannot drift.
+> As a maintainer, I want reference documentation (config keys, error codes, operations, etc.) to be generated from the source of truth, so that the docs cannot drift.
 
-**We know it works when:** human-written prose is reserved for the
-"why," and any machine-readable list of capabilities, knobs, or
-errors comes out of a generator.
+**We know it works when:** human-written prose is reserved for the "why," and any machine-readable list of capabilities, knobs, or errors comes out of a generator.
 
 ---
 
 ## Cross-cutting principles, restated as outcomes
 
-These are not stories; they are the qualities that the stories above,
-taken together, imply. They exist to make gap analysis easier.
+These are not stories; they are the qualities that the stories above, taken together, imply. They exist to make gap analysis easier.
 
-1. **A developer can leave at any time without loss.**
-   (P1.4, P1.5, P3.4)
+1. **A developer can leave at any time without loss.** (P1.4, P1.5, P3.4)
 
-2. **A developer can audit and correct anything.**
-   (P1.5, P1.6, P1.7, P3.13)
+2. **A developer can audit and correct anything.** (P1.5, P1.6, P1.7, P3.13)
 
-3. **An assistant gets predictable, structured behaviour.**
-   (P2.1, P2.2, P2.3, P2.4, P2.5)
+3. **An assistant gets predictable, structured behaviour.** (P2.1, P2.2, P2.3, P2.4, P2.5)
 
-4. **Context is honoured, never silently flattened.**
-   (P1.10, P1.11, P2.6)
+4. **Context is honoured, never silently flattened.** (P1.10, P1.11, P2.6)
 
-5. **Memory has a lifecycle, not just an existence.**
-   (P2.8, P2.9, P2.10, P2.11)
+5. **Memory has a lifecycle, not just an existence.** (P2.8, P2.9, P2.10, P2.11)
 
-6. **The system is honest about its limits.**
-   (P1.13, P3.6, P3.11)
+6. **The system is honest about its limits.** (P1.13, P3.6, P3.11)
 
-7. **Surfaces are projections of one definition.**
-   (P3.2, P3.7, P3.8, P3.14)
+7. **Surfaces are projections of one definition.** (P3.2, P3.7, P3.8, P3.14)
 
-8. **Sensitive material never receives default treatment.**
-   (P1.8, P1.9, P2.13)
+8. **Sensitive material never receives default treatment.** (P1.8, P1.9, P2.13)
 
-9. **Optional capability does not tax the default install.**
-   (P1.14, P3.9)
+9. **Optional capability does not tax the default install.** (P1.14, P3.9)
 
-10. **Decisions outlive their authors.**
-    (P3.1, P3.5, P3.10, P3.11, P3.12)
+10. **Decisions outlive their authors.** (P3.1, P3.5, P3.10, P3.11, P3.12)
 
 ---
 
 ## What this document is *not*
 
-- It is not a feature list. It is the criterion against which features
-  are judged.
-- It is not a roadmap. Some stories are already met; some are partially
-  met; some are deliberately deferred. That gap analysis is a separate
-  exercise (see below) and produces its own artefact.
-- It is not architecture. It does not say *how* anything is achieved.
-  That is what `ARCHITECTURE.md` and the ADRs are for.
-- It is not exhaustive. As personas evolve, new stories appear.
-  Stories that turn out to be redundant are removed, with a note in the
-  changelog of this file.
+- It is not a feature list. It is the criterion against which features are judged.
+- It is not a roadmap. Some stories are already met; some are partially met; some are deliberately deferred. That gap analysis is a separate exercise (see below) and produces its own artefact.
+- It is not architecture. It does not say *how* anything is achieved. That is what `ARCHITECTURE.md` and the ADRs are for.
+- It is not exhaustive. As personas evolve, new stories appear. Stories that turn out to be redundant are removed, with a note in the changelog of this file.
 
 ## How we use it
 
-- **Before designing a change.** Find the story (or stories) the change
-  serves. If you cannot, the change probably needs a story first —
-  or it probably should not happen.
-- **Before reviewing a change.** Find the story it serves and check
-  the "we know it works when" criterion against the change. A change
-  that improves implementation but does not move any criterion is a
-  refactor, not a feature, and should be labelled as such.
-- **Periodically, against the implementation.** A separate gap-
-  analysis pass walks every story and answers "met / partially met /
-  unmet / deliberately deferred," with one paragraph per story. That
-  pass is run at least once per release and produces its own
-  artefact; it does not modify this document.
+- **Before designing a change.** Find the story (or stories) the change serves. If you cannot, the change probably needs a story first — or it probably should not happen.
+- **Before reviewing a change.** Find the story it serves and check the "we know it works when" criterion against the change. A change that improves implementation but does not move any criterion is a refactor, not a feature, and should be labelled as such.
+- **Periodically, against the implementation.** A separate gap- analysis pass walks every story and answers "met / partially met / unmet / deliberately deferred," with one paragraph per story. That pass is run at least once per release and produces its own artefact; it does not modify this document.
 
 ## Changelog
 
-- *Created 2026-04-26* — initial set of personas and stories,
-  drafted from the architecture and the "why" sections of the README,
-  intentionally with no reference to current code paths or modules.
-- *2026-04-26* — added P1.15 (machine migration), distinguished from
-  P1.4 by intent: continuity across hardware vs. ability to leave.
-- *2026-05-01* — broadened personas: P1 from "developer" to "human
-  user," P2 from "AI coding assistant" to "AI assistant." Memento is a
-  universal memory layer for all MCP-compatible assistants, not just
-  coding tools.
+- *Created 2026-04-26* — initial set of personas and stories, drafted from the architecture and the "why" sections of the README, intentionally with no reference to current code paths or modules.
+- *2026-04-26* — added P1.15 (machine migration), distinguished from P1.4 by intent: continuity across hardware vs. ability to leave.
+- *2026-05-01* — broadened personas: P1 from "developer" to "human user," P2 from "AI coding assistant" to "AI assistant." Memento is a universal memory layer for all MCP-compatible assistants, not just coding tools.

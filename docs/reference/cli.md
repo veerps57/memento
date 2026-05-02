@@ -77,6 +77,10 @@ The response is a `Result` envelope. On success, `value` carries the version, th
 
 The full snapshot lists every command in the registry and every key in the config schema. `--format text` pretty-prints the same JSON; `--format auto` (the default) chooses based on whether stdout is a TTY.
 
+### `memento dashboard`
+
+Launch the local web dashboard (browser UI for browsing and curating memory)
+
 ### `memento doctor`
 
 Run diagnostic checks (Node version, database access, optional dependencies)

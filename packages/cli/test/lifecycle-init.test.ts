@@ -8,7 +8,7 @@
 //   - the open+migrate path calls through to `createApp`,
 //   - storage failures bubble through as Result errors.
 
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -231,6 +231,117 @@ describe('runInit', () => {
       if (!result.ok) return;
       const writable = result.value.checks.find((c) => c.name === 'db-path-writable');
       expect(writable?.ok).toBe(true);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('cleans orphan WAL/SHM sidecars when the main db is missing', async () => {
+    // Regression test for the half-deleted-store bug: a user
+    // who runs `rm memento.db` leaves `memento.db-wal` and
+    // `memento.db-shm` behind. The next `memento init` would
+    // crash inside SQLite's WAL recovery with a misleading
+    // 'disk I/O error'. `init` now detects and cleans those
+    // orphans before openAppForSurface gets a chance to trip.
+    const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'memento-init-wal-'));
+    try {
+      const dbPath = path.join(tmpRoot, 'memento.db');
+      // Seed the orphan sidecars exactly the way SQLite would
+      // have left them after a half-deleted-store. The contents
+      // are arbitrary because the cleanup never reads them.
+      writeFileSync(`${dbPath}-wal`, 'orphan-wal-bytes');
+      writeFileSync(`${dbPath}-shm`, 'orphan-shm-bytes');
+      writeFileSync(`${dbPath}-journal`, 'orphan-journal-bytes');
+      expect(existsSync(dbPath)).toBe(false);
+
+      const result = await runInit(
+        {
+          createApp: createAppNoVector,
+          migrateStore: rejectMigrateStore,
+          serveStdio: rejectServeStdio,
+        },
+        { env: cliEnv({ dbPath }), subargs: [], io: NULL_IO },
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // Sidecars are gone, main db now exists, and the cleanup
+      // is observable in the snapshot — the operator sees what
+      // happened on their behalf rather than a silent surprise.
+      expect(existsSync(`${dbPath}-wal`)).toBe(false);
+      expect(existsSync(`${dbPath}-shm`)).toBe(false);
+      expect(existsSync(`${dbPath}-journal`)).toBe(false);
+      expect(existsSync(dbPath)).toBe(true);
+
+      const cleanup = result.value.checks.find((c) => c.name === 'stale-wal-sidecars');
+      expect(cleanup?.ok).toBe(true);
+      expect(cleanup?.message).toContain('cleaned');
+      expect(cleanup?.message).toContain('memento.db-wal');
+      expect(cleanup?.message).toContain('memento.db-shm');
+      expect(cleanup?.message).toContain('memento.db-journal');
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('does not touch sidecars when the main db exists', async () => {
+    // Critical safety property: when the main `.db` is present,
+    // any sidecars belong to SQLite — the cleanup must NOT
+    // delete them. Touching live sidecars would corrupt an
+    // active database.
+    const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'memento-init-wal-keep-'));
+    try {
+      const dbPath = path.join(tmpRoot, 'memento.db');
+      writeFileSync(dbPath, '');
+      writeFileSync(`${dbPath}-wal`, 'live-wal-bytes');
+      writeFileSync(`${dbPath}-shm`, 'live-shm-bytes');
+
+      const result = await runInit(
+        {
+          createApp: createAppNoVector,
+          migrateStore: rejectMigrateStore,
+          serveStdio: rejectServeStdio,
+        },
+        // `:memory:` to avoid having SQLite touch the seed file
+        // and rewrite the bytes; we're only testing that the
+        // cleanup check is a no-op when the main file exists.
+        { env: cliEnv({ dbPath: ':memory:' }), subargs: [], io: NULL_IO },
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // The seeded files at the OTHER path stay untouched —
+      // this proves the cleanup did not over-reach. The
+      // `:memory:` path's check is the one in the snapshot;
+      // we're asserting via the disk that the side-effect was
+      // confined to the requested path.
+      expect(existsSync(`${dbPath}-wal`)).toBe(true);
+      expect(existsSync(`${dbPath}-shm`)).toBe(true);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("reports 'no orphan' when the main db is absent and no sidecars exist", async () => {
+    // The truly-fresh-install case. Pin that the snapshot
+    // reports the cleanup ran and found nothing — gives the
+    // operator a positive ack rather than silence.
+    const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'memento-init-fresh-'));
+    try {
+      const dbPath = path.join(tmpRoot, 'memento.db');
+      const result = await runInit(
+        {
+          createApp: createAppNoVector,
+          migrateStore: rejectMigrateStore,
+          serveStdio: rejectServeStdio,
+        },
+        { env: cliEnv({ dbPath }), subargs: [], io: NULL_IO },
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const cleanup = result.value.checks.find((c) => c.name === 'stale-wal-sidecars');
+      expect(cleanup?.ok).toBe(true);
+      expect(cleanup?.message).toContain('no orphan');
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true });
     }

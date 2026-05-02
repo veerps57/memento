@@ -10,6 +10,7 @@
     "ignoreUnknown": true,
     "ignore": [
       "**/dist/**",
+      "**/dist-ui/**",
       "**/coverage/**",
       "**/node_modules/**",
       "**/*.tsbuildinfo",
@@ -101,6 +102,17 @@
           },
           "style": {
             "noNonNullAssertion": "off"
+          }
+        }
+      }
+    },
+    {
+      "include": ["packages/dashboard/src/ui/components/CommandPalette.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off",
+            "useFocusableInteractive": "off"
           }
         }
       }

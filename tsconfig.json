@@ -14,6 +14,7 @@
     { "path": "./packages/core" },
     { "path": "./packages/server" },
     { "path": "./packages/embedder-local" },
-    { "path": "./packages/cli" }
+    { "path": "./packages/cli" },
+    { "path": "./packages/dashboard" }
   ]
 }
