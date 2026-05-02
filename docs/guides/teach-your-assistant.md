@@ -6,6 +6,12 @@ This guide is a starter pack of prompt fragments you can drop into your assistan
 
 The fragments below are deliberately short and opinionated. Adapt them to your usage.
 
+## Shortcut: use the bundled skill (Claude Code / Cowork)
+
+If your AI client supports [Anthropic skills](https://docs.claude.com/en/docs/agents/skills) — Claude Code and Cowork do today — install [`skills/memento/`](../../skills/memento/SKILL.md) and you can skip most of this guide. The skill encodes the same rules, loads automatically on intent match, and stays versioned with the rest of Memento. See [`skills/README.md`](../../skills/README.md) for install steps.
+
+Other clients (Cursor, Cline, OpenCode, VS Code Agent mode) do not support skills today. For those, the persona snippet below is still the supported approach.
+
 ## Core directive
 
 Paste this near the top of the persona file. It establishes the contract: Memento is the durable memory; chat history is not.

@@ -65,6 +65,24 @@ describe('renderClientSnippets', () => {
     expect(vscode.configPath).toContain('.vscode/mcp.json');
   });
 
+  it('marks Anthropic-product clients as skill-capable and third-party clients as not', () => {
+    // Pinning the exact mapping is intentional. The init renderer
+    // gates the optional "install the skill" section on this
+    // boolean; an accidental flip on Cursor / VS Code / OpenCode
+    // would mislead users into installing into a directory their
+    // client does not read.
+    const byClient = Object.fromEntries(
+      renderClientSnippets(DB).map((s) => [s.id, s.supportsSkills]),
+    );
+    expect(byClient).toEqual({
+      'claude-code': true,
+      'claude-desktop': true,
+      cursor: false,
+      vscode: false,
+      opencode: false,
+    });
+  });
+
   it('renders OpenCode with the mcp/local envelope and environment field', () => {
     const oc = byId('opencode', DB);
     const parsed = JSON.parse(oc.snippet) as {

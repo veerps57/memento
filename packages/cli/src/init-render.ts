@@ -20,8 +20,11 @@
 // helpers. We honour `NO_COLOR` / `FORCE_COLOR` upstream
 // (`shouldUseColor`) the same way `banner.ts` does.
 
+import os from 'node:os';
+import path from 'node:path';
+
 import { renderBanner } from './banner.js';
-import type { InitSnapshot } from './lifecycle/init.js';
+import type { InitSnapshot, SkillInstallInfo } from './lifecycle/init.js';
 
 export interface InitRenderOptions {
   readonly color: boolean;
@@ -34,7 +37,7 @@ export interface InitRenderOptions {
  * `memento doctor` for verification.
  */
 export function renderInitText(snapshot: InitSnapshot, options: InitRenderOptions): string {
-  const { version, dbPath, dbFromEnv, dbFromDefault, checks, clients } = snapshot;
+  const { version, dbPath, dbFromEnv, dbFromDefault, checks, clients, skill } = snapshot;
   const memoryWarning = dbPath === ':memory:';
 
   const lines: string[] = [];
@@ -106,6 +109,13 @@ export function renderInitText(snapshot: InitSnapshot, options: InitRenderOption
     lines.push('');
   }
 
+  // Skill section — only when the rendered client set has at
+  // least one Anthropic-skill-capable client. Suppressed for
+  // pure third-party setups (Cursor / VS Code Agent / OpenCode).
+  if (skill.capableClients.length > 0) {
+    lines.push(...renderSkillSection(skill, options));
+  }
+
   lines.push(`${dim('Tip:', options)} clients with `);
   // The "swap to bare memento" tip is correct only for
   // command/args-shaped clients (Claude {Code, Desktop}, Cursor,
@@ -137,6 +147,95 @@ export function renderInitText(snapshot: InitSnapshot, options: InitRenderOption
  */
 function indent(lines: readonly string[], prefix: string): string[] {
   return lines.map((line) => (line.length === 0 ? line : `${prefix}${line}`));
+}
+
+/**
+ * Render the optional "Memento skill" section.
+ *
+ * Why a separate section
+ * ----------------------
+ *
+ * The MCP snippet wires the *server*. The skill bundle wires
+ * the *assistant's behaviour against that server* (when to call
+ * `memory.write`, what scope to pick, when to supersede, etc.)
+ * — closing the adoption gap that ADR-0016 names. Surfacing it
+ * here is the one moment we reliably have the user's attention
+ * during onboarding; documenting it elsewhere has historically
+ * meant most users never find it.
+ *
+ * Three branches based on `skill`:
+ *
+ *   - `source` is non-null: print the absolute path and a
+ *     copy-paste install command targeting `~/.claude/skills/`.
+ *   - `source` is null: the build did not stage the skill
+ *     (e.g. dev environment that has not run `pnpm build`).
+ *     Print a docs-link fallback instead of a broken path —
+ *     the section still announces the skill exists.
+ *   - `capableClients` is empty: caller already filtered the
+ *     section out before calling this helper.
+ *
+ * The display path uses `~/.claude/skills/` rather than the
+ * fully-expanded `os.homedir()` form because the user's shell
+ * expands `~` and the docs use the tilde form. We keep the
+ * fully-expanded path on the snapshot for programmatic
+ * consumers (a future `--install-skill` flag).
+ */
+function renderSkillSection(skill: SkillInstallInfo, options: InitRenderOptions): string[] {
+  const lines: string[] = [];
+  const header = '── Memento skill (optional, for Claude Code / Claude Desktop / Cowork) ──';
+  lines.push(bold(header, options));
+  lines.push('');
+  lines.push('Anthropic-skill-capable clients can auto-load Memento usage rules — when to');
+  lines.push('write, recall, confirm, supersede, forget, and extract memories — without any');
+  lines.push('persona-file edits. The bundle ships with this package; install it once and');
+  lines.push("the assistant behaves as if you'd hand-written the persona snippet.");
+  lines.push('');
+
+  if (skill.source !== null) {
+    const target = displayHomePath(skill.suggestedTarget);
+    lines.push('Install with:');
+    lines.push('');
+    lines.push(`  mkdir -p ${target}`);
+    lines.push(`  cp -R "${skill.source}" ${target}/`);
+    lines.push('');
+    lines.push('Restart your client; the skill auto-loads on intent match.');
+  } else {
+    // Source not bundled — happens in dev environments where
+    // the build's `copy-skills` step has not run. Don't fabricate
+    // a path; point at the canonical source instead.
+    lines.push(
+      `${yellow('!', options)} the skill bundle is not staged on this install — usually a dev`,
+    );
+    lines.push('  checkout that has not run `pnpm build`. To install from a clone:');
+    lines.push('');
+    lines.push(`  cp -R skills/memento ${displayHomePath(skill.suggestedTarget)}/`);
+    lines.push('');
+    lines.push(
+      'For a normal `npx` / global install, file an issue — the skill should ship with the package.',
+    );
+  }
+  lines.push('');
+  lines.push(
+    `${dim('Other clients (Cursor, VS Code Agent, OpenCode):', options)} skills are an Anthropic-`,
+  );
+  lines.push('  product feature. Use the persona snippet in docs/guides/teach-your-assistant.md.');
+  lines.push('');
+  return lines;
+}
+
+/**
+ * Replace the user's home directory with `~` for display. Keeps
+ * the rendered command short and matches the conventions in the
+ * rest of the walkthrough (and in the docs). Falls back to the
+ * absolute path when it does not start under `$HOME`.
+ */
+function displayHomePath(absolute: string): string {
+  const home = os.homedir();
+  if (home.length > 0 && absolute.startsWith(home + path.sep)) {
+    return `~${absolute.slice(home.length)}`;
+  }
+  if (absolute === home) return '~';
+  return absolute;
 }
 
 const RESET = '\u001b[0m';

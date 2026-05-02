@@ -49,6 +49,19 @@ export interface ClientSnippet {
    * for clients that prefer a CLI subcommand over file edits.
    */
   readonly installHint?: string;
+  /**
+   * True iff this client loads Anthropic-format skills (a
+   * `SKILL.md` bundle in a known directory) at session start.
+   * The init renderer gates the optional "install the skill"
+   * section on at least one rendered client carrying this flag.
+   *
+   * Anthropic-product clients (Claude Code, Claude Desktop,
+   * Cowork-hosted Claude) support skills today. Third-party
+   * MCP clients (Cursor, VS Code Agent, OpenCode) do not — they
+   * fall back to the persona-snippet approach in
+   * `docs/guides/teach-your-assistant.md`.
+   */
+  readonly supportsSkills: boolean;
 }
 
 /**
@@ -69,6 +82,12 @@ interface ClientSnippetSpec {
    * subcommand sidesteps the file-format question entirely.
    */
   readonly installHint?: string;
+  /**
+   * Whether this client loads Anthropic-format skills. See
+   * {@link ClientSnippet.supportsSkills} for the rationale; this
+   * is the source of truth that flows out to the snapshot.
+   */
+  readonly supportsSkills: boolean;
   readonly render: (dbPath: string, name: string) => string;
 }
 
@@ -198,6 +217,7 @@ const CLIENT_SPECS: readonly ClientSnippetSpec[] = [
     configPath: '~/.claude.json (user scope) or .mcp.json (project scope)',
     installHint:
       'Recommended: `claude mcp add memento -e MEMENTO_DB=<path> -- npx -y @psraghuveer/memento serve`',
+    supportsSkills: true,
     render: renderClaudeCode,
   },
   {
@@ -205,24 +225,28 @@ const CLIENT_SPECS: readonly ClientSnippetSpec[] = [
     displayName: 'Claude Desktop',
     configPath:
       '~/Library/Application Support/Claude/claude_desktop_config.json (macOS) | %APPDATA%/Claude/claude_desktop_config.json (Windows) | ~/.config/Claude/claude_desktop_config.json (Linux)',
+    supportsSkills: true,
     render: renderClaudeDesktop,
   },
   {
     id: 'cursor',
     displayName: 'Cursor',
     configPath: '~/.cursor/mcp.json',
+    supportsSkills: false,
     render: renderCursor,
   },
   {
     id: 'vscode',
     displayName: 'VS Code',
     configPath: '.vscode/mcp.json (workspace) or user `mcp.json` (user scope)',
+    supportsSkills: false,
     render: renderVSCode,
   },
   {
     id: 'opencode',
     displayName: 'OpenCode',
     configPath: '~/.config/opencode/opencode.json',
+    supportsSkills: false,
     render: renderOpenCode,
   },
 ];
@@ -266,6 +290,7 @@ export function renderClientSnippets(
     displayName: spec.displayName,
     configPath: spec.configPath,
     snippet: spec.render(dbPath, name),
+    supportsSkills: spec.supportsSkills,
     ...(spec.installHint !== undefined ? { installHint: spec.installHint } : {}),
   }));
 }

@@ -27,7 +27,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "scripts", "README.md"],
+  "files": ["dist", "scripts", "skills", "README.md"],
   "dependencies": {
     "@psraghuveer/memento-core": "workspace:^",
     "@psraghuveer/memento-embedder-local": "workspace:^",
@@ -45,8 +45,9 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup",
-    "clean": "rm -rf dist .turbo *.tsbuildinfo",
+    "build:skills": "node ./scripts/copy-skills.mjs",
+    "build": "node ./scripts/copy-skills.mjs && tsup",
+    "clean": "rm -rf dist skills .turbo *.tsbuildinfo",
     "test": "vitest run",
     "postinstall": "node ./scripts/postinstall.mjs"
   }

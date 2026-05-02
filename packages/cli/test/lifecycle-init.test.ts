@@ -78,11 +78,48 @@ describe('runInit', () => {
       expect(client.displayName.length).toBeGreaterThan(0);
       expect(client.configPath.length).toBeGreaterThan(0);
       expect(client.snippet.endsWith('\n')).toBe(true);
+      expect(typeof client.supportsSkills).toBe('boolean');
       // Every snippet is valid JSON (modulo the trailing
       // newline) — the user is going to paste it into a JSON
       // file, so it had better parse.
       expect(() => JSON.parse(client.snippet)).not.toThrow();
     }
+
+    // Skill section: with the default client filter (i.e.
+    // every supported client), the capable list MUST include
+    // the two Anthropic-product clients. This pins the
+    // contract that drives the renderer's "install the skill"
+    // section.
+    expect(result.value.skill.capableClients).toEqual(
+      expect.arrayContaining(['claude-code', 'claude-desktop']),
+    );
+    expect(result.value.skill.suggestedTarget.length).toBeGreaterThan(0);
+    // `source` MUST be non-null in the test environment because
+    // the workspace ships `<workspace>/skills/memento/SKILL.md`
+    // as the source-of-truth location. Asserting this catches
+    // regressions in the resolver path (`skill-source.ts`) that
+    // would otherwise only surface as missing instructions in
+    // the rendered walkthrough.
+    expect(result.value.skill.source).not.toBeNull();
+    expect(result.value.skill.source).toMatch(/skills[\\/]memento$/);
+  });
+
+  it('reports an empty capable client set when filtered to non-skill-capable clients', async () => {
+    // When the user runs `memento init --client cursor`, the
+    // skill section MUST be suppressed — Cursor does not load
+    // Anthropic skills. The renderer keys off `capableClients`
+    // being empty, so the snapshot field is the gate.
+    const result = await runInit(
+      {
+        createApp: createAppNoVector,
+        migrateStore: rejectMigrateStore,
+        serveStdio: rejectServeStdio,
+      },
+      { env: cliEnv(), subargs: ['--client', 'cursor,vscode,opencode'], io: NULL_IO },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.skill.capableClients).toEqual([]);
   });
 
   it("preserves ':memory:' verbatim in the snapshot", async () => {
