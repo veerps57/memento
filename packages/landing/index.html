@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0E0E10" />
+    <title>Memento — local-first memory for AI assistants</title>
+    <meta
+      name="description"
+      content="A local-first, LLM-agnostic memory layer for AI assistants. Runs as an MCP server over a single SQLite file on your machine. No cloud, no vendor lock-in."
+    />
+    <!-- Canonical + OG URL.
+         TODO when custom domain lands: swap both occurrences to
+         the new origin (e.g. https://memento.dev/). The github.io
+         URL is the production URL until then. -->
+    <link rel="canonical" href="https://veerps57.github.io/memento/" />
+    <meta property="og:url" content="https://veerps57.github.io/memento/" />
+    <meta property="og:site_name" content="Memento" />
+    <meta property="og:title" content="Memento — local-first memory for AI assistants" />
+    <meta
+      property="og:description"
+      content="One place for everything your AI assistants should remember about you. Works with Claude, Cursor, Copilot, Cline, OpenCode, and any MCP client."
+    />
+    <meta property="og:type" content="website" />
+    <!-- Twitter Cards: `summary` (text-only) until an OG image exists. -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Memento — local-first memory for AI assistants" />
+    <meta
+      name="twitter:description"
+      content="One place for everything your AI assistants should remember. MCP-native. Local-first. Works with Claude, Cursor, Copilot, Cline, OpenCode."
+    />
+    <!-- Schema.org SoftwareApplication. Helps search engines
+         understand what Memento is, render rich results, and
+         link the npm package + repo as the install path. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Memento",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Linux, Windows",
+        "description": "A local-first, LLM-agnostic memory layer for AI assistants. Runs as an MCP server over a single SQLite file on your machine.",
+        "license": "https://www.apache.org/licenses/LICENSE-2.0",
+        "url": "https://veerps57.github.io/memento/",
+        "downloadUrl": "https://www.npmjs.com/package/@psraghuveer/memento",
+        "codeRepository": "https://github.com/veerps57/memento",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230E0E10'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='18' fill='%23E8B86C'%3Em%3C/text%3E%3C/svg%3E" />
+    <script>
+      // Apply the saved theme before React mounts so we never
+      // flash the default theme. Mirror dashboard convention:
+      // dark by default, opt into light via `.light` on <html>.
+      (function () {
+        try {
+          var saved = localStorage.getItem('memento-theme');
+          var prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+          var resolved = saved ?? (prefersLight ? 'light' : 'dark');
+          document.documentElement.classList.toggle('light', resolved === 'light');
+        } catch (_) {
+          /* localStorage unavailable — accept default dark. */
+        }
+      })();
+    </script>
+  </head>
+  <body class="bg-bg text-fg font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

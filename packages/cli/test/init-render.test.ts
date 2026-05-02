@@ -57,6 +57,17 @@ describe('renderInitText', () => {
     expect(out).toContain('OpenCode');
   });
 
+  it('surfaces post-init next steps (status + dashboard)', () => {
+    // Persona-2 audit added a `Next:` block so a user who just
+    // pasted the snippet learns about `memento status` (their
+    // store at a glance) and `memento dashboard` (browser UI)
+    // without re-reading the README. Pinned here so the next
+    // refactor can't silently drop them.
+    const out = renderInitText(SNAPSHOT(), { color: false });
+    expect(out).toContain('memento status');
+    expect(out).toContain('memento dashboard');
+  });
+
   it('shows each client config path', () => {
     const out = renderInitText(SNAPSHOT(), { color: false });
     expect(out).toContain('~/.claude.json');

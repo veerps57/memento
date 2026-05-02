@@ -448,6 +448,62 @@ describe('createMemoryCommands', () => {
       expect(result.error.code).toBe('INVALID_INPUT');
     });
 
+    // The persona-3 audit (AI assistant calling Memento over MCP)
+    // found that `update_memory` rejected `patch.content` with the
+    // generic `Unrecognized key(s) in object` Zod error — no hint
+    // pointing at supersede. AGENTS.md rule 13 promises that hint;
+    // these tests pin its delivery for the three most common
+    // mistake keys (content, scope, storedConfidence).
+    it('rejects update of content with a hint pointing at memory.supersede', async () => {
+      const { byName } = await fixture();
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+
+      const result = await executeCommand(
+        get(byName, 'memory.update'),
+        { id: writeRes.value.id, patch: { content: 'should be rejected with a hint' } },
+        ctx,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/cannot update `content`/);
+      expect(result.error.message).toMatch(/memory\.supersede/);
+    });
+
+    it('rejects update of scope with a hint pointing at memory.supersede', async () => {
+      const { byName } = await fixture();
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+
+      const result = await executeCommand(
+        get(byName, 'memory.update'),
+        { id: writeRes.value.id, patch: { scope: { type: 'global' } } },
+        ctx,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/scope is immutable|cannot update `scope`/);
+      expect(result.error.message).toMatch(/memory\.supersede/);
+    });
+
+    it('rejects update of storedConfidence with a hint pointing at memory.confirm', async () => {
+      const { byName } = await fixture();
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+
+      const result = await executeCommand(
+        get(byName, 'memory.update'),
+        { id: writeRes.value.id, patch: { storedConfidence: 0.5 } },
+        ctx,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/memory\.confirm/);
+    });
+
     it('returns CONFLICT when confirming a forgotten memory', async () => {
       const { byName } = await fixture();
       const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);

@@ -95,7 +95,9 @@ describe('runCli', () => {
     const code = await drive(cap);
     expect(code).toBe(0);
     expect(cap.stdout.join('')).toContain('Usage: memento');
-    expect(cap.stdout.join('')).toContain('Lifecycle commands:');
+    // Lifecycle commands are grouped (Setup / Verify & inspect / Operate / Help & teardown).
+    expect(cap.stdout.join('')).toContain('Setup:');
+    expect(cap.stdout.join('')).toContain('Verify & inspect:');
   });
 
   it('--help on a TTY also prints the banner', async () => {

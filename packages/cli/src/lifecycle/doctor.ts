@@ -8,7 +8,7 @@
 //
 // Checks (in declared order):
 //
-//   1. node-version       — runtime ≥ 20.10 (matches `engines`).
+//   1. node-version       — runtime ≥ 22.11 (matches `engines`).
 //   2. db-path-writable   — parent directory of `--db` exists
 //                            and is writable. Skipped for the
 //                            `:memory:` pseudo-path.
@@ -23,13 +23,14 @@
 //                            applies migrations.
 //   5. embedder           — if `retrieval.vector.enabled` is
 //                            true, `@psraghuveer/memento-embedder-local`
-//                            (peer dependency) can be imported.
+//                            (a regular dependency of the CLI) can be
+//                            imported.
 //
 // Exit-code mapping: any DB-related failure surfaces as
 // `STORAGE_ERROR`; any other failure as `CONFIG_ERROR`. On
 // success the command returns `ok({ ok: true, checks })`.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { constants, access } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -61,8 +62,10 @@ export interface DoctorReport {
   readonly checks: readonly DoctorCheck[];
 }
 
-const MIN_NODE_MAJOR = 20;
-const MIN_NODE_MINOR = 10;
+// Keep in sync with `engines.node` in the workspace root
+// `package.json` and the matching constants in `init.ts`.
+const MIN_NODE_MAJOR = 22;
+const MIN_NODE_MINOR = 11;
 
 export const doctorCommand: LifecycleCommand = {
   name: 'doctor',
@@ -231,6 +234,38 @@ function checkNativeBinding(): DoctorCheck {
     };
   } catch (cause) {
     const message = describe(cause);
+
+    // Distinguish two failure modes that look superficially similar:
+    //
+    //   - "Cannot find module" — `require` resolution couldn't
+    //     reach better-sqlite3 from this entry point. Common in a
+    //     bundled CLI run inside a pnpm workspace, where the CLI
+    //     package doesn't list better-sqlite3 as a direct dep
+    //     (it's a transitive of memento-core, inlined into the
+    //     bundle). The binding itself is fine.
+    //
+    //   - "ERR_DLOPEN_FAILED" / "NODE_MODULE_VERSION" — `require`
+    //     found the package but loading the .node file failed.
+    //     This is a real binding failure (ABI mismatch, missing
+    //     prebuild) and the rebuild hint is appropriate.
+    //
+    // Falling back to a filesystem probe lets us tell the
+    // operator the truth instead of falsely failing the check
+    // (and sending them on a destructive `npm rebuild`).
+    if (/Cannot find module 'better-sqlite3'/i.test(message)) {
+      const fsLocation = locatePackageDir('better-sqlite3');
+      if (fsLocation !== null) {
+        const binaryPath = path.join(fsLocation, 'build', 'Release', 'better_sqlite3.node');
+        if (existsSync(binaryPath)) {
+          return {
+            name: 'native-binding',
+            ok: true,
+            message: `better-sqlite3 native binding present at ${binaryPath} for Node ${process.versions.node} (modules ABI ${process.versions.modules}); require resolution unavailable from this entry point (bundled / workspace context — not a binding failure)`,
+          };
+        }
+      }
+    }
+
     const looksLikeAbi =
       /NODE_MODULE_VERSION|ERR_DLOPEN_FAILED|was compiled against a different Node/i.test(message);
     return {
@@ -242,6 +277,54 @@ function checkNativeBinding(): DoctorCheck {
         : 'Reinstall the memento package; if the failure persists, run with --debug and file an issue.',
     };
   }
+}
+
+/**
+ * Walk up from `process.cwd()` looking for a package directory
+ * by name, checking the three layouts a Memento install can land
+ * a workspace dep in:
+ *
+ *   - flat npm:        `node_modules/<pkg>`
+ *   - pnpm hoisted:    `node_modules/.pnpm/node_modules/<pkg>`
+ *   - pnpm by-version: `node_modules/.pnpm/<safeName>@<ver>/node_modules/<pkg>`
+ *
+ * `pkgName` may be scoped (`@scope/name`). `safeName` is the
+ * pnpm-mangled form (`@scope/name` → `@scope+name`).
+ *
+ * Used by the doctor checks as a fallback when `require.resolve`
+ * fails for resolution reasons rather than binding/load reasons
+ * — common when the doctor runs from a bundled CLI dist inside
+ * a pnpm workspace.
+ */
+function locatePackageDir(pkgName: string): string | null {
+  const safeName = pkgName.replace('/', '+');
+  let dir = process.cwd();
+  for (let i = 0; i < 10; i++) {
+    const flat = path.join(dir, 'node_modules', pkgName);
+    if (existsSync(flat)) return flat;
+
+    const pnpmHoisted = path.join(dir, 'node_modules', '.pnpm', 'node_modules', pkgName);
+    if (existsSync(pnpmHoisted)) return pnpmHoisted;
+
+    const pnpmStore = path.join(dir, 'node_modules', '.pnpm');
+    if (existsSync(pnpmStore)) {
+      try {
+        const prefix = `${safeName}@`;
+        for (const entry of readdirSync(pnpmStore, { withFileTypes: true })) {
+          if (!entry.isDirectory() || !entry.name.startsWith(prefix)) continue;
+          const pkgDir = path.join(pnpmStore, entry.name, 'node_modules', pkgName);
+          if (existsSync(pkgDir)) return pkgDir;
+        }
+      } catch {
+        // unreadable .pnpm dir — fall through to parent
+      }
+    }
+
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
 }
 
 async function checkDatabase(
@@ -275,15 +358,15 @@ async function checkEmbedder(app: MementoApp): Promise<DoctorCheck> {
     return {
       name: 'embedder',
       ok: true,
-      message: 'retrieval.vector.enabled is false; embedder peer dep not required',
+      message: 'retrieval.vector.enabled is false; embedder not required',
     };
   }
   try {
     // Resolve only — we don't need to load the module here, just
-    // confirm the host environment can find it. `createRequire`
-    // bypasses TypeScript's static module resolution so the CLI
-    // package itself isn't forced to declare a dependency on the
-    // optional embedder package.
+    // confirm the host environment can find it. The embedder is a
+    // regular dependency of the CLI; this probe still uses
+    // `createRequire` so it works under pnpm workspaces (where the
+    // resolution graph is unusual) and inside bundled builds.
     requireFromHere.resolve('@psraghuveer/memento-embedder-local');
     return {
       name: 'embedder',
@@ -291,10 +374,25 @@ async function checkEmbedder(app: MementoApp): Promise<DoctorCheck> {
       message: 'retrieval.vector.enabled is true; @psraghuveer/memento-embedder-local resolved',
     };
   } catch (cause) {
+    // Same fallback as `checkNativeBinding`: in a bundled CLI
+    // run inside a pnpm workspace, the require chain may not
+    // reach the embedder even though it's installed (workspace
+    // packages live under `.pnpm/node_modules/<scope>/`). A
+    // filesystem probe answers "is the package installed?"
+    // independent of where this script is being executed from.
+    const fsLocation = locatePackageDir('@psraghuveer/memento-embedder-local');
+    if (fsLocation !== null) {
+      return {
+        name: 'embedder',
+        ok: true,
+        message: `retrieval.vector.enabled is true; @psraghuveer/memento-embedder-local present at ${fsLocation} (require resolution unavailable from this entry point — bundled / workspace context)`,
+      };
+    }
     return {
       name: 'embedder',
       ok: false,
       message: `retrieval.vector.enabled is true but @psraghuveer/memento-embedder-local cannot be resolved: ${describe(cause)}`,
+      hint: '`@psraghuveer/memento-embedder-local` is a regular dependency of the CLI; if it is missing, the install is broken. Reinstall (`npm install -g @psraghuveer/memento`) or set `retrieval.vector.enabled=false` to disable vector search.',
     };
   }
 }

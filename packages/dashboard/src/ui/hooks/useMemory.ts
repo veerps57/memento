@@ -11,6 +11,7 @@
 
 import {
   type UseMutationResult,
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -142,6 +143,14 @@ export function useMemorySearch(filter: MemorySearchFilter | null) {
           limit: filter?.limit ?? 100,
         }),
       ),
+    // Keep the previous query's results visible while the next
+    // one is in flight. Without this, every keystroke past the
+    // debounce window blanks the result list to `undefined` for
+    // the duration of the fetch — visually that reads as a flash
+    // of "no matches" / "searching…" between every transition.
+    // Set on the search hook (not list/read) because only search
+    // is driven by user typing.
+    placeholderData: keepPreviousData,
   });
 }
 

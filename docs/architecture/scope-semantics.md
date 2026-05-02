@@ -19,11 +19,11 @@ Each scope answers a different question:
 | ----------- | ----------------------- | --------------------------------------------------------- |
 | `global`    | The user deletes it     | Personal preferences, cross-project conventions           |
 | `workspace` | The folder is deleted   | Local environment quirks, machine-specific paths, project-specific context |
-| `repo`      | The repo is forgotten   | Codebase facts, architectural rules, team conventions     |
+| `repo`      | The repo is forgotten   | Project-level facts, conventions, team decisions          |
 | `branch`    | The branch is forgotten | Work-in-progress decisions tied to a feature branch       |
 | `session`   | The session ends        | Ephemeral working memory; cleared when the agent restarts |
 
-**Note on non-git domains.** `repo` and `branch` scopes are git-specific and require a git remote to resolve. Non-coding workflows (writing, research, planning, personal knowledge management) typically use `global`, `workspace`, and `session` scopes. The `workspace` scope is the most natural fit for project-level context that isn't tied to a git repository — e.g., a research folder, a writing project directory, or a client engagement workspace.
+**Note on non-git domains.** `repo` and `branch` scopes are git-specific and require a git remote to resolve. Workflows without a git remote — writing, research, planning, personal knowledge management, or any project not under version control — use `global`, `workspace`, and `session` scopes. The `workspace` scope is the most natural fit for project-level context that isn't tied to a git repository — e.g., a research folder, a writing project directory, or a client engagement workspace.
 
 `workspace` and `repo` are deliberately separate: a workspace can contain multiple repos (monorepo), and a repo can be checked out in multiple workspaces. They answer different questions.
 
@@ -76,7 +76,7 @@ The default is `'effective'`. Layering means a `repo` memory and a `global` memo
 
 A user's preference about commit message style (global) and a repo's convention about commit message style (repo) are both relevant; neither subsumes the other. Strict scope precedence ("repo wins, global ignored") would silently hide useful context. Layering surfaces both and lets the ranker decide.
 
-The boost is configurable rather than hardcoded because workflows differ: in a strict-conventions monorepo, repo memories should dominate; for a solo developer, global memories should dominate. Same code, different config.
+The boost is configurable rather than hardcoded because workflows differ: in a strict-conventions monorepo, repo memories should dominate; for a solo practitioner, global memories should dominate. Same code, different config.
 
 ## Scope is immutable
 
@@ -88,7 +88,7 @@ This rule eliminates an entire class of bugs: there is no way for a memory to be
 
 ## Session scope
 
-Session scope is unique: it is created lazily on first use and bound to the lifetime of the MCP server process. When the process exits, session memories are not deleted but become unreachable from the resolver (they remain in the audit log and can be promoted via `memento promote`).
+Session scope is unique: it is created lazily on first use and bound to the lifetime of the MCP server process. When the process exits, session memories are not deleted but become unreachable from the resolver (they remain in the audit log).
 
 `session.id` is a ULID generated at server start. It is stable for the duration of the process so that an agent can write and then re-read its own working memory within a session.
 

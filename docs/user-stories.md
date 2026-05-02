@@ -13,7 +13,7 @@
 
 ### P1 — The human user
 
-A person who uses one or more AI assistants — for coding, writing, research, planning, or any domain where continuity matters. They install Memento because re-explaining themselves at the start of every session is exhausting and because the per-tool memory stores (one assistant's "rules file," another's "project memory," a third's "custom instructions") fragment knowledge they consider their own.
+A person who uses one or more AI assistants — for writing, research, coding, planning, or any domain where continuity matters. They install Memento because re-explaining themselves at the start of every session is exhausting and because the per-tool memory stores (one assistant's "rules file," another's "project memory," a third's "custom instructions") fragment knowledge they consider their own.
 
 What they care about: continuity, control, privacy, portability across tools, and not being surprised by what an assistant has remembered.
 
@@ -283,7 +283,7 @@ These are stories about the people who keep Memento sustainable. They are not us
 
 ### P3.12 Onboard human and AI contributors equivalently
 
-> As a maintainer, I want the contribution rules to be equally useful to a human developer and an AI agent, so that both produce work the team can review with the same lens.
+> As a maintainer, I want the contribution rules to be equally useful to a human contributor and an AI agent, so that both produce work the team can review with the same lens.
 
 **We know it works when:** an agent following the published contribution guide produces a change that passes the same gates as a human's, and the review checklist applies identically to both.
 
@@ -305,9 +305,9 @@ These are stories about the people who keep Memento sustainable. They are not us
 
 These are not stories; they are the qualities that the stories above, taken together, imply. They exist to make gap analysis easier.
 
-1. **A developer can leave at any time without loss.** (P1.4, P1.5, P3.4)
+1. **A user can leave at any time without loss.** (P1.4, P1.5, P3.4)
 
-2. **A developer can audit and correct anything.** (P1.5, P1.6, P1.7, P3.13)
+2. **A user can audit and correct anything.** (P1.5, P1.6, P1.7, P3.13)
 
 3. **An assistant gets predictable, structured behaviour.** (P2.1, P2.2, P2.3, P2.4, P2.5)
 

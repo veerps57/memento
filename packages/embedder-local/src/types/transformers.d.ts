@@ -36,9 +36,22 @@ declare module '@huggingface/transformers' {
     options?: FeatureExtractionOptions,
   ) => Promise<FeatureExtractionTensor>;
 
+  /**
+   * Options accepted by `pipeline()`. We only declare the keys
+   * we use; `dtype` pins the model's compute precision and is
+   * passed explicitly to silence transformers.js's "dtype not
+   * specified" first-call warning. `'fp32'` matches what the
+   * library would default to anyway and what bge-* models were
+   * trained at; `'q8'` / `'q4'` trade recall for size/speed.
+   */
+  export interface PipelineOptions {
+    readonly dtype?: 'fp32' | 'fp16' | 'q8' | 'int8' | 'uint8' | 'q4' | 'bnb4' | 'q4f16';
+  }
+
   export function pipeline(
     task: 'feature-extraction',
     model: string,
+    options?: PipelineOptions,
   ): Promise<FeatureExtractionPipeline>;
 
   export const env: {

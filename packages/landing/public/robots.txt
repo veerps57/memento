@@ -1,0 +1,7 @@
+# Memento landing page — allow all crawlers.
+# Single-page static site; no admin / private routes to disallow.
+User-agent: *
+Allow: /
+
+# Sitemap will be added when a custom domain is in place
+# (single-URL sitemap until then is no extra signal).

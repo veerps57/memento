@@ -38,6 +38,9 @@ yarn-error.log*
 *.swp
 *.swo
 
+# Local Claude Code state (settings, scheduled tasks, worktrees)
+.claude/
+
 # Memento local data (when running locally during dev)
 .memento/
 memento.db

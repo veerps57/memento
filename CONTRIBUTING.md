@@ -12,6 +12,20 @@ If you are an AI agent, **also read [`AGENTS.md`](AGENTS.md)** — it contains r
 4. **Tests are not optional.** New behavior needs a unit test. New invariants need a property test. New commands need a contract test. New migrations need an integration test.
 5. **Run the full verification locally before pushing.** CI is a safety net, not a development server.
 
+## Where to start
+
+If you are looking for a low-friction first contribution, these are good entry points — none require a design proposal:
+
+- **Doc fixes.** Typos, broken links, stale CLI/MCP names, examples that no longer match the current surface. Cross-check against [`docs/reference/cli.md`](docs/reference/cli.md) and [`docs/reference/mcp-tools.md`](docs/reference/mcp-tools.md), which are auto-generated from the registry.
+- **Add a config recipe.** [`docs/architecture/config.md`](docs/architecture/config.md) and [`docs/reference/config-keys.md`](docs/reference/config-keys.md) describe the surface; concrete recipes for tuning a specific behavior (decay aggressively, surface conflicts in search, broaden scrubber rules) are always welcome.
+- **Improve an error message.** Find a `ResultErr` in `packages/core/src/` whose message is terse or unhelpful and tighten it. Errors are the contract surface for AI assistants — clarity here compounds across every client.
+- **Expand [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md).** If you tripped over a limitation that was not documented, add it. Distinguish "not yet" from "intentionally not."
+- **Add a missing test case.** Coverage is gated at 90% lines + 90% branches, but specific edge cases (empty input, scope edge cases, conflict ties) are good targeted contributions.
+
+For larger changes, open a [design proposal issue](.github/ISSUE_TEMPLATE/design_proposal.yml) first — it is faster than rewriting after review.
+
+Before filing a bug, scan [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) — many "weird behaviors" are documented v1 trade-offs.
+
 ## The four guiding principles
 
 These are the lens through which every change is evaluated. The PR template asks you to address each one explicitly.
@@ -25,7 +39,7 @@ These are the lens through which every change is evaluated. The PR template asks
 
 ### Prerequisites
 
-- Node.js 20.10+ (the version pinned in [`.nvmrc`](.nvmrc) is the supported version; `nvm use` / `fnm use` will pick it up).
+- Node.js 22.11+ (the version pinned in [`.nvmrc`](.nvmrc) is the supported version; `nvm use` / `fnm use` will pick it up).
 - pnpm 10.x. The repository pins `packageManager: pnpm@10.30.2` in [`package.json`](package.json), so `corepack enable` is enough — corepack will install the right version automatically.
 - A C/C++ toolchain for compiling `better-sqlite3` (Xcode command-line tools on macOS, build-essential on Debian/Ubuntu).
 - Git ≥ 2.40.
@@ -39,8 +53,8 @@ git clone https://github.com/veerps57/memento
 git clone https://github.com/<your-fork>/memento
 
 cd memento
-corepack enable      # one-time, picks up the pnpm version from package.json
-pnpm install
+corepack enable                  # one-time, picks up the pnpm version from package.json
+pnpm install --frozen-lockfile   # mirrors CI; fails fast if pnpm-lock.yaml drifts
 pnpm typecheck
 pnpm test
 ```

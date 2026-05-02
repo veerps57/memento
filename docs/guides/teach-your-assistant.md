@@ -1,6 +1,6 @@
 # Teach your assistant
 
-Memento exposes a set of MCP tools (`memory.write`, `memory.search`, `memory.confirm`, `memory.context`, etc.) but it does not, by itself, teach an AI assistant *when* to use them. That part is up to you.
+Memento exposes a set of MCP tools (`write_memory`, `search_memory`, `confirm_memory`, `get_memory_context`, etc.) but it does not, by itself, teach an AI assistant *when* to use them. That part is up to you.
 
 This guide is a starter pack of prompt fragments you can drop into your assistant's persona file (`CLAUDE.md`, `.cursorrules`, `copilot-instructions.md`, OpenCode prompt, custom system prompt) so the assistant uses Memento well from the first conversation.
 
@@ -23,9 +23,9 @@ their preferences, and their projects. Treat the current chat
 session as ephemeral — anything you want to remember beyond this
 session must be written to Memento.
 
-At the start of each task, call `memory.context` to load relevant
+At the start of each task, call `get_memory_context` to load relevant
 memory. Before answering questions about the user's preferences
-or past decisions, call `memory.search` first; do not guess from
+or past decisions, call `search_memory` first; do not guess from
 chat history alone.
 ```
 
@@ -40,7 +40,7 @@ e.g. "I prefer pnpm over npm", "the staging cluster lives at
 gke-staging", "I always squash-merge PRs", "I write in British
 English", "my target audience is mid-career professionals",
 "I prefer concise summaries over verbose explanations". Use
-`memory.write` with an explicit `kind` (`fact`, `preference`,
+`write_memory` with an explicit `kind` (`fact`, `preference`,
 `decision`, `todo`, or `snippet`) and a tight `content` field
 of one or two sentences.
 
@@ -51,11 +51,11 @@ five minutes ago). Memento is not a chat log.
 
 ## When to confirm
 
-`memory.context` and `memory.search` return memories without bumping their `lastConfirmedAt` timestamp. The timestamp only moves when the assistant explicitly calls `memory.confirm` after actually using the memory. This keeps decay semantics meaningful — a memory that is loaded into context but never acted on still ages.
+`get_memory_context` and `search_memory` return memories without bumping their `lastConfirmedAt` timestamp. The timestamp only moves when the assistant explicitly calls `confirm_memory` after actually using the memory. This keeps decay semantics meaningful — a memory that is loaded into context but never acted on still ages.
 
 ```text
 When you actually rely on a memory to answer a question or shape
-a code change, call `memory.confirm` with that memory's id. If
+a code change, call `confirm_memory` with that memory's id. If
 you only loaded it speculatively and didn't use it, do not
 confirm. The confirmation signal feeds the decay engine; lying
 to it makes ranking worse over time.
@@ -63,13 +63,13 @@ to it makes ranking worse over time.
 
 ## When to supersede vs. update
 
-Memento's `memory.update` is restricted to non-content fields (tags, kind, pinned). A content change must go through `memory.supersede`, which preserves both rows and links them.
+Memento's `update_memory` is restricted to non-content fields (tags, kind, pinned). A content change must go through `supersede_memory`, which preserves both rows and links them.
 
 ```text
 If the user changes their mind about something durable
-("actually, I switched to bun"), call `memory.supersede` with
+("actually, I switched to bun"), call `supersede_memory` with
 the old memory's id and a new memory describing the current
-state. Do not call `memory.update` with the new content — the
+state. Do not call `update_memory` with the new content — the
 schema rejects it, and even if it didn't, you would lose the
 "what did the user think before" history that makes Memento
 useful.
@@ -80,7 +80,7 @@ useful.
 Memento detects conflicts automatically on write and stores them in the `conflicts` table. The assistant's job is not to resolve them — that is a human-in-the-loop decision — but to surface them honestly.
 
 ```text
-If `memory.write` returns a conflict notice, do not retry the
+If `write_memory` returns a conflict notice, do not retry the
 write or attempt to auto-resolve. Tell the user that the new
 information disagrees with an existing memory, show both, and
 ask which one to keep. The user can then resolve via
@@ -110,17 +110,17 @@ For copy-paste, here is a compact version of the above that fits in a `CLAUDE.md
 You have a local memory store via MCP. Use it as your durable
 memory; treat chat as ephemeral.
 
-- At the start of a task, call `memory.context` to load relevant
+- At the start of a task, call `get_memory_context` to load relevant
   memories for this session. If context looks thin, call
-  `memory.search` with specific terms.
-- When you actually use a memory, call `memory.confirm` with its id.
+  `search_memory` with specific terms.
+- When you actually use a memory, call `confirm_memory` with its id.
 - Write durable user statements (preferences, decisions, facts,
-  todos, snippets) via `memory.write` with an explicit `kind`.
-- Before ending a session, call `memory.extract` with a batch of
+  todos, snippets) via `write_memory` with an explicit `kind`.
+- Before ending a session, call `extract_memory` with a batch of
   candidates for anything worth remembering that wasn't written
   explicitly during the conversation. The server deduplicates
   automatically — when in doubt, include it.
-- For changes of mind, use `memory.supersede`, not `memory.update`.
+- For changes of mind, use `supersede_memory`, not `update_memory`.
 - Never write secrets, tokens, or credentials.
 ```
 
@@ -130,7 +130,7 @@ After updating the persona file:
 
 1. Start a fresh chat session.
 2. Tell the assistant a durable preference ("I prefer Vitest over Jest").
-3. End the session, start a new one, ask "what testing framework do I use?" — the assistant should call `memory.search`, find the preference, and answer without re-asking.
+3. End the session, start a new one, ask "what testing framework do I use?" — the assistant should call `search_memory`, find the preference, and answer without re-asking.
 4. Run `npx @psraghuveer/memento list` from a terminal to confirm the memory is on disk.
 
 If step 3 fails, the most common causes are: the persona file isn't actually loaded by the client, the client is pointed at a different `MEMENTO_DB`, or the assistant didn't write the preference in the first place. `npx @psraghuveer/memento doctor --mcp` and `npx @psraghuveer/memento ping` triage the first two; tightening the "When to write" section addresses the third.

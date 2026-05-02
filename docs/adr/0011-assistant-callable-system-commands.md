@@ -7,7 +7,7 @@
 
 ## Context
 
-The Memento command registry exposes 23 tools across the MCP and CLI surfaces. None of them lets an MCP-connected coding assistant answer two recurring questions:
+At the time of this proposal, the Memento command registry exposed 23 tools across the MCP and CLI surfaces. None of them let an MCP-connected assistant answer two recurring questions:
 
 1. *"Is this server alive, and what does it know how to do?"* The assistant has no in-protocol way to discover the binary's version, its database location, whether vector retrieval is wired, or how many memories the store holds. The closest thing is `memento doctor`, but that is a CLI-only command and it does host-level probes (peer-package resolution, lock files, free disk space) the registry layer should not know about.
 

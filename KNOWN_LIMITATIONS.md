@@ -42,7 +42,7 @@ These are not bugs, but they are easy to misunderstand.
 - **Confidence is "is this currently true," not "how important."** The `confidence` field is used for decay math and ranking. It is not a priority signal. Pinning a memory is the way to mark it important.
 - **Scope is immutable.** A memory's scope cannot be changed after creation. Use `supersede` to create a new memory in a different scope and retire the old one.
 - **`memory.update` does not change content.** Updates are restricted to non-content fields (tags, kind, pinned). Content changes route through `supersede` to preserve history. The error message points you to the right command.
-- **`memory.context` does not auto-confirm memories.** Loading memory into a session does not bump `lastConfirmedAt`; the client must call `memento_confirm` explicitly when a memory was actually used. This keeps decay semantics meaningful.
+- **`memory.context` does not auto-confirm memories.** Loading memory into a session does not bump `lastConfirmedAt`; the client must call `memory.confirm` explicitly when a memory was actually used. This keeps decay semantics meaningful.
 - **Bulk destructive operations default to `dryRun: true` and always require `confirm: true`.** `memory.forget_many` and `memory.archive_many` rehearse by default; pass `dryRun: false` to actually transition. `confirm: true` is required even for the dry run. Real applies are capped by `safety.bulkDestructiveLimit` (default 1000); rehearsals are uncapped so you can size the blast radius first.
 
 ## Where to file issues

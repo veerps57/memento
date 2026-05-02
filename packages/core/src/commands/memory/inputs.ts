@@ -210,7 +210,25 @@ export const MemoryConfirmManyInputSchema = z
  * change at least one field"; we mirror that as a Zod refine so
  * the violation surfaces as `INVALID_INPUT` (with an actionable
  * issue path) before we ever touch the database.
+ *
+ * The patch validator deliberately uses `.passthrough()` plus
+ * `.superRefine()` rather than `.strict()` so we can catch the
+ * two most common AI-assistant mistakes — trying to mutate
+ * `content` or `scope` — and respond with a hint that points at
+ * `memory.supersede` instead of the generic
+ * `Unrecognized key(s) in object` Zod produces. AGENTS.md rule
+ * 13 promises that error message; this is where it's delivered.
  */
+const ALLOWED_PATCH_KEYS = new Set(['tags', 'kind', 'pinned', 'sensitive']);
+const PATCH_KEY_REDIRECTS: Record<string, string> = {
+  content:
+    'cannot update `content` via memory.update — use memory.supersede to replace the memory while preserving its audit history.',
+  scope:
+    'cannot update `scope` via memory.update — scope is immutable. Use memory.supersede to create a new memory in the target scope (the original is marked superseded).',
+  storedConfidence:
+    'cannot update `storedConfidence` via memory.update — use memory.confirm to bump lastConfirmedAt (decay-aware), or memory.supersede with a fresh storedConfidence to fully reset.',
+};
+
 export const MemoryUpdateInputSchema = z
   .object({
     id: MemoryIdSchema.describe('The ULID of the memory to update.'),
@@ -226,20 +244,33 @@ export const MemoryUpdateInputSchema = z
         pinned: z.boolean().optional().describe('New pinned status. Omit to leave unchanged.'),
         sensitive: z.boolean().optional().describe('New sensitive flag. Omit to leave unchanged.'),
       })
-      .strict()
+      .passthrough()
       .describe(
-        'Patch object — must contain at least one field. Only non-content fields can be updated; to change content, use memory.supersede.',
+        'Patch object — must contain at least one of `tags`, `kind`, `pinned`, `sensitive`. Cannot mutate content, scope, or storedConfidence (use memory.supersede or memory.confirm instead).',
       )
-      .refine(
-        (p) =>
-          p.tags !== undefined ||
-          p.kind !== undefined ||
-          p.pinned !== undefined ||
-          p.sensitive !== undefined,
-        {
-          message: 'patch must change at least one field',
-        },
-      ),
+      .superRefine((patch, ctx) => {
+        for (const key of Object.keys(patch)) {
+          if (ALLOWED_PATCH_KEYS.has(key)) continue;
+          const redirect = PATCH_KEY_REDIRECTS[key];
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message:
+              redirect ?? `unknown patch key '${key}' (allowed: tags, kind, pinned, sensitive)`,
+          });
+        }
+        if (
+          patch.tags === undefined &&
+          patch.kind === undefined &&
+          patch.pinned === undefined &&
+          patch.sensitive === undefined
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'patch must change at least one field (tags, kind, pinned, or sensitive)',
+          });
+        }
+      }),
   })
   .strict();
 
@@ -259,7 +290,9 @@ export const MemoryForgetInputSchema = z
       .string()
       .max(512)
       .nullable()
-      .describe('Why this memory is being forgotten. Pass null if no reason.'),
+      .describe(
+        'Why this memory is being forgotten — appears verbatim in the audit log. Pass null if no reason. Examples: "user retracted preference", "no longer relevant", "wrong project scope", "replaced by manual instruction".',
+      ),
     confirm: confirmGate().describe('Safety gate — must be true to proceed.'),
   })
   .strict();

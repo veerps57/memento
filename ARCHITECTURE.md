@@ -42,12 +42,17 @@ packages/
 │                     `store migrate`, `completions`, `explain`, `uninstall`)
 ├── embedder-local/   transformers.js + bge-base-en-v1.5
 │                     Regular dep; lazy-loaded on first embed()
-└── dashboard/        Web dashboard adapter (ADR-0018); Hono server
-                      in-process with the engine + Vite-built React SPA.
-                      Lazy-loaded by `memento dashboard`.
+├── dashboard/        Web dashboard adapter (ADR-0018); Hono server
+│                     in-process with the engine + Vite-built React SPA.
+│                     Lazy-loaded by `memento dashboard`.
+└── landing/          Marketing landing page. Static SPA (Vite + React),
+                      private (not published to npm). Deployed to GitHub
+                      Pages on push to main; mirrors the dashboard's
+                      design tokens. Has no runtime relationship with
+                      the rest of the workspace.
 ```
 
-The dependency graph is acyclic and one-way: `cli`, `server`, and `dashboard` depend on `core`; `core` depends on `schema`; `embedder-local` and `dashboard` are loaded by `cli` only at runtime through dynamic imports, so non-dashboard / non-vector invocations never pay their startup cost.
+The dependency graph is acyclic and one-way: `cli`, `server`, and `dashboard` depend on `core`; `core` depends on `schema`; `embedder-local` and `dashboard` are loaded by `cli` only at runtime through dynamic imports, so non-dashboard / non-vector invocations never pay their startup cost. `landing` is standalone — it imports nothing from the other packages and exists in the workspace only to inherit the lint / typecheck / format gates.
 
 ## Status
 

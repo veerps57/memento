@@ -45,7 +45,7 @@ describe('renderBanner', () => {
   it('wraps the figlet in ANSI escapes when color is true', () => {
     const out = renderBanner('0.1.0', { color: true });
     // biome-ignore lint/suspicious/noControlCharactersInRegex: test asserts presence of ANSI escapes
-    expect(out).toMatch(/\u001b\[36m/);
+    expect(out).toMatch(/\u001b\[38;2;232;184;108m/);
     // biome-ignore lint/suspicious/noControlCharactersInRegex: test asserts presence of ANSI reset
     expect(out).toMatch(/\u001b\[0m/);
   });

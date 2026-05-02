@@ -44,9 +44,50 @@
 //     consumer's environment and must use only Node built-ins.
 
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
+
+/**
+ * Detect whether we are running inside the Memento workspace
+ * checkout (vs. the published-package layout under an end-user's
+ * `node_modules`).
+ *
+ * In workspace dev this script lives at
+ *   `<workspace>/packages/cli/scripts/postinstall.mjs`
+ * and walking up finds `pnpm-workspace.yaml`. In an end-user
+ * install it lives at
+ *   `<consumer>/node_modules/@psraghuveer/memento/scripts/postinstall.mjs`
+ * and there is no `pnpm-workspace.yaml` above it.
+ *
+ * The two contexts need different handling:
+ *
+ *   - End user: `require('better-sqlite3')` resolves through the
+ *     CLI package's transitive dep tree. If it fails, the binding
+ *     is genuinely broken and `npm rebuild --build-from-source`
+ *     is the right self-heal.
+ *
+ *   - Workspace dev: `require('better-sqlite3')` fails because the
+ *     CLI package does not list it as a direct dep (it is a
+ *     transitive of `@psraghuveer/memento-core`). That failure is
+ *     not a broken binding — it is just module-resolution. Falling
+ *     through to `npm rebuild --build-from-source` here destroys
+ *     the binary that the workspace's own postinstall
+ *     (`scripts/ensure-better-sqlite3.mjs`) just placed.
+ */
+function isWorkspaceCheckout() {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(resolve(dir, 'pnpm-workspace.yaml'))) return true;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return false;
+}
 
 function tryLoadBinding() {
   try {
@@ -75,6 +116,13 @@ function rebuild() {
 }
 
 async function main() {
+  // Workspace checkouts have their own healer
+  // (`scripts/ensure-better-sqlite3.mjs`) wired as the root
+  // postinstall — pnpm-store-aware and runs first. Letting this
+  // end-user script run here is destructive, not corrective: see
+  // `isWorkspaceCheckout` above for why.
+  if (isWorkspaceCheckout()) return;
+
   const first = tryLoadBinding();
   if (first.ok) return; // healthy install — silence is the UX
 

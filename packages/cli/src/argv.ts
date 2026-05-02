@@ -129,10 +129,28 @@ export function parseArgv({ argv, env }: ParseArgvOptions): ParsedCommand {
   const positionals: string[] = [];
   const args = [...argv];
 
+  // Global flags are recognised anywhere in argv — both before
+  // and after the subcommand. This matches the convention of npm,
+  // git, kubectl, etc., and means
+  //   memento --format text init
+  //   memento init --format text
+  // both work. Subcommand-specific flags (--quick, --client,
+  // --input, …) don't collide with the small global set
+  // (--db / --format / --debug / --help / --version) and pass
+  // through into `positionals` for the per-command parser.
+  //
+  // Rejection of unknown global flags is gated on whether we have
+  // already seen the subcommand: pre-subcommand `--foo` is a
+  // hard error (no subcommand yet to interpret it); post-
+  // subcommand `--foo` passes through and the subcommand parser
+  // produces the more specific error.
+  let sawSubcommand = false;
+
   while (args.length > 0) {
     const head = args[0] as string;
 
-    if (head === '--') {
+    if (head === '--' && !sawSubcommand) {
+      // POSIX: pre-subcommand `--` ends global flag parsing.
       positionals.push(...args.slice(1));
       break;
     }
@@ -175,15 +193,14 @@ export function parseArgv({ argv, env }: ParseArgvOptions): ParsedCommand {
       continue;
     }
 
-    if (head.startsWith('--')) {
+    if (!sawSubcommand && head.startsWith('--')) {
       return { kind: 'parseError', message: `unknown flag '${head}'` };
     }
 
-    // First non-flag positional terminates global parsing.
+    // Positional or subcommand-specific flag — push and continue.
     positionals.push(head);
     args.shift();
-    positionals.push(...args);
-    break;
+    sawSubcommand = true;
   }
 
   if (state.versionRequested) return { kind: 'version' };

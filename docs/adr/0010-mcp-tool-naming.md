@@ -74,7 +74,7 @@ All other commands derive their MCP name from the default rule.
 ### Alternative C: surface-specific name fields on every command (`name`, `cliName`, `mcpName`)
 
 - Attractive: maximally explicit; every command states its name on every surface.
-- Rejected: noise. 17 of 23 commands fit the default transform; making them state both forms triples the boilerplate for no gain. The override-only-when-needed model is strictly less work and exactly as expressive.
+- Rejected: noise. The majority of commands fit the default transform; making them state both forms triples the boilerplate for no gain. The override-only-when-needed model is strictly less work and exactly as expressive.
 
 ### Alternative D: heuristic pluralisation in `defaultMcpName`
 

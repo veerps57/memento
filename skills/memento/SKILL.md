@@ -77,7 +77,7 @@ Memento is a memory layer, not a chat log. Confusing the two ruins the signal: t
 
 Every memory has one of five kinds. Pick the one that best describes the assertion's role; the system uses kind to set decay half-life, ranking weights, and conflict semantics.
 
-- `fact` — an assertion about the world, the codebase, or the user's situation. Default if you are unsure.
+- `fact` — an assertion about the world, a project, or the user's situation. Default if you are unsure.
 - `preference` — a user preference that should bias future actions. Includes work-style ("tabs over spaces"), tool ("pnpm over npm"), and writing-style ("concise over verbose") preferences.
 - `decision` — a chosen path among alternatives, with a `rationale` explaining "why not the others." Architectural choices, technology picks, naming conventions the user had to defend.
 - `todo` — an action item with an optional `due` timestamp. Use sparingly — Memento is not a task tracker. Useful for "ask about X next time."
@@ -91,7 +91,7 @@ Scope answers "where does this memory belong?" Pick the **narrowest** scope wher
 
 - `global` — applies everywhere ("Raghu prefers concise summaries"). Cross-project preferences live here.
 - `workspace` — pinned to a filesystem path. Use when there is no git remote, or when the project is intentionally off-VCS.
-- `repo` — pinned to a canonical git remote ("this repo uses Apache-2.0"). The default for codebase facts.
+- `repo` — pinned to a canonical git remote ("this repo uses Apache-2.0"). The default for facts tied to a specific project repo.
 - `branch` — pinned to a remote+branch pair. Use for in-flight work that should not leak to other branches.
 - `session` — ephemeral, cleared when the MCP server restarts. Use for working memory you do not want to persist.
 

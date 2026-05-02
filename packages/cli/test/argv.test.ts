@@ -181,6 +181,46 @@ describe('parseArgv: global flags', () => {
     if (parsed.kind !== 'lifecycle') throw new Error('expected lifecycle');
     expect(parsed.subargs).toEqual(['--', '--not-a-flag']);
   });
+
+  // Global flags work in either position relative to the
+  // subcommand. Standard convention for npm / git / kubectl,
+  // and persona-2 audit found `--format json doctor` errored
+  // before this was wired (the parser bailed at the first
+  // positional and treated the trailing flag as a subcommand
+  // arg). These tests pin both forms so we don't regress.
+  it('parses --format text after the subcommand', () => {
+    const parsed = parseArgv({ argv: ['doctor', '--format', 'text'], env: NO_ENV });
+    if (parsed.kind !== 'lifecycle') throw new Error('expected lifecycle');
+    expect(parsed.env.format).toBe('text');
+    expect(parsed.subargs).toEqual([]);
+  });
+
+  it('parses --db after the subcommand', () => {
+    const parsed = parseArgv({ argv: ['context', '--db', '/tmp/post.db'], env: NO_ENV });
+    if (parsed.kind !== 'lifecycle') throw new Error('expected lifecycle');
+    expect(parsed.env.dbPath).toBe('/tmp/post.db');
+    expect(parsed.subargs).toEqual([]);
+  });
+
+  it('parses global flags interleaved with positionals', () => {
+    const parsed = parseArgv({
+      argv: ['memory', '--format', 'json', 'write', '--input', '{}'],
+      env: NO_ENV,
+    });
+    if (parsed.kind !== 'registry') throw new Error('expected registry');
+    expect(parsed.env.format).toBe('json');
+    expect(parsed.commandName).toBe('memory.write');
+    // Global flag is consumed; subcommand-specific --input passes through.
+    expect(parsed.subargs).toEqual(['--input', '{}']);
+  });
+
+  it('does not reject post-subcommand unknown flags as global (subcommand parser handles them)', () => {
+    // Pre-subcommand `--unknown` is a hard parseError (no subcommand to interpret it).
+    // Post-subcommand `--unknown` passes through to the subcommand's own parser.
+    const parsed = parseArgv({ argv: ['doctor', '--unknown'], env: NO_ENV });
+    if (parsed.kind !== 'lifecycle') throw new Error('expected lifecycle');
+    expect(parsed.subargs).toEqual(['--unknown']);
+  });
 });
 
 describe('parseArgv: env defaults', () => {

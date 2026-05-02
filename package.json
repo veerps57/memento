@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=20.10.0"
+    "node": ">=22.11.0"
   },
   "packageManager": "pnpm@10.30.2",
   "scripts": {
@@ -21,12 +21,14 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && vitest run --config vitest.e2e.config.ts",
     "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm test:e2e && pnpm docs:lint && pnpm docs:reflow:check && pnpm docs:check",
+    "postinstall": "node scripts/ensure-better-sqlite3.mjs",
     "prepare": "lefthook install",
     "changeset": "changeset",
     "version-packages": "changeset version && biome format --write .",
     "release": "pnpm build && changeset publish",
     "dev:server": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node packages/cli/dist/cli.js serve",
     "dev:dashboard": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento-dashboard -F @psraghuveer/memento build && node packages/cli/dist/cli.js dashboard --port 3004",
+    "dev:landing": "pnpm -F @psraghuveer/memento-landing dev",
     "docs:generate": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node scripts/docs.mjs --write",
     "docs:check": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node scripts/docs.mjs --check",
     "docs:lint": "markdownlint-cli2",

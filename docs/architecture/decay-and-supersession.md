@@ -27,7 +27,7 @@ Half-life is per `MemoryKind`, configurable via `decay.halfLife.<kind>`. Default
 
 | Kind         | Default half-life | Rationale                                        |
 | ------------ | ----------------: | ------------------------------------------------ |
-| `fact`       |           90 days | Codebase facts age slowly                        |
+| `fact`       |           90 days | Most facts age slowly                            |
 | `preference` |          180 days | User preferences are sticky                      |
 | `decision`   |          365 days | Architectural decisions should not silently fade |
 | `todo`       |           14 days | Stale todos are usually wrong                    |
@@ -45,7 +45,7 @@ If `pinned = true`, the ranker floors `effectiveConfidence` at `decay.pinnedFloo
 
 ### Compact
 
-`memento compact` walks memories whose `effectiveConfidence` is below `decay.archiveThreshold` (default `0.05`) and have not been confirmed in `decay.archiveAfter` (default `365 days`), and transitions them to `archived`. Archived memories are excluded from default queries but remain in the database and the audit log. `memento restore` reverses.
+`memento compact run` walks memories whose `effectiveConfidence` is below `decay.archiveThreshold` (default `0.05`) and have not been confirmed in `decay.archiveAfter` (default `365 days`), and transitions them to `archived`. Archived memories are excluded from default queries but remain in the database and the audit log. `memento memory restore` reverses.
 
 This is the only background-style job, and it is explicit (run by the user or a scheduler). There is no daemon.
 

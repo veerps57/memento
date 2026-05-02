@@ -28,10 +28,12 @@ import { serveStdio } from '@psraghuveer/memento-server';
 
 import { type ParsedCommand, parseArgv } from './argv.js';
 import { renderBanner, shouldUseColor } from './banner.js';
+import { renderDoctorText } from './doctor-render.js';
 import { ERROR_CODE_TO_EXIT, EXIT_OK, EXIT_USAGE } from './exit-codes.js';
 import { renderHelp } from './help.js';
 import { renderInitText } from './init-render.js';
 import type { CliIO } from './io.js';
+import type { DoctorReport } from './lifecycle/doctor.js';
 import {
   type InitSnapshot,
   LIFECYCLE_COMMANDS,
@@ -174,11 +176,16 @@ async function defaultLaunchDashboard(
   const displayHost = options.host === '127.0.0.1' ? 'localhost' : options.host;
   const url = `http://${displayHost}:${resolvedPort}`;
 
-  if (options.io.isStderrTTY) {
-    options.io.stderr.write(
-      `memento ${options.version} · dashboard ready · ${url}\npress Ctrl-C to stop\n`,
-    );
-  }
+  // Always print the readiness URL on stderr, regardless of TTY.
+  // Without this line, a user running `memento dashboard --no-open`
+  // (or with stderr redirected to a log) has no way to discover
+  // the URL the dashboard is bound to. The browser auto-open is
+  // best-effort; this stderr line is the deterministic surface.
+  // Stderr keeps stdout free for the structured JSON snapshot
+  // emitted at shutdown.
+  options.io.stderr.write(
+    `memento ${options.version} · dashboard ready · ${url}\npress Ctrl-C to stop\n`,
+  );
 
   let openedBrowser = false;
   if (options.shouldOpen) {
@@ -270,6 +277,32 @@ async function dispatch(parsed: ParsedCommand, io: CliIO, deps: RunCliDeps): Pro
           const color = shouldUseColor(io.env, io.isTTY);
           io.stdout.write(renderInitText(result.value as InitSnapshot, { color }));
           return EXIT_OK;
+        }
+      }
+      // `doctor` returns a structured `DoctorReport` (success
+      // path) or wraps one in `error.details` (failure path).
+      // The standard text renderer JSON-pretty-prints both,
+      // which buries the ✓/✗ signal that's the whole point of
+      // running doctor. On TTY+text we render a flat checklist;
+      // pipes / scripts still get the JSON envelope unchanged.
+      if (parsed.name === 'doctor') {
+        const format = resolveFormat(parsed.env.format, io.isTTY);
+        if (format === 'text') {
+          const color = shouldUseColor(io.env, io.isTTY);
+          if (result.ok) {
+            io.stdout.write(renderDoctorText(result.value as DoctorReport, { color }));
+            return EXIT_OK;
+          }
+          const details = result.error.details as DoctorReport | undefined;
+          if (details !== undefined && Array.isArray(details.checks)) {
+            io.stderr.write(
+              renderDoctorText(details, {
+                color,
+                error: { code: result.error.code, message: result.error.message },
+              }),
+            );
+            return ERROR_CODE_TO_EXIT[result.error.code] ?? EXIT_USAGE;
+          }
         }
       }
       return emitAndExit(result, parsed.env.format, io);
