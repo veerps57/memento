@@ -38,7 +38,7 @@ These are encoded as tests and CI gates where possible. Do not bypass them.
 11. **`MemoryEvent` is the audit source of truth.** `lastConfirmedAt` on `Memory` is a denormalized cache, validated at write-time and by `npx @psraghuveer/memento doctor`.
 12. **No configurable invariants.** Integrity rules (immutability, status transitions, supersession atomicity) are hardcoded. Configurable invariants are no invariants.
 13. **`memory.update` only mutates non-content fields** (tags, kind, pinned). Content changes route through `supersede` to preserve history. The error message points the caller to the right command.
-14. **Embedding model migration is explicit.** `memento embeddings rebuild` is the only way to re-embed memories. Never silent.
+14. **Embedding model migration is explicit.** `memento embedding rebuild` is the only way to re-embed memories. Never silent.
 
 ## Before you start a change
 
@@ -63,10 +63,10 @@ You **must** run these locally before opening a PR. Do not trust CI as the first
 
 ```bash
 pnpm install
-pnpm verify          # lint -> typecheck -> build -> test -> test:e2e -> docs:lint -> docs:check
+pnpm verify          # lint -> typecheck -> build -> test -> test:e2e -> docs:lint -> docs:reflow:check -> docs:check
 ```
 
-`pnpm verify` mirrors the CI gate. If it passes locally, CI on the same commit should pass too (modulo OS-specific surprises in the matrix). The individual scripts (`pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm docs:lint`, `pnpm docs:check`, `pnpm build`) remain available for tighter inner loops while iterating.
+`pnpm verify` mirrors the CI gate. If it passes locally, CI on the same commit should pass too (modulo OS-specific surprises in the matrix). The individual scripts (`pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm docs:lint`, `pnpm docs:reflow:check`, `pnpm docs:check`, `pnpm build`) remain available for tighter inner loops while iterating.
 
 Dedicated contract and property test suites are not part of the verify chain; contract-style coverage is folded into the unit suites and property invariants are checked by example tests. `pnpm test` is the full required test gate.
 

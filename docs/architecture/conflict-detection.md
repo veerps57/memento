@@ -32,7 +32,7 @@ memory.write → commit → return to caller
                   └────────────────────┘
 ```
 
-The job is bounded: if it does not complete within `conflict.timeoutMs` (default `2000`), it is dropped and a `conflict.timeout` warning is logged. Dropping is safe — the next write or an explicit `memento conflicts scan` will catch the missed check.
+The job is bounded: if it does not complete within `conflict.timeoutMs` (default `2000`), it is dropped and a `conflict.timeout` warning is logged. Dropping is safe — the next write or an explicit `memento conflict scan` will catch the missed check.
 
 The hook runs in the same process; there is no worker queue, no background daemon, no cross-process coordination. The simplicity is deliberate.
 
@@ -64,7 +64,7 @@ The default heuristics are intentionally conservative — Memento prefers a few 
 
 Conflicts are read, not pushed:
 
-- `conflict.list` (MCP) and `memento conflicts list` (CLI) return open conflicts for a scope.
+- `list_conflicts` (MCP) and `memento conflict list` (CLI) return open conflicts for a scope.
 - `conflict.resolve <conflictId>` accepts one of `{accept-new, accept-existing, supersede, ignore}` and writes a `conflict.resolved` event.
 
 Open conflicts also appear in `memento doctor` output. They never appear in the response to `memory.write` itself — the write is committed and the caller's flow is preserved. (`memento conflict list` enumerates the same backlog.)

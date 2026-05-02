@@ -36,16 +36,15 @@ Required reading before opening this PR:
 
 - [ ] Unit
 - [ ] Integration
-- [ ] Contract (MCP/CLI parity)
-- [ ] Property
 - [ ] Migration
+- [ ] End-to-end
 - [ ] N/A — explain why:
 
 ## Local verification
 
 <!-- Confirm you have run, locally and successfully: -->
 
-- [ ] `pnpm verify` (mirrors the CI gate: lint, typecheck, build, test, docs:lint, docs:check)
+- [ ] `pnpm verify` (mirrors the CI gate: lint, typecheck, build, test, test:e2e, docs:lint, docs:reflow:check, docs:check)
 - [ ] `pnpm docs:generate` committed if generated docs changed
 
 ## ADR

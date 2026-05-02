@@ -135,7 +135,14 @@ export function renderInitText(snapshot: InitSnapshot, options: InitRenderOption
   lines.push('           config file. Pasting is a manual step.');
   lines.push('');
   lines.push(`Verify with: ${bold('memento doctor', options)}`);
-  lines.push(`           ${bold('memento ping', options)}    \u2014 round-trip an MCP tools/list`);
+  lines.push(
+    `             ${bold('memento ping', options)}      \u2014 round-trip an MCP tools/list`,
+  );
+  lines.push('');
+  lines.push(
+    `Next:        ${bold('memento status', options)}    \u2014 what's in your store (counts, last event, db size)`,
+  );
+  lines.push(`             ${bold('memento dashboard', options)} \u2014 browse it in the browser`);
   lines.push('');
   return `${lines.join('\n')}`;
 }

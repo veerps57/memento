@@ -15,8 +15,7 @@ This is purely additive: the skill bundle does not change Memento's MCP/CLI surf
 | Name | Audience | What it does |
 | --- | --- | --- |
 | [`memento/`](memento/SKILL.md) | End users — any AI assistant talking to a user via MCP | Teaches the assistant when to write, recall, confirm, supersede, forget, and extract memories; how to choose scope and kind; how to handle conflicts and sensitive content. |
-
-More to come — a `memento-dev` skill for AI agents working **on** the Memento codebase (encoding the 14 architectural rules, ADR cadence, and verification commands from [`AGENTS.md`](../AGENTS.md)) is queued.
+| [`memento-dev/`](memento-dev/SKILL.md) | Contributors to the Memento repo (human or AI) | Encodes the four guiding principles, the 14 architectural rules, ADR cadence, the verification chain, common pitfalls, and the workflows for adding commands / config keys / migrations. |
 
 ## Installation
 
@@ -24,19 +23,27 @@ Skills are loaded by the AI client, not by Memento itself. The install path ther
 
 ### Claude Code (and Cowork)
 
-Copy the skill folder into your local skills directory. Claude Code's default location is `~/.claude/skills/`, but check your installation — some setups use a project-local `.claude/skills/` directory.
+The fastest path is to let `memento init` print the exact copy command for your install:
 
 ```bash
-# from a clone of this repo
-cp -R skills/memento ~/.claude/skills/
-
-# or, if you only have a checkout via npm / npx
-git clone --depth 1 https://github.com/veerps57/memento /tmp/memento-skills
-cp -R /tmp/memento-skills/skills/memento ~/.claude/skills/
-rm -rf /tmp/memento-skills
+npx @psraghuveer/memento init
 ```
 
-Restart your Claude Code session. The skill auto-loads on intent match — phrases like "remember that…", "what's my preferred…", "I changed my mind about…" should now route through Memento with no further configuration.
+Look for the **"Memento skill"** section in the output. It includes a `mkdir -p` and `cp -R` line you can copy-paste verbatim — `init` resolves the source path against wherever the package actually landed (npx cache, global install, or a clone), so the command works in every install layout.
+
+Then restart your Claude Code session. The skill auto-loads on intent match — phrases like "remember that…", "what's my preferred…", "I changed my mind about…" should now route through Memento with no further configuration.
+
+If you'd rather do it by hand from a clone:
+
+```bash
+cp -R skills/memento ~/.claude/skills/
+```
+
+Claude Code's default skills location is `~/.claude/skills/`, but check your installation — some setups use a project-local `.claude/skills/` directory.
+
+### Updating the skill after a Memento upgrade
+
+The installed copy at `~/.claude/skills/memento/` does **not** auto-refresh when you bump the Memento package. After every upgrade — `npm i -g @psraghuveer/memento`, a new `npx` cache, or a clone update — re-run `memento init` and re-paste the install command (or re-`cp` from your clone) to pick up the latest skill instructions. `memento init` is idempotent; the second run just reprints.
 
 ### Other MCP clients
 

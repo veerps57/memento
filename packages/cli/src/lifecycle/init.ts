@@ -153,8 +153,10 @@ export interface InitSnapshot {
   readonly skill: SkillInstallInfo;
 }
 
-const MIN_NODE_MAJOR = 20;
-const MIN_NODE_MINOR = 10;
+// Keep in sync with `engines.node` in the workspace root
+// `package.json` and the matching constants in `doctor.ts`.
+const MIN_NODE_MAJOR = 22;
+const MIN_NODE_MINOR = 11;
 
 export const initCommand: LifecycleCommand = {
   name: 'init',

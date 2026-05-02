@@ -57,7 +57,7 @@ export function shouldUseColor(
  * Pure; safe to call from tests.
  */
 export function renderBanner(version: string, options: BannerOptions): string {
-  const lines = options.color ? FIGLET.map((line) => cyan(line)) : FIGLET.slice();
+  const lines = options.color ? FIGLET.map((line) => accent(line)) : FIGLET.slice();
   const subtitle = `  ${TAGLINE}  ·  v${version}`;
   lines.push('');
   lines.push(options.color ? dim(subtitle) : subtitle);
@@ -70,11 +70,11 @@ export function renderBanner(version: string, options: BannerOptions): string {
 // stance for the CLI binary; the codes are stable and tiny.
 
 const RESET = '\u001b[0m';
-const CYAN = '\u001b[36m';
+const ACCENT = '\u001b[38;2;232;184;108m';
 const DIM = '\u001b[2m';
 
-function cyan(s: string): string {
-  return `${CYAN}${s}${RESET}`;
+function accent(s: string): string {
+  return `${ACCENT}${s}${RESET}`;
 }
 
 function dim(s: string): string {

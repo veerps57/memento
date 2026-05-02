@@ -171,7 +171,15 @@ export function createDefaultLoader(): LocalEmbedderLoader {
     // The `Xenova/` namespace hosts community ONNX exports of
     // common HF models. `bge-small-en-v1.5` is published there.
     const repo = `Xenova/${model}`;
-    const extractor = await runtime.pipeline('feature-extraction', repo);
+    // Pin `dtype: 'fp32'` to match the bge-* family's training
+    // precision and silence the noisy `dtype not specified for
+    // "model". Using the default dtype (fp32) for this device
+    // (cpu).` warning that transformers.js emits on first call
+    // when dtype is omitted. The behaviour is identical (fp32 is
+    // also what the lib falls back to); we just suppress the
+    // warning by being explicit. Reduce to 'q8' / 'q4' if the
+    // user wants smaller-and-faster at the cost of recall.
+    const extractor = await runtime.pipeline('feature-extraction', repo, { dtype: 'fp32' });
 
     return async (text: string): Promise<readonly number[]> => {
       const output = await extractor(text, {

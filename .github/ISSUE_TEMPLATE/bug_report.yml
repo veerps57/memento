@@ -49,9 +49,9 @@ body:
     id: repro
     attributes:
       label: Steps to reproduce
-      description: Minimal, deterministic steps. Start from `npx memento init` if helpful.
+      description: Minimal, deterministic steps. Start from `npx @psraghuveer/memento init` if helpful.
       placeholder: |
-        1. `npx memento init`
+        1. `npx @psraghuveer/memento init`
         2. `…`
         3. Observe …
     validations:
@@ -76,7 +76,7 @@ body:
     id: config
     attributes:
       label: Relevant config
-      description: Output of `memento config show` with secrets redacted. Optional but usually helpful.
+      description: Output of `memento config list` with secrets redacted. Optional but usually helpful.
       render: yaml
 
   - type: checkboxes

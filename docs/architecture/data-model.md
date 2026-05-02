@@ -83,7 +83,7 @@ interface OwnerRef {
 - `lastConfirmedAt ≥ createdAt`. Enforced.
 - `lastConfirmedAt` is a **denormalized cache** of the most recent `MemoryEvent` for this memory. `memento doctor` recomputes and verifies it.
 - `owner` is always populated, even when always `{type:'local',id:'self'}`. The model is multi-user-ready from day one.
-- `embedding` is present iff `retrieval.vector.enabled = true` **at the time the memory was written or last embedded**. Embedding model migration is explicit via `memento embeddings rebuild`.
+- `embedding` is present iff `retrieval.vector.enabled = true` **at the time the memory was written or last embedded**. Embedding model migration is explicit via `memento embedding rebuild`.
 
 ### Why `kind` is a discriminated union
 
@@ -203,7 +203,7 @@ type ConflictEventType = "opened" | "resolved";
 
 ### Why a separate audit log
 
-Conflicts are not memories: they are observations about pairs of memories. Folding them into `MemoryEvent` would tangle two distinct event streams whose retention, indexing, and access patterns differ. A separate log keeps each one focused and lets `memento conflicts scan` re-detect without rewriting memory history.
+Conflicts are not memories: they are observations about pairs of memories. Folding them into `MemoryEvent` would tangle two distinct event streams whose retention, indexing, and access patterns differ. A separate log keeps each one focused and lets `memento conflict scan` re-detect without rewriting memory history.
 
 ## Identifiers
 
@@ -213,7 +213,7 @@ Conflicts are not memories: they are observations about pairs of memories. Foldi
 
 ## Schema versioning
 
-`schemaVersion` is set at creation and never changes for that memory. Migrations transform older `schemaVersion` rows lazily on read or eagerly via `memento migrate`. Migrations are append-only files in `packages/core/migrations/`. Editing a shipped migration is a code-review rejection.
+`schemaVersion` is set at creation and never changes for that memory. Migrations transform older `schemaVersion` rows lazily on read or eagerly via `memento store migrate`. Migrations are append-only files in `packages/core/migrations/`. Editing a shipped migration is a code-review rejection.
 
 ## What is deliberately not in the model
 

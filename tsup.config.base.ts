@@ -13,7 +13,7 @@ import { type Options, defineConfig } from 'tsup';
  */
 export function createConfig(overrides: Options = {}): ReturnType<typeof defineConfig> {
   return defineConfig({
-    // Pure ESM. Memento is Node 20+ only and ESM-only.
+    // Pure ESM. Memento is Node 22+ only and ESM-only.
     format: ['esm'],
 
     // Emit type declarations as part of the build.
@@ -39,7 +39,7 @@ export function createConfig(overrides: Options = {}): ReturnType<typeof defineC
     clean: true,
 
     // tsup uses tsconfig.json to discover the strict TS options.
-    target: 'node20',
+    target: 'node22',
     platform: 'node',
 
     // Source maps for debugging in production stack traces.

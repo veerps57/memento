@@ -1,0 +1,90 @@
+/*
+ * Landing-page theme tokens.
+ *
+ * Mirrors `packages/dashboard/src/ui/styles.css` so the
+ * marketing page and the in-product dashboard share one visual
+ * identity. Tokens resolve through CSS variables (declared
+ * here, used in `tailwind.config.ts` via
+ * `rgb(var(--name) / <alpha-value>)`).
+ *
+ * Light/dark contract:
+ *   - Default = dark (matches dashboard's first-run appearance).
+ *   - `.light` on <html> swaps the palette.
+ *   - `prefers-color-scheme: light` is respected when the user
+ *     hasn't explicitly opted in to dark via `.dark`.
+ *   - `localStorage['memento-theme']` persists the user's
+ *     toggle decision; an inline script in `index.html` applies
+ *     it before React mounts (no FOUC).
+ */
+
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: 14 14 16;
+    --fg: 230 230 230;
+    --muted: 122 122 122;
+    --border: 38 38 42;
+    --accent: 232 184 108;
+    --accent-fg: 14 14 16;
+    --synapse: 127 179 179;
+    --warn: 212 160 90;
+    --destructive: 199 113 94;
+    --conflict: 181 134 200;
+  }
+
+  .light,
+  :root.light {
+    --bg: 250 248 244;
+    --fg: 28 28 31;
+    --muted: 110 110 110;
+    --border: 220 217 211;
+    --accent: 184 122 36;
+    --accent-fg: 250 248 244;
+    --synapse: 78 134 134;
+    --warn: 168 116 46;
+    --destructive: 156 70 50;
+    --conflict: 138 92 158;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    font-feature-settings: "cv11", "ss01", "ss03", "ss06";
+  }
+
+  ::selection {
+    background-color: rgb(var(--accent) / 0.35);
+  }
+
+  /* Smooth scrolling for in-page anchor jumps. */
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer components {
+  .term-prompt {
+    @apply font-mono text-sm tracking-widish lowercase;
+  }
+
+  .term-id {
+    @apply font-mono text-xs tracking-tight text-muted;
+  }
+
+  /* Code-block style for copy-paste install commands. */
+  .term-block {
+    @apply rounded-md border border-border bg-bg/60 px-4 py-3 font-mono text-sm text-fg;
+  }
+}

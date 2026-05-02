@@ -1,21 +1,43 @@
 # Memento
 
+[![CI](https://github.com/veerps57/memento/actions/workflows/ci.yml/badge.svg)](https://github.com/veerps57/memento/actions/workflows/ci.yml) [![npm](https://img.shields.io/npm/v/@psraghuveer/memento)](https://www.npmjs.com/package/@psraghuveer/memento) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Node.js: 22.11+](https://img.shields.io/badge/Node.js-22.11%2B-339933)](.nvmrc)
+
 > A local-first, LLM-agnostic memory layer for AI assistants.
 
-Memento is a small CLI tool that runs an [MCP](https://modelcontextprotocol.io) server over a local SQLite database, so any MCP-capable AI assistant — Claude Desktop, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, and others — can read and write durable, structured memory about you, your work, and your decisions.
+Every AI session starts the same way: re-explaining your preferences, your project's conventions, the decisions you made last week, the dead-ends to avoid. Each tool solves this in its own siloed way (`CLAUDE.md`, `.cursorrules`, `copilot-instructions.md`, ChatGPT Memory) — but you, the human, are the one constant. Your memory shouldn't fragment across vendors.
 
-Your memory lives in one SQLite file on your machine. No outbound network calls by default. No vendor lock-in.
+Memento is one place where that memory lives. It runs an [MCP](https://modelcontextprotocol.io) server over a local SQLite file, so any MCP-capable AI assistant — Claude Desktop, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, a research bot, a custom agent — can read and write durable, structured memory about you, your work, and your decisions. Local-first, no outbound network calls by default, no vendor lock-in.
+
+## Install
 
 ```bash
 export MEMENTO_DB=~/.local/share/memento/memento.db
 npx @psraghuveer/memento init
 ```
 
-That's the install story. `init` creates the database, runs migrations, and prints copy-paste MCP snippets for Claude Code, Claude Desktop, Cursor, VS Code Agent mode, and OpenCode. Paste the snippet for your client and you're done.
+`init` creates the database, runs migrations, and prints copy-paste MCP snippets for Claude Code, Claude Desktop, Cursor, VS Code Agent mode, and OpenCode. Paste the snippet for your client and you're done.
+
+## Your first 5 minutes
+
+After `init` and pasting the snippet:
+
+1. **Restart your AI client** so it loads the new MCP server.
+2. **Tell it something durable.** Try: *"Remember that I prefer pnpm over npm for Node projects."* Your assistant should call Memento's `write_memory` tool — most clients show this in a tool-call inspector.
+3. **Verify it landed.** In a terminal:
+
+   ```bash
+   npx @psraghuveer/memento status        # one-screen summary: counts, last event, db size
+   npx @psraghuveer/memento dashboard     # browser UI: search, audit, conflicts, config
+   ```
+
+4. **Start a fresh session.** Ask: *"What's my preferred package manager for Node projects?"* Your assistant should call `search_memory` (or `get_memory_context`), find the preference, and answer — without you re-explaining.
+5. **For the most consistent UX**, install the bundled [Memento skill](skills/memento/SKILL.md) (Claude Code / Cowork) — it teaches the assistant when to write, recall, supersede, and confirm memories without prompting. For other clients, paste the persona snippet from [docs/guides/teach-your-assistant.md](docs/guides/teach-your-assistant.md).
+
+If step 4 returns nothing, the assistant probably never called `write_memory` in step 2 — `npx @psraghuveer/memento status` confirms (memoryCount stays at zero). Tighten the persona / install the skill and try again.
 
 ## Getting started
 
-**Prerequisites.** Node.js ≥ 20.10, and a C/C++ toolchain so `better-sqlite3` can compile on platforms without a prebuild (Xcode command-line tools on macOS, `build-essential` on Debian/Ubuntu).
+**Prerequisites.** Node.js ≥ 22.11, and a C/C++ toolchain so `better-sqlite3` can compile on platforms without a prebuild (Xcode command-line tools on macOS, `build-essential` on Debian/Ubuntu).
 
 Run `init` once to set things up:
 
@@ -38,7 +60,7 @@ npx @psraghuveer/memento serve --db ~/.local/share/memento/memento.db
 
 You can also point at an existing database with the `MEMENTO_DB` environment variable.
 
-**Verify the install** by running `npx @psraghuveer/memento doctor` (add `--quick` to skip the DB and embedder probes; add `--mcp` to also scan known MCP client config files). To inspect what your install can do — registered commands, current config, database location — without speaking MCP, run `npx @psraghuveer/memento context`. To smoke-test the MCP transport end-to-end, `npx @psraghuveer/memento ping`.
+**Verify the install** by running `npx @psraghuveer/memento doctor` (add `--quick` to skip the DB and embedder probes; add `--mcp` to also scan known MCP client config files). For a one-screen summary of what's in your store, `npx @psraghuveer/memento status`. To inspect what your install can do — registered commands, current config, database location — without speaking MCP, run `npx @psraghuveer/memento context`. To smoke-test the MCP transport end-to-end, `npx @psraghuveer/memento ping`.
 
 **Wiring Memento into an MCP client** (Claude Desktop, Claude Code, Cursor, Cline, OpenCode, VS Code Agent mode, …) is covered step by step in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md). The TL;DR: run `npx @psraghuveer/memento init`, paste the snippet, set `MEMENTO_DB` to a stable absolute path.
 
@@ -48,15 +70,9 @@ You can also point at an existing database with the `MEMENTO_DB` environment var
 
 **See and curate your store in a browser.** `npx @psraghuveer/memento dashboard` launches a local-first web UI that reads against your `MEMENTO_DB`: memory counts by kind and scope, audit trail, conflict triage, config inspection. Localhost-only, no auth, no telemetry — same trust model as the CLI. The dashboard is a sibling package ([`@psraghuveer/memento-dashboard`](packages/dashboard/)) shipped under [ADR-0018](docs/adr/0018-dashboard-package.md); see [docs/guides/dashboard.md](docs/guides/dashboard.md) for the full walkthrough.
 
-**Stuck?** Common failure modes (better-sqlite3 build errors, `command not found: memento`, `STORAGE_ERROR`s, embedder peer-dep errors) are covered in [docs/guides/troubleshooting.md](docs/guides/troubleshooting.md).
+**Stuck?** Common failure modes (better-sqlite3 build errors, `command not found: memento`, `STORAGE_ERROR`s, missing embedder dependency) are covered in [docs/guides/troubleshooting.md](docs/guides/troubleshooting.md).
 
 For the contributor workflow (branching, commit conventions, PR checklist) see [CONTRIBUTING.md](CONTRIBUTING.md). AI agents working on the codebase **must** also read [AGENTS.md](AGENTS.md).
-
-## Why Memento
-
-Every AI session starts the same way: re-explaining your preferences, your project's conventions, the decisions you made last week, the dead-ends to avoid. Each tool solves this in its own siloed way (`CLAUDE.md`, `.cursorrules`, `copilot-instructions.md`, ChatGPT Memory) — but you, the human, are the one constant. Your memory shouldn't fragment across vendors.
-
-Memento is one place where memory lives. Any tool that speaks MCP — a coding assistant, a desktop chat client, a custom agent — can use it.
 
 ## Guiding principles
 
@@ -136,3 +152,4 @@ Memento is a small workspace of focused packages. The architecture is documented
 | [`@psraghuveer/memento-embedder-local`](packages/embedder-local) | Local `EmbeddingProvider` backed by transformers.js + `bge-base-en-v1.5`. Ships as a regular dependency; lazy single-flight init downloads the model on first use. See ADR [0006](docs/adr/0006-local-embeddings-only-in-v1.md).                                                                                                             |
 | [`@psraghuveer/memento`](packages/cli) (CLI)         | The published `memento` binary (`npx @psraghuveer/memento` or `npm i -g @psraghuveer/memento`). Lifecycle commands (`init`, `serve`, `dashboard`, `context`, `doctor`, `status`, `ping`, `backup`, `export`, `import`, `store migrate`, `completions`, `explain`, `uninstall`) plus a generic projection of the registry surface (`memento <namespace> <verb>`). See [docs/reference/cli.md](docs/reference/cli.md).                                                                              |
 | [`@psraghuveer/memento-dashboard`](packages/dashboard) | Local-first web dashboard. Hono server in-process with the engine + Vite-built React SPA. Launched by `memento dashboard`; binds `127.0.0.1` only. See [ADR-0018](docs/adr/0018-dashboard-package.md) and [docs/guides/dashboard.md](docs/guides/dashboard.md). |
+| [`@psraghuveer/memento-landing`](packages/landing) | Marketing landing page. Static SPA, deployed to GitHub Pages on every push to main that touches `packages/landing/**`. Mirrors the dashboard's design tokens; light/dark toggle. Private (not published to npm). |

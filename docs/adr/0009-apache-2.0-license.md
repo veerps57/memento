@@ -14,7 +14,7 @@ Open-source license options:
 - **MPL-2.0** — file-level copyleft; complicates downstream use.
 - **GPL-3.0** — strong copyleft; rejected for adoption reasons.
 
-Memento is a developer tool intended for use inside enterprises. Patent indemnification matters. The Apache-2.0 patent grant is meaningful in that context.
+Memento is a memory layer for AI assistants, used by individuals and inside enterprises alike. Patent indemnification matters for enterprise adoption. The Apache-2.0 patent grant is meaningful in that context.
 
 ## Decision
 
@@ -49,7 +49,7 @@ Attractive: file-level copyleft is a middle ground. Rejected: complicates use of
 
 ## Validation against the four principles
 
-1. **First principles.** Choose the license that matches the audience (developers in enterprises) rather than the default (MIT).
+1. **First principles.** Choose the license that matches the audience (users and contributors in enterprise environments) rather than the default (MIT).
 2. **Modular.** N/A.
 3. **Extensible.** N/A.
 4. **Config-driven.** N/A.

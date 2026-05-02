@@ -107,7 +107,13 @@ function PaletteModal({ onClose }: { readonly onClose: () => void }): JSX.Elemen
   }, []);
 
   const mode = parseMode(query);
-  const debounced = useDebounced(mode.kind === 'search' ? mode.text : '', 120);
+  // 250ms is the search-as-you-type sweet spot: short enough that
+  // pausing for thought triggers a fetch, long enough that
+  // typing letter-by-letter doesn't fan out to 5+ requests for
+  // a 5-char query. Combined with `placeholderData: keepPreviousData`
+  // on the search hook (results stay visible during refetch),
+  // this kills the flash-and-reflow most users perceive as jitter.
+  const debounced = useDebounced(mode.kind === 'search' ? mode.text : '', 250);
 
   // Search mode pulls from `memory.search`; nav and id modes
   // are local computations.

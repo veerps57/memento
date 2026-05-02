@@ -11,9 +11,9 @@ Two writes can disagree. Conflicts must be detected, but writes must not block o
 
 ## Decision
 
-Run conflict detection as an asynchronous post-write hook bounded by `conflict.timeoutMs`. The write commits; the hook runs after; conflicts are surfaced via `memory.conflicts` (a separate read path), not via the write's response.
+Run conflict detection as an asynchronous post-write hook bounded by `conflict.timeoutMs`. The write commits; the hook runs after; conflicts are surfaced via `conflict.list` (a separate read path), not via the write's response.
 
-If the hook misses a conflict (timeout, crash), `memento conflicts scan` re-runs detection deterministically over the audit log.
+If the hook misses a conflict (timeout, crash), `memento conflict scan` re-runs detection deterministically over the audit log.
 
 ## Consequences
 
@@ -30,7 +30,7 @@ If the hook misses a conflict (timeout, crash), `memento conflicts scan` re-runs
 
 ### Risks
 
-- The hook silently misses conflicts. Mitigation: `memento doctor` reports conflict-detection lag; `memento conflicts scan` is a one-shot recovery.
+- The hook silently misses conflicts. Mitigation: `memento doctor` reports conflict-detection lag; `memento conflict scan` is a one-shot recovery.
 
 ## Alternatives considered
 
