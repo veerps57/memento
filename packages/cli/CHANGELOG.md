@@ -1,5 +1,35 @@
 # @psraghuveer/memento
 
+## 0.3.2
+
+### Patch Changes
+
+- a9826e1: Add the Memento skill bundle and surface it from `memento init`.
+
+  The new bundle (`skills/memento/SKILL.md`) teaches Anthropic-skill-capable
+  clients — Claude Code, Claude Desktop, Cowork — when to call the Memento
+  MCP tools (`write_memory`, `extract_memory`, `get_memory_context`,
+  `confirm_memory`, `supersede_memory`, `forget_memory`, …), how to choose
+  scope and kind, when to supersede instead of update, and how to handle
+  conflicts and sensitive content. Closes the adoption gap from ADR-0016
+  without requiring users to hand-paste a persona snippet. Clients that do
+  not load Anthropic skills (Cursor, VS Code Agent, OpenCode) continue to
+  use the persona-snippet alternative in
+  `docs/guides/teach-your-assistant.md`.
+
+  `memento init` now ships an "── Memento skill (optional) ──" section
+  gated on the rendered client set: shown when at least one
+  skill-capable client is present, suppressed otherwise. The skill
+  source is staged into the npm tarball by a build-time
+  `copy-skills.mjs` script so `npx`-only users get a real absolute
+  path to copy from. `init` is still print-only by design — the
+  section lists a `cp -R …` command rather than mutating the user's
+  skills directory.
+
+  The `InitSnapshot` contract grows one new field, `skill: SkillInstallInfo`
+  — additive — and `ClientSnippet` grows `supportsSkills: boolean`. No
+  existing fields change shape.
+
 ## 0.3.1
 
 ### Patch Changes
