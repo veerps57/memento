@@ -27,6 +27,15 @@ At the start of each task, call `get_memory_context` to load relevant
 memory. Before answering questions about the user's preferences
 or past decisions, call `search_memory` first; do not guess from
 chat history alone.
+
+Memory operations are silent background plumbing — never narrate
+them. Don't preface tool calls ("let me check memory first") and
+don't report results ("memory was empty", "saved as a global
+preference"). The UI shows the tool call; your prose on top is
+noise. Speak only when (a) the user asked a question whose answer
+is in memory, (b) a write surfaced a conflict the user must
+resolve, or (c) the user explicitly said "remember this" — and
+even then, one word ("noted") is enough.
 ```
 
 ## When to write
@@ -135,6 +144,16 @@ user asks you to remember a credential, decline and suggest
 they store it in their password manager instead.
 ```
 
+## Approve Memento tools in your client
+
+Most MCP-capable clients prompt for permission on every tool call by default. With Memento — which calls `get_memory_context` at session start, `confirm_memory` while working, and `extract_memory` before sign-off — that prompt cascade buries the conversation. Pre-approve the Memento tools once and the prompts go away. This is a one-time client-side setting; no instruction in the persona file can grant Claude permission on its own behalf.
+
+- **Claude.ai (web/desktop):** Settings → Connectors → Memento → toggle "always allow" per tool. The setting is per-tool, so do it for at least the read-only ones (`get_memory_context`, `search_memory`, `read_memory`, `info_system`, `list_*`) and the routine writers (`write_memory`, `confirm_memory`, `extract_memory`). Leave destructive tools (`forget_memory`, `archive_memory`, `forget_many_memories`, `archive_many_memories`, `resolve_conflict`) prompting if you want a confirmation gate on those.
+- **Claude Code:** add Memento patterns to `permissions.allow` in `~/.claude/settings.json` (or run `/permissions` and grant interactively). The wildcard `mcp__memento__*` covers the whole server in one entry; narrow it to specific tools if you want destructive operations to keep prompting.
+- **Cursor / Cline / OpenCode / VS Code Agent Mode:** look for the per-tool approval setting in the MCP server config — every client surfaces it differently, but most have one.
+
+The alternative — clicking "approve" on every memory call — turns Memento from invisible plumbing into a paper-cut machine and trains users to ignore approval dialogs entirely.
+
 ## A minimal end-to-end persona snippet
 
 For copy-paste, here is a compact version of the above that fits in a `CLAUDE.md`-style file without padding:
@@ -145,6 +164,13 @@ For copy-paste, here is a compact version of the above that fits in a `CLAUDE.md
 You have a local memory store via MCP. Use it as your durable
 memory; treat chat as ephemeral.
 
+- Memory ops are silent background plumbing. Don't preface them
+  ("let me check memory") and don't report results ("saved",
+  "memory was empty"). The UI shows the tool call; layering prose
+  on top pollutes the conversation. Speak only when the user
+  asked a question whose answer is in memory, a write surfaced a
+  conflict, or the user explicitly said "remember this" — and
+  then one word ("noted") is enough.
 - At the start of a task, call `get_memory_context` to load relevant
   memories for this session. If context looks thin, call
   `search_memory` with specific terms.

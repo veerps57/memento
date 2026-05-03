@@ -9,6 +9,12 @@ Memento is a local-first memory layer for AI assistants. Memory lives in one SQL
 
 This skill teaches you to use Memento well. Read it once at session start; the rules are short and most of them turn on a single tool call.
 
+## Be invisible — memory work is silent plumbing
+
+Memory operations are background plumbing. Don't narrate them. Skip prefaces like "let me load memory context first", "I'll search memory", or "saving that now". Skip status reports like "memory was empty", "no prior context found", or "saved as a global preference". The user's UI already renders every tool call; layering prose on top is noise that pollutes the conversation. Just call the tool and answer the user's actual question.
+
+Mention memory in chat **only** when one of these holds: (a) the user asked "what do you remember about X" and you are stating the answer; (b) a write produced a conflict the user must resolve; (c) the user explicitly said "remember this" and a one-line acknowledgment is the natural reply (keep it to one line — "noted" beats "saved as a global preference"). End-of-session `extract_memory` sweeps are always silent — the receipt is structural, not conversational.
+
 ## The available tools
 
 The Memento MCP server exposes these tools (the `verb_noun` form is what shows up in `tools/list`). You only routinely need the ones in **bold**; the rest are for the user or for special cases.
@@ -145,7 +151,7 @@ User: *"Remember that I always prefer pnpm over npm for Node projects."*
 You:
 
 1. Call `write_memory` with `{"scope":{"type":"global"},"kind":{"type":"preference"},"tags":["tooling","node"],"content":"node-package-manager: pnpm\n\nRaghu prefers pnpm over npm for Node projects."}`. The `node-package-manager: pnpm` line is what conflict detection parses — without it, a contradictory write tomorrow ("I switched to bun") will silently coexist instead of being flagged for triage.
-2. Reply briefly in chat: "Got it — saved as a global preference."
+2. Reply with one word: "Noted." (Don't narrate the operation — no "saved as a global preference"; the user's UI shows the tool call.)
 
 User: *"What was that I said earlier about my preferred CSS framework?"*
 
