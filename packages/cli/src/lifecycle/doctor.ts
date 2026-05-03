@@ -447,7 +447,23 @@ function checkMcpClients(): readonly DoctorCheck[] {
     }
     try {
       const raw = readFileSync(configPath, 'utf8');
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(raw) as Record<string, unknown>;
+      } catch (parseCause) {
+        // Doctor reports get pasted into bug reports, so the
+        // exact failure message must not leak bytes from the
+        // surrounding config (Node 22's `JSON.parse` SyntaxError
+        // can include surrounding-line context; some MCP client
+        // configs hold API tokens). Surface only the error name
+        // (`SyntaxError`) and drop the byte-positional message.
+        const errName = parseCause instanceof Error ? parseCause.constructor.name : 'unknown error';
+        return {
+          name,
+          ok: false,
+          message: `${configPath}: JSON parse failed (${errName})`,
+        };
+      }
       const block = parsed[key] as Record<string, unknown> | undefined;
       const hasMemento = block !== undefined && Object.keys(block).some((k) => k === 'memento');
       return {
@@ -461,7 +477,7 @@ function checkMcpClients(): readonly DoctorCheck[] {
       return {
         name,
         ok: false,
-        message: `${configPath}: failed to read or parse: ${describe(cause)}`,
+        message: `${configPath}: failed to read: ${describe(cause)}`,
       };
     }
   });

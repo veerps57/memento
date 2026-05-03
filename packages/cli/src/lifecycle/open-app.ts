@@ -114,14 +114,31 @@ export async function openAppForSurface(
 
   // Forward operator-tunable embedder caps so the local embedder
   // honours `embedder.local.maxInputBytes` / `timeoutMs` / `cacheDir`
-  // without having to reach into the registry itself.
+  // without having to reach into the registry itself. When
+  // `embedder.local.cacheDir` is `null` (the registry default),
+  // resolve to a per-user XDG path so the model lands in a
+  // persistent, owner-private location instead of
+  // `node_modules/.../@huggingface/transformers/.cache/` (which
+  // is wiped on every reinstall and is writable by anything that
+  // can touch `node_modules`).
+  const { resolveDefaultCacheDir } = await import('../cache-path.js');
+  const configuredCacheDir = probe.configStore.get('embedder.local.cacheDir');
+  const cacheDir =
+    configuredCacheDir !== null ? configuredCacheDir : resolveDefaultCacheDir({ env: process.env });
   const embedderOptions: import('./types.js').ResolveEmbedderOptions = {
     maxInputBytes: probe.configStore.get('embedder.local.maxInputBytes'),
     timeoutMs: probe.configStore.get('embedder.local.timeoutMs'),
+    cacheDir,
   };
-  const cacheDir = probe.configStore.get('embedder.local.cacheDir');
-  if (cacheDir !== null) {
-    (embedderOptions as { cacheDir?: string }).cacheDir = cacheDir;
+  // Best-effort: create the cache directory with owner-only
+  // perms before the embedder writes its first model byte. A
+  // failure (read-only home, EROFS) is non-fatal — the embedder
+  // will surface the IO error itself when it can't write.
+  try {
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(cacheDir, { recursive: true, mode: 0o700 });
+  } catch {
+    // Best-effort.
   }
 
   let embeddingProvider: Awaited<ReturnType<NonNullable<LifecycleDeps['resolveEmbedder']>>>;
