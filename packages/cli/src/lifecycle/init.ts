@@ -69,7 +69,7 @@
 //     `INVALID_INPUT` before the database is opened.
 
 import { existsSync } from 'node:fs';
-import { constants, access, mkdir, unlink } from 'node:fs/promises';
+import { constants, access, lstat, mkdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
 import { type Result, err, ok } from '@psraghuveer/memento-schema';
@@ -380,6 +380,29 @@ async function checkStaleWalSidecars(dbPath: string): Promise<InitCheck> {
   for (const suffix of ['-wal', '-shm', '-journal'] as const) {
     const orphan = `${absolute}${suffix}`;
     if (!existsSync(orphan)) continue;
+    // Refuse to follow a symlink. An attacker who can place a
+    // file at a predictable `${db}-wal` path on a shared host
+    // could plant a symlink there before init runs and trick the
+    // cleanup into deleting an unrelated file. `lstat` reports
+    // on the link itself rather than the target; we only unlink
+    // when the entry is a regular file.
+    let stats: import('node:fs').Stats;
+    try {
+      stats = await lstat(orphan);
+    } catch (cause) {
+      return {
+        name: 'stale-wal-sidecars',
+        ok: false,
+        message: `could not stat orphan sidecar '${orphan}': ${describe(cause)}. Remove it by hand and re-run.`,
+      };
+    }
+    if (!stats.isFile()) {
+      return {
+        name: 'stale-wal-sidecars',
+        ok: false,
+        message: `orphan sidecar path '${orphan}' is not a regular file (symlink? directory?). Remove it by hand and re-run.`,
+      };
+    }
     try {
       await unlink(orphan);
       removed.push(path.basename(orphan));
@@ -428,7 +451,10 @@ async function checkDbPathWritable(dbPath: string): Promise<InitCheck> {
   // to the access() probe so the user sees a single,
   // descriptive `not writable` message rather than two.
   try {
-    await mkdir(dir, { recursive: true });
+    // Owner-only perms on the data directory. SQLite's
+    // sidecar files (-wal, -shm) and the DB itself land here;
+    // both carry operator-private memory content.
+    await mkdir(dir, { recursive: true, mode: 0o700 });
   } catch {
     // Intentionally swallowed — surfaced via the access() probe.
   }

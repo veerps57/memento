@@ -81,8 +81,12 @@ export interface ServeLogEntry {
 export async function writeServeLogLine(logPath: string, entry: ServeLogEntry): Promise<void> {
   const line = `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`;
   try {
-    await mkdir(path.dirname(logPath), { recursive: true });
-    await appendFile(logPath, line, 'utf8');
+    // Owner-only perms on both the parent directory and the log
+    // file. Serve-log lines carry the resolved DB path and any
+    // error message at startup; a permissive umask would expose
+    // those to other accounts on a shared host.
+    await mkdir(path.dirname(logPath), { recursive: true, mode: 0o700 });
+    await appendFile(logPath, line, { encoding: 'utf8', mode: 0o600 });
   } catch {
     // Intentional: the caller already has a structured error to
     // return. Refusing to log must not turn a recoverable error

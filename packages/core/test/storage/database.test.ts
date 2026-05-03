@@ -65,6 +65,7 @@ describe('openDatabase', () => {
       const sync = handle.raw.pragma('synchronous', { simple: true });
       const busy = handle.raw.pragma('busy_timeout', { simple: true });
       const temp = handle.raw.pragma('temp_store', { simple: true });
+      const trusted = handle.raw.pragma('trusted_schema', { simple: true });
       expect(String(journal).toLowerCase()).toBe('wal');
       expect(Number(fk)).toBe(1);
       // synchronous: 1 = NORMAL.
@@ -72,6 +73,12 @@ describe('openDatabase', () => {
       expect(Number(busy)).toBe(1234);
       // temp_store: 2 = MEMORY.
       expect(Number(temp)).toBe(2);
+      // trusted_schema: 0 = OFF. SQLite ships with this ON for
+      // legacy compatibility; we pin it OFF so a malicious
+      // hand-crafted .db (e.g. opened via `--db /tmp/evil.db`)
+      // cannot wire a trigger that mutates rows on first read
+      // via unsafe schema-only functions.
+      expect(Number(trusted)).toBe(0);
     });
   });
 

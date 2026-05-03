@@ -20,9 +20,40 @@
 // `INVALID_INPUT` because that's exactly what they are: the
 // caller's input passed the command's input schema but failed
 // the deeper cross-field invariant.
+//
+// Path redaction. `INTERNAL` and `STORAGE_ERROR` messages
+// originate from `better-sqlite3` / Node FS errors and may
+// include absolute filesystem paths (e.g.
+// `SQLITE_CANTOPEN: unable to open database file: /Users/.../memento.db`).
+// Those reach the MCP peer through `executeCommand`'s `Result.err`
+// envelope. To keep host filesystem layout off the wire we run
+// the message through `redactPaths` before returning. The
+// well-known repo error patterns above don't carry absolute
+// paths, so they are returned as-is for actionable error UX.
 
 import type { MementoError } from '@psraghuveer/memento-schema';
 import { ZodError } from 'zod';
+
+/**
+ * Replace absolute filesystem paths in a message with a
+ * `<path>` placeholder so error returns to MCP clients don't
+ * leak host layout. POSIX absolute paths (`/foo/bar`) and
+ * Windows drive-letter paths (`C:\foo\bar`) are both matched.
+ *
+ * The redaction is intentionally conservative — it does not
+ * touch relative paths or fragments like `id=…` because those
+ * are useful in error messages and don't disclose host layout.
+ */
+export function redactPaths(message: string): string {
+  // POSIX absolute path: starts with `/`, contains at least one
+  // additional component. Stop at whitespace, quote, or
+  // line-ending punctuation so we don't munch through prose.
+  const posix = /\/(?:[^\s'"`,;)\]}]+\/)*[^\s'"`,;)\]}]+/g;
+  // Windows drive-letter path: `C:\foo\bar`. Single backslashes
+  // get doubled inside JS regex literals.
+  const win = /[A-Za-z]:\\(?:[^\s'"`,;)\]}\\]+\\)*[^\s'"`,;)\]}\\]+/g;
+  return message.replace(posix, '<path>').replace(win, '<path>');
+}
 
 /**
  * Translate an error thrown out of a `MemoryRepository` call into
@@ -93,8 +124,8 @@ export function repoErrorToMementoError(error: unknown, op: string): MementoErro
     /\bconstraint failed\b/i.test(msg) ||
     /\bdatabase is locked\b/i.test(msg)
   ) {
-    return { code: 'STORAGE_ERROR', message: msg };
+    return { code: 'STORAGE_ERROR', message: redactPaths(msg) };
   }
 
-  return { code: 'INTERNAL', message: msg };
+  return { code: 'INTERNAL', message: redactPaths(msg) };
 }

@@ -139,4 +139,46 @@ describe('repoErrorToMementoError', () => {
     expect(result.code).toBe('INTERNAL');
     expect(result.message).toContain('something completely unexpected');
   });
+
+  // Path-redaction (security hardening): host filesystem layout
+  // must not leak through INTERNAL or STORAGE_ERROR messages
+  // returned to MCP clients. The path-bearing messages SQLite
+  // and Node FS produce on real failures (e.g. SQLITE_CANTOPEN)
+  // get their absolute paths replaced with `<path>`.
+  describe('path redaction', () => {
+    it('redacts a POSIX absolute DB path in a STORAGE_ERROR message', () => {
+      const e = new Error(
+        'SQLITE_CANTOPEN: unable to open database file: /Users/alice/.local/share/memento/memento.db',
+      );
+      const r = repoErrorToMementoError(e, 'open');
+      expect(r.code).toBe('STORAGE_ERROR');
+      expect(r.message).toContain('<path>');
+      expect(r.message).not.toContain('/Users/alice');
+      expect(r.message).not.toContain('memento.db');
+    });
+
+    it('redacts a Windows drive-letter path in an INTERNAL message', () => {
+      const e = new Error('something failed at C:\\Users\\bob\\AppData\\Roaming\\memento');
+      const r = repoErrorToMementoError(e, 'misc');
+      expect(r.code).toBe('INTERNAL');
+      expect(r.message).toContain('<path>');
+      expect(r.message).not.toContain('Users\\bob');
+    });
+
+    it('does not touch well-known structured messages (NOT_FOUND, CONFLICT)', () => {
+      // Well-known messages don't carry filesystem paths, so the
+      // happy-path UX (id-bearing error messages) is preserved.
+      const r = repoErrorToMementoError(new Error('forget: memory not found: 01HYXZ'), 'forget');
+      expect(r.code).toBe('NOT_FOUND');
+      expect(r.message).toContain('01HYXZ');
+      expect(r.message).not.toContain('<path>');
+    });
+
+    it('leaves prose without paths intact in INTERNAL messages', () => {
+      const e = new Error('random failure with no paths');
+      const r = repoErrorToMementoError(e, 'misc');
+      expect(r.code).toBe('INTERNAL');
+      expect(r.message).toBe('random failure with no paths');
+    });
+  });
 });

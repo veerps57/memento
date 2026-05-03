@@ -5,6 +5,7 @@
 // so behaviour is reproducible regardless of which workspace opens
 // the file. ADR-0001 explains why SQLite is the storage engine.
 
+import { chmodSync, existsSync } from 'node:fs';
 import { CONFIG_KEYS } from '@psraghuveer/memento-schema';
 import Database from 'better-sqlite3';
 import type { Database as BetterSqlite3Database } from 'better-sqlite3';
@@ -64,6 +65,24 @@ export function openDatabase(options: OpenDatabaseOptions): MementoDatabase {
     inMemory: options.path === ':memory:',
   });
 
+  // Tighten file permissions on the on-disk database to 0600
+  // (owner-only read/write). Memento data is operator-private —
+  // memory content survives the scrubber as a best-effort
+  // redaction, not a guarantee, so a permissive umask should not
+  // expose it to other accounts on a shared host. `chmodSync` is
+  // a no-op on Windows; better-sqlite3 creates the file as part
+  // of `new Database(...)` so the file always exists by the time
+  // we reach this line. `:memory:` and read-only opens skip.
+  if (!options.readonly && options.path !== ':memory:' && existsSync(options.path)) {
+    try {
+      chmodSync(options.path, 0o600);
+    } catch {
+      // Best-effort: a chmod failure (e.g. exotic filesystem,
+      // network mount) should not abort the open. The DB itself
+      // is functional regardless of mode.
+    }
+  }
+
   const db = new Kysely<MementoSchema>({
     dialect: new SqliteDialect({ database: raw }),
   });
@@ -106,6 +125,15 @@ interface PragmaContext {
  * - `foreign_keys = ON`: enforces the FK constraints our schema
  *   declares (memory_events.memory_id, conflicts.*_memory_id, ...).
  *   SQLite leaves this OFF by default — easy footgun.
+ * - `trusted_schema = OFF`: rejects unsafe SQL functions inside
+ *   views, triggers, and CHECK constraints unless they originate
+ *   from the canonical schema set. This protects against the
+ *   "user opened a hand-crafted .db via `--db /tmp/evil.db`"
+ *   threat: a malicious schema could otherwise wire a trigger
+ *   that mutates rows on first read. SQLite leaves this ON by
+ *   default for legacy compatibility — Memento's schema does
+ *   not rely on any trusted-schema-only function, so flipping
+ *   to OFF is safe and closes the vector.
  * - `busy_timeout`: configurable; see option docs above.
  * - `temp_store = MEMORY`: avoids touching the filesystem for
  *   sort/group temporaries.
@@ -116,6 +144,7 @@ function applyPragmas(raw: BetterSqlite3Database, ctx: PragmaContext): void {
   }
   raw.pragma('synchronous = NORMAL');
   raw.pragma('foreign_keys = ON');
+  raw.pragma('trusted_schema = OFF');
   raw.pragma(`busy_timeout = ${ctx.busyTimeoutMs}`);
   raw.pragma('temp_store = MEMORY');
 }
