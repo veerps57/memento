@@ -85,10 +85,10 @@ describe('memento serve (MCP stdio end-to-end)', () => {
     // Pre-seed the DB with `retrieval.vector.enabled=false` so
     // the CLI's `openAppForSurface` skips the embedder resolution
     // path. Without this, the default `true` triggers a lazy model
-    // download (~30MB from HuggingFace Hub) on the first embed()
-    // call, making the e2e test slow and network-dependent. Vector
-    // retrieval is covered by unit tests; this test exercises the
-    // MCP round-trip over FTS.
+    // download (`bge-base-en-v1.5`, ~110 MB from Hugging Face Hub)
+    // on the first embed() call, making the e2e test slow and
+    // network-dependent. Vector retrieval is covered by unit tests;
+    // this test exercises the MCP round-trip over FTS.
     const seed = await createMementoApp({ dbPath });
     await seed.configRepository.set(
       { key: 'retrieval.vector.enabled', value: false, source: 'cli' },

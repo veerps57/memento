@@ -81,6 +81,9 @@ async function defaultServeStdio(options: ServeStdioOptions): Promise<void> {
     registry: options.registry,
     ctx: options.ctx,
     info: options.info,
+    ...(options.maxMessageBytes !== undefined
+      ? { transport: { maxMessageBytes: options.maxMessageBytes } }
+      : {}),
   });
 }
 
@@ -95,11 +98,21 @@ async function defaultServeStdio(options: ServeStdioOptions): Promise<void> {
  * error propagate — `openAppForSurface` wraps it in a
  * CONFIG_ERROR with a reinstall hint.
  */
-async function defaultResolveEmbedder(): Promise<EmbeddingProvider | undefined> {
+async function defaultResolveEmbedder(
+  options: import('./lifecycle/types.js').ResolveEmbedderOptions,
+): Promise<EmbeddingProvider | undefined> {
   const mod = (await import('@psraghuveer/memento-embedder-local')) as {
-    readonly createLocalEmbedder: () => EmbeddingProvider;
+    readonly createLocalEmbedder: (opts?: {
+      readonly maxInputBytes?: number;
+      readonly timeoutMs?: number;
+      readonly cacheDir?: string;
+    }) => EmbeddingProvider;
   };
-  return mod.createLocalEmbedder();
+  return mod.createLocalEmbedder({
+    ...(options.maxInputBytes !== undefined ? { maxInputBytes: options.maxInputBytes } : {}),
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    ...(options.cacheDir !== undefined ? { cacheDir: options.cacheDir } : {}),
+  });
 }
 
 /**
@@ -132,6 +145,8 @@ async function defaultLaunchDashboard(
     readonly createDashboardServer: (init: {
       readonly registry: typeof options.registry;
       readonly ctx: typeof options.ctx;
+      readonly token: string;
+      readonly port: number;
     }) => { readonly fetch: (req: Request) => Promise<Response> };
   };
   type HonoServer = {
@@ -149,22 +164,59 @@ async function defaultLaunchDashboard(
     ) => HonoServer;
   };
 
+  // Generate a fresh per-launch token. 32 bytes (256 bits) of
+  // crypto-grade randomness, base64url-encoded for safe
+  // embedding in URL fragments. The fragment never reaches the
+  // server (browsers strip `#…`), so the token does not leak
+  // into the dashboard's own access logs — only the SPA's
+  // window.location reads it.
+  const { randomBytes } = await import('node:crypto');
+  const token = randomBytes(32).toString('base64url');
+
+  // Two-step bind: the OS may have assigned the port (when
+  // `--port 0`); we cannot build the server's exact-origin /
+  // Host allowlists until we know the bound port. So we open a
+  // throwaway socket first, capture the OS port, then construct
+  // the dashboard server with that port and re-listen.
+  //
+  // Simpler alternative: pass `options.port` as-is and trust the
+  // user. `--port 0` is the default, so this path is the common
+  // case. `net.createServer` + `listen(0)` + `close` is reliable
+  // across Node versions.
+  const net = await import('node:net');
+  const reservedPort: number = await new Promise((resolveP, rejectP) => {
+    if (options.port !== 0) {
+      resolveP(options.port);
+      return;
+    }
+    const probe = net.createServer();
+    probe.unref();
+    probe.once('error', rejectP);
+    probe.listen(0, options.host, () => {
+      const addr = probe.address();
+      if (addr === null || typeof addr === 'string') {
+        rejectP(new Error('failed to reserve a port for the dashboard'));
+        return;
+      }
+      probe.close(() => resolveP(addr.port));
+    });
+  });
+
   const serverApp = dashboardModule.createDashboardServer({
     registry: options.registry,
     ctx: options.ctx,
+    token,
+    port: reservedPort,
   });
 
   // `serve()` returns synchronously but `onListen` fires after
-  // the socket is actually bound. We need the bound port (the
-  // OS may have assigned one if `port` was 0) before we can
-  // print or open the readiness URL — so we wrap the bind in
-  // a Promise and await it. The `error` listener catches the
-  // common "port already in use" case so the caller surfaces
-  // a real error instead of hanging forever.
-  let resolvedPort = options.port;
+  // the socket is actually bound. We need the bound port to
+  // confirm the OS assigned what we reserved (it should — see
+  // above) before we can print or open the readiness URL.
+  let resolvedPort = reservedPort;
   const server: HonoServer = await new Promise<HonoServer>((resolveServer, rejectServer) => {
     const candidate = honoNode.serve(
-      { fetch: serverApp.fetch, hostname: options.host, port: options.port },
+      { fetch: serverApp.fetch, hostname: options.host, port: reservedPort },
       (info) => {
         resolvedPort = info.port;
         resolveServer(candidate);
@@ -174,7 +226,10 @@ async function defaultLaunchDashboard(
   });
 
   const displayHost = options.host === '127.0.0.1' ? 'localhost' : options.host;
-  const url = `http://${displayHost}:${resolvedPort}`;
+  // The token rides on the URL fragment so it never reaches the
+  // server's request log — only the SPA's `window.location.hash`
+  // reads it on first load.
+  const url = `http://${displayHost}:${resolvedPort}/#token=${token}`;
 
   // Always print the readiness URL on stderr, regardless of TTY.
   // Without this line, a user running `memento dashboard --no-open`

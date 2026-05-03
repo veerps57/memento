@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 69 keys.
+Total: 78 keys.
 
 ## `decay.*`
 
@@ -71,6 +71,12 @@ Total: 69 keys.
 | --- | --- | --- | --- |
 | `storage.busyTimeoutMs` | `5000` | no | SQLite `busy_timeout` PRAGMA, in milliseconds. Pinned at server start. |
 
+## `server.*`
+
+| Key | Default | Mutable | Description |
+| --- | --- | --- | --- |
+| `server.maxMessageBytes` | `4194304` | no | Hard upper bound on a single JSON-RPC message read from stdin, in bytes. Messages exceeding this are rejected and the transport closes the stream. Pinned at server start. |
+
 ## `retrieval.*`
 
 | Key | Default | Mutable | Description |
@@ -98,13 +104,17 @@ Total: 69 keys.
 | --- | --- | --- | --- |
 | `embedder.local.model` | `"bge-base-en-v1.5"` | no | Hugging Face model id for `@psraghuveer/memento-embedder-local`. Resolved as `Xenova/<model>` on the Hub. Pinned at server start; changing it requires `embedding rebuild`. |
 | `embedder.local.dimension` | `768` | no | Expected vector dimension for the configured embedder model. Must match `embedder.local.model`; the embedder rejects vectors of any other length. Pinned at server start. |
+| `embedder.local.maxInputBytes` | `32768` | no | Maximum byte length of text passed to the local embedder. Inputs above this are truncated to the cap before tokenisation. Pinned at server start because crossing the cap would change retrieval semantics. |
+| `embedder.local.timeoutMs` | `10000` | no | Wallclock timeout for a single embed call, in milliseconds. The embedder rejects with a typed error after this elapses; auto-embed swallows it (the memory is written without a vector and `embedding rebuild` recovers). |
+| `embedder.local.cacheDir` | `null` | no | Directory in which the local embedder caches downloaded model files. `null` resolves to `<XDG_CACHE_HOME>/memento/models` (or the platform equivalent) at startup; otherwise the literal path is used. Pinned at server start. |
 
 ## `scrubber.*`
 
 | Key | Default | Mutable | Description |
 | --- | --- | --- | --- |
-| `scrubber.enabled` | `true` | yes | Master toggle for the write-path scrubber. When false, writes pass through unredacted and no `scrubReport` is recorded. |
-| `scrubber.rules` | `[{"id":"openai-api-key","description":"OpenAI-style API key (sk-...)","pattern"…` | yes | Active scrubber rule set. Order is significant — first match wins. Defaults to the rules shipped in `DEFAULT_SCRUBBER_RULES`. |
+| `scrubber.enabled` | `true` | no | Master toggle for the write-path scrubber. When false, writes pass through unredacted and no `scrubReport` is recorded. Pinned at server start. |
+| `scrubber.rules` | `[{"id":"openai-api-key","description":"OpenAI-style API key (sk-...)","pattern"…` | no | Active scrubber rule set. Order is significant — first match wins. Defaults to the rules shipped in `DEFAULT_SCRUBBER_RULES`. Pinned at server start. |
+| `scrubber.engineBudgetMs` | `50` | yes | Per-rule wallclock budget for the scrubber engine, in milliseconds. A rule that exceeds the budget is aborted and treated as "no match" for that rule on this write. |
 
 ## `privacy.*`
 
@@ -125,6 +135,9 @@ Total: 69 keys.
 | --- | --- | --- | --- |
 | `safety.batchWriteLimit` | `100` | yes | Maximum number of items accepted by a single `memory.write_many` call. Requests exceeding this limit are rejected with `INVALID_INPUT` before any write runs. |
 | `safety.bulkDestructiveLimit` | `1000` | yes | Maximum number of memories a single bulk-destructive call (`memory.forget_many`, `memory.archive_many`) may transition. Applied when `dryRun: false`; rehearsals are uncapped. Requests exceeding the cap are rejected with `INVALID_INPUT` before any row is touched. |
+| `safety.memoryContentMaxBytes` | `65536` | yes | Maximum byte length of `memory.write` (and supersede / extract) content. Inputs exceeding this are rejected with `INVALID_INPUT` before the scrubber or storage layer runs. |
+| `safety.summaryMaxBytes` | `2048` | yes | Maximum byte length of `memory.write` summary. Summaries are one-line listings; the cap reflects that intent. |
+| `safety.tagMaxCount` | `64` | yes | Maximum number of tags accepted on a single `memory.write`. Each tag is independently capped at 64 characters by `TagSchema`. |
 
 ## `extraction.*`
 
@@ -157,6 +170,12 @@ Total: 69 keys.
 | --- | --- | --- | --- |
 | `export.includeEmbeddings` | `false` | yes | Default for `memento export` when `--include-embeddings` is not passed. Embeddings are model-bound and rebuildable, so the default is `false`; flip to `true` only if you know the destination machine cannot rebuild them. |
 | `export.defaultPath` | `null` | yes | Default destination path for `memento export` when `--out` is not passed. `null` means write to stdout; a string is treated as a filesystem path. |
+
+## `import.*`
+
+| Key | Default | Mutable | Description |
+| --- | --- | --- | --- |
+| `import.maxBytes` | `268435456` | yes | Maximum byte length of an artefact accepted by `memento import`. Files exceeding this are rejected before any read begins. Default is 256 MiB. |
 
 ## `user.*`
 

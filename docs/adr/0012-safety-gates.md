@@ -1,9 +1,11 @@
 # ADR-0012: Safety gates — confirm, idempotency, redaction, batch limits
 
-- **Status:** Accepted
+- **Status:** Accepted (extended — see "Extended scope" below for resource caps added later under the `safety.*` namespace)
 - **Date:** 2025-01-29
 - **Deciders:** core
 - **Tags:** mcp, registry, safety, privacy
+
+> **Extended scope.** This ADR scopes *safety gates* — confirm-required destructive verbs, `clientToken` idempotency, the `sensitive` privacy flag, and `safety.batchWriteLimit` for `memory.write_many`. A later security pass widened the same `safety.*` config namespace with operator-tunable **resource caps** that are gates of a different kind (rejecting oversize inputs at the wire boundary): `safety.memoryContentMaxBytes`, `safety.summaryMaxBytes`, `safety.tagMaxCount`, plus per-subsystem ceilings `server.maxMessageBytes`, `embedder.local.maxInputBytes`, `embedder.local.timeoutMs`, `import.maxBytes`, and `scrubber.engineBudgetMs`. Those keys are documented in [`docs/architecture/config.md`](../architecture/config.md) and [SECURITY.md](../../SECURITY.md). The "destructive verbs require `confirm: true`" / "idempotency by `clientToken`" decisions in this ADR are unchanged; the resource caps are an additive layer.
 
 ## Context
 

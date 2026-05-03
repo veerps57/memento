@@ -85,4 +85,43 @@ describe('applyRules', () => {
     expect(scrubbed).toBe('abc');
     expect(report.rules).toEqual([]);
   });
+
+  describe('engineBudgetMs', () => {
+    // ReDoS hedge: a per-rule wallclock budget aborts a rule
+    // that has accumulated too much wallclock time. The
+    // gate fires *between* `re.exec` iterations once
+    // `Date.now() - ruleStart > budgetMs`; the engine cannot
+    // interrupt an in-progress single match attempt (JS regex
+    // is atomic and synchronous). The contract this test pins:
+    // the abort fires, the partial match list is bounded, and
+    // the engine does not silently produce the full match set.
+    it('aborts a rule that exceeds the per-rule budget', () => {
+      const rule: ScrubberRule = high('many', 'a');
+      const inputLength = 100_000;
+      const content = 'a'.repeat(inputLength);
+      const aborted: string[] = [];
+      const { report } = applyRules(content, [rule], {
+        engineBudgetMs: 0,
+        onBudgetExceeded: (id) => aborted.push(id),
+      });
+      // Abort callback fired, and partial match count is well
+      // below the input length (the unbounded run would record
+      // 100k matches; the bounded run aborts long before).
+      expect(aborted).toEqual(['many']);
+      const recorded = report.rules.find((r) => r.ruleId === 'many');
+      // The rule may or may not have recorded any claims before
+      // the gate fired (clock granularity dependent); what
+      // matters is that it didn't run to completion.
+      const matches = recorded?.matches ?? 0;
+      expect(matches).toBeLessThan(inputLength);
+    });
+
+    it('honours the budget without disturbing fast rules', () => {
+      const fast: ScrubberRule = high('fast', 'XYZ');
+      const { scrubbed } = applyRules('hello XYZ world', [fast], {
+        engineBudgetMs: 5_000,
+      });
+      expect(scrubbed).toBe('hello <r:fast> world');
+    });
+  });
 });

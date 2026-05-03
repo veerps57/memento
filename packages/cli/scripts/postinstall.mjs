@@ -51,6 +51,57 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 
+// Environment allow-list for child-process invocations.
+//
+// Forwarding the parent `process.env` verbatim is a documented
+// supply-chain hazard during `npm install`: any other dep's
+// postinstall can stage env vars the spawned npm honours
+// (`npm_config_script_shell`, `NODE_OPTIONS=--require=...`,
+// arbitrary `*_BINARY_HOST*` redirectors, etc.). We forward only
+// the variables the legitimate `npm rebuild` workflow needs.
+const ENV_ALLOWLIST = [
+  'PATH',
+  'HOME',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'TMPDIR',
+  'TEMP',
+  'TMP',
+  'SystemRoot',
+  'ComSpec',
+  'npm_config_cache',
+  'npm_execpath',
+  'npm_node_execpath',
+];
+
+function safeEnv() {
+  const out = Object.create(null);
+  for (const key of ENV_ALLOWLIST) {
+    const value = process.env[key];
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * Resolve the `npm` binary the parent install is using.
+ * `process.env.npm_execpath` is the canonical pointer (set by
+ * npm for every postinstall hook); invoking it via
+ * `node $execpath ...` bypasses any `node_modules/.bin/npm`
+ * override a malicious sibling dep might have planted on `PATH`.
+ */
+function resolveNpmCli() {
+  const execpath = process.env.npm_execpath;
+  if (typeof execpath === 'string' && existsSync(execpath)) {
+    return { command: process.execPath, args: [execpath] };
+  }
+  return {
+    command: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    args: [],
+  };
+}
+
 /**
  * Detect whether we are running inside the Memento workspace
  * checkout (vs. the published-package layout under an end-user's
@@ -102,12 +153,13 @@ function tryLoadBinding() {
 
 function rebuild() {
   return new Promise((resolve) => {
+    const cli = resolveNpmCli();
     const child = spawn(
-      process.platform === 'win32' ? 'npm.cmd' : 'npm',
-      ['rebuild', 'better-sqlite3', '--build-from-source'],
+      cli.command,
+      [...cli.args, 'rebuild', 'better-sqlite3', '--build-from-source'],
       {
         stdio: 'ignore',
-        env: process.env,
+        env: safeEnv(),
       },
     );
     child.on('error', () => resolve(false));

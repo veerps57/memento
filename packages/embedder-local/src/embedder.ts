@@ -73,8 +73,67 @@ export interface LocalEmbedderOptions {
    * the loader; the default loader sets `transformers.env.cacheDir`.
    */
   readonly cacheDir?: string;
+  /**
+   * Hard upper bound on the byte length of `text` passed to the
+   * underlying tokenizer. Inputs longer than this are truncated
+   * (UTF-8 boundary-safe) before the embed pass runs. Without a
+   * cap, a megabyte-long input both wastes work the model
+   * truncates internally and risks OOM on the tokeniser's
+   * attention buffers. Hosts wire this from
+   * `embedder.local.maxInputBytes`.
+   */
+  readonly maxInputBytes?: number;
+  /**
+   * Wallclock cap for a single embed call, in milliseconds.
+   * The embedder rejects with a typed error after this elapses;
+   * the in-flight tokenisation continues in the background but
+   * its result is discarded. Hosts wire this from
+   * `embedder.local.timeoutMs`.
+   */
+  readonly timeoutMs?: number;
   /** DI hook. Defaults to `createDefaultLoader()`. */
   readonly loader?: LocalEmbedderLoader;
+}
+
+/**
+ * Truncate `text` to at most `maxBytes` UTF-8 bytes without
+ * splitting a multi-byte codepoint. The Buffer slice can land
+ * mid-codepoint; `TextDecoder` with `fatal: false` recovers by
+ * dropping the trailing partial sequence.
+ */
+function truncateToBytes(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, 'utf8') <= maxBytes) return text;
+  const buf = Buffer.from(text, 'utf8').subarray(0, maxBytes);
+  return new TextDecoder('utf-8', { fatal: false }).decode(buf);
+}
+
+/**
+ * Wrap a Promise in a wallclock cap. Rejects with a typed error
+ * after `ms` even if `p` keeps running. The label appears in
+ * the rejection message so audit logs can distinguish single
+ * vs. batch timeouts.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => {
+      reject(new Error(`Local embedder ${label} timed out after ${ms}ms`));
+    }, ms);
+    // `unref` so a pending timer does not keep the Node event
+    // loop alive past the host's intended shutdown.
+    if (typeof (t as { unref?: () => void }).unref === 'function') {
+      (t as { unref: () => void }).unref();
+    }
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(t);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      },
+    );
+  });
 }
 
 /**
@@ -88,6 +147,8 @@ export function createLocalEmbedder(options: LocalEmbedderOptions = {}): Embeddi
   const loader = options.loader ?? createDefaultLoader();
   const loaderContext: LocalEmbedderLoaderContext =
     options.cacheDir !== undefined ? { cacheDir: options.cacheDir } : {};
+  const maxInputBytes = options.maxInputBytes;
+  const timeoutMs = options.timeoutMs;
 
   // Single-flight init: every concurrent `embed` call awaits the
   // same promise, so the model is loaded exactly once even under
@@ -119,12 +180,25 @@ export function createLocalEmbedder(options: LocalEmbedderOptions = {}): Embeddi
     return vector;
   };
 
+  const prepareText = (text: string): string =>
+    maxInputBytes !== undefined ? truncateToBytes(text, maxInputBytes) : text;
+
+  const runEmbed = async (
+    embedFn: EmbedFn,
+    text: string,
+    label: string,
+  ): Promise<readonly number[]> => {
+    const prepared = prepareText(text);
+    const work = embedFn(prepared);
+    return timeoutMs !== undefined ? withTimeout(work, timeoutMs, label) : work;
+  };
+
   return {
     model,
     dimension,
     async embed(text: string): Promise<readonly number[]> {
       const embedFn = await ensureReady();
-      return validateVector(await embedFn(text), 'single');
+      return validateVector(await runEmbed(embedFn, text, 'single'), 'single');
     },
     async embedBatch(texts: readonly string[]): Promise<readonly (readonly number[])[]> {
       const embedFn = await ensureReady();
@@ -136,7 +210,8 @@ export function createLocalEmbedder(options: LocalEmbedderOptions = {}): Embeddi
       // this is the one place to change.
       const results: (readonly number[])[] = [];
       for (const text of texts) {
-        results.push(validateVector(await embedFn(text), `batch[${results.length}]`));
+        const label = `batch[${results.length}]`;
+        results.push(validateVector(await runEmbed(embedFn, text, label), label));
       }
       return results;
     },

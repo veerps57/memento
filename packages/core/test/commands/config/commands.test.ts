@@ -72,12 +72,20 @@ function get(byName: Map<string, AnyCommand>, name: string): AnyCommand {
 }
 
 describe('createConfigCommands', () => {
-  it('exposes the v1 config.* set under both surfaces', async () => {
+  it('exposes the v1 config.* set on mcp, cli, and dashboard surfaces', async () => {
     const { byName } = await fixture();
     const names = ['config.get', 'config.list', 'config.set', 'config.unset', 'config.history'];
     for (const name of names) {
       const cmd = get(byName, name);
-      expect(cmd.surfaces).toEqual(['mcp', 'cli']);
+      // Every config.* command surfaces on the dashboard so the
+      // dashboard's config view (read + edit) works. The
+      // destructive bypass an attacker could cook up via
+      // `config.set scrubber.enabled false` is closed by marking
+      // those keys immutable in
+      // `packages/schema/src/config-keys.ts`; the immutability
+      // gate fires regardless of which surface invoked the
+      // command.
+      expect([...cmd.surfaces].sort()).toEqual(['cli', 'dashboard', 'mcp']);
     }
   });
 
@@ -183,6 +191,36 @@ describe('createConfigCommands', () => {
       if (res.ok) throw new Error('expected err');
       expect(res.error.code).toBe('IMMUTABLE');
       expect(res.error.message).toMatch(/storage\.busyTimeoutMs/);
+    });
+
+    // `scrubber.enabled` and `scrubber.rules` are pinned at
+    // server start. A prompt-injected assistant calling
+    // `config.set scrubber.enabled false` before writing a
+    // secret must be rejected at this boundary — the scrubber
+    // is the load-bearing defence against accidentally
+    // persisting credentials.
+    it('rejects writes to scrubber.enabled with IMMUTABLE', async () => {
+      const { byName } = await fixture();
+      const res = await executeCommand(
+        get(byName, 'config.set'),
+        { key: 'scrubber.enabled', value: false },
+        { actor: cliActor },
+      );
+      if (res.ok) throw new Error('expected err');
+      expect(res.error.code).toBe('IMMUTABLE');
+      expect(res.error.message).toMatch(/scrubber\.enabled/);
+    });
+
+    it('rejects writes to scrubber.rules with IMMUTABLE', async () => {
+      const { byName } = await fixture();
+      const res = await executeCommand(
+        get(byName, 'config.set'),
+        { key: 'scrubber.rules', value: [] },
+        { actor: cliActor },
+      );
+      if (res.ok) throw new Error('expected err');
+      expect(res.error.code).toBe('IMMUTABLE');
+      expect(res.error.message).toMatch(/scrubber\.rules/);
     });
   });
 

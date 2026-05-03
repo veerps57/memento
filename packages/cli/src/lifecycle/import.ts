@@ -1,36 +1,59 @@
 // `memento import` lifecycle command.
 //
-// Reads a `memento-export/v1` JSONL artefact from disk (or stdin),
-// validates it, and applies it to the configured database in a
-// single transaction. The engine-level mechanics — header schema,
-// SHA-256 footer, conflict policy, transactional apply — live in
-// `@psraghuveer/memento-core`'s `importSnapshot`; this module owns the argv
-// parsing, the source byte stream, and the CLI-shaped summary.
+// Reads a `memento-export/v1` JSONL artefact from disk and applies
+// it to the configured database in a single transaction. The
+// engine-level mechanics — header schema, SHA-256 footer, conflict
+// policy, transactional apply, the ADR-0019 re-stamp policy — live
+// in `@psraghuveer/memento-core`'s `importSnapshot`; this module
+// owns the argv parsing, the streaming source, and the
+// CLI-shaped summary.
 //
 // Argv grammar:
 //
-//   memento import --in <path> [--dry-run] [--on-conflict skip|abort]
+//   memento import --in <path> [--dry-run]
+//                  [--on-conflict skip|abort]
+//                  [--trust-source]
 //
-// `--dry-run` parses + validates the artefact (including the SHA-256
-// check) but never opens a write transaction. `--on-conflict`
-// defaults to `skip` — the most common case is "merge an artefact
-// from another machine into mine and keep my local additions".
-// `abort` is for the strict "must be empty target or fail" case.
+// `--dry-run` parses + validates the artefact (including the
+// SHA-256 check) but never opens a write transaction.
+//
+// `--on-conflict` defaults to `skip` — the most common case is
+// "merge an artefact from another machine into mine and keep my
+// local additions". `abort` is for the strict "must be empty
+// target or fail" case.
+//
+// `--trust-source` opts into preserving the source artefact's
+// `MemoryEvent` audit chain. The default (collapse mode) replaces
+// it with one synthetic `memory.imported` event per memory, so
+// the importer's audit log honestly reports when memories
+// arrived. Either way, `OwnerRef` is rewritten to local-self and
+// content is re-scrubbed with the importer's current rule set —
+// those are non-negotiable. See ADR-0019.
+//
+// Streaming. The artefact is read line-by-line via
+// `readline.createInterface` over `createReadStream` so a
+// multi-gigabyte file does not OOM the CLI before parsing
+// begins. An upfront `fs.stat` rejects files larger than
+// `import.maxBytes` (default 256 MiB).
 //
 // Note: this command does NOT auto-migrate the destination DB.
-// Operators are expected to run `memento store migrate` first; the
-// header's `schemaVersion <= MEMORY_SCHEMA_VERSION` handshake guards
-// against importing an artefact authored against a *newer* engine.
+// Operators are expected to run `memento store migrate` first;
+// the header's `schemaVersion <= MEMORY_SCHEMA_VERSION`
+// handshake guards against importing an artefact authored
+// against a *newer* engine.
 
-import { readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { createInterface } from 'node:readline';
 
 import {
   type ImportConflictPolicy,
   type ImportSummary,
   importSnapshot,
-  openDatabase,
 } from '@psraghuveer/memento-core';
 import { type Result, err, ok } from '@psraghuveer/memento-schema';
+
+import { resolveVersion } from '../version.js';
 
 import type { LifecycleCommand, LifecycleDeps, LifecycleInput } from './types.js';
 
@@ -42,49 +65,67 @@ export interface ImportSnapshotResult {
   readonly applied: ImportSummary['applied'];
   readonly skipped: ImportSummary['skipped'];
   readonly dryRun: boolean;
+  readonly trustSource: boolean;
 }
 
 interface ImportArgs {
   readonly in: string;
   readonly dryRun: boolean;
   readonly onConflict: ImportConflictPolicy;
+  readonly trustSource: boolean;
 }
 
 export const importCommand: LifecycleCommand = {
   name: 'import',
   description:
-    'Import a `memento-export/v1` JSONL artefact into the configured database (ADR-0013)',
+    'Import a `memento-export/v1` JSONL artefact into the configured database (ADR-0013, ADR-0019)',
   run: runImport,
 };
 
 export async function runImport(
-  _deps: LifecycleDeps,
+  deps: LifecycleDeps,
   input: LifecycleInput,
 ): Promise<Result<ImportSnapshotResult>> {
   const args = parseImportArgs(input.subargs);
   if (!args.ok) return args;
 
-  let raw: string;
-  try {
-    raw = await readFile(args.value.in, 'utf8');
-  } catch (cause) {
-    return err({
-      code: 'STORAGE_ERROR',
-      message: `failed to read artefact at '${args.value.in}': ${cause instanceof Error ? cause.message : String(cause)}`,
-    });
-  }
+  const app = await deps.createApp({
+    dbPath: input.env.dbPath,
+    appVersion: resolveVersion(),
+  });
 
-  // Trailing newline (canonical) yields an empty final entry; drop it.
-  const lines = raw.split('\n');
-  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-
-  const handle = openDatabase({ path: input.env.dbPath });
   try {
+    const maxBytes = app.configStore.get('import.maxBytes');
+    let fileSize: number;
+    try {
+      const stats = await stat(args.value.in);
+      fileSize = stats.size;
+    } catch (cause) {
+      return err({
+        code: 'STORAGE_ERROR',
+        message: `failed to read artefact at '${args.value.in}': ${cause instanceof Error ? cause.message : String(cause)}`,
+      });
+    }
+    if (fileSize > maxBytes) {
+      return err({
+        code: 'INVALID_INPUT',
+        message: `artefact at '${args.value.in}' is ${fileSize} bytes; exceeds import.maxBytes (${maxBytes}). Raise the limit with \`memento config set import.maxBytes <bytes>\` or split the artefact.`,
+        details: { size: fileSize, limit: maxBytes },
+      });
+    }
+
     const result = await importSnapshot({
-      db: handle.db,
-      source: lines,
+      db: app.db.db,
+      source: streamLines(args.value.in),
       onConflict: args.value.onConflict,
       dryRun: args.value.dryRun,
+      trustSource: args.value.trustSource,
+      scrubber: {
+        rules: app.configStore.get('scrubber.rules'),
+        enabled: app.configStore.get('scrubber.enabled'),
+        engineBudgetMs: app.configStore.get('scrubber.engineBudgetMs'),
+      },
+      actor: { type: 'cli' },
     });
     if (!result.ok) return result;
 
@@ -95,15 +136,38 @@ export async function runImport(
       applied: result.value.applied,
       skipped: result.value.skipped,
       dryRun: result.value.dryRun,
+      trustSource: args.value.trustSource,
     });
   } finally {
-    handle.close();
+    app.close();
+  }
+}
+
+/**
+ * Async generator wrapping `readline.createInterface` over a file
+ * stream. Yields one line at a time, never buffering the whole
+ * artefact in memory. The trailing newline (canonical) yields a
+ * final empty line that the engine's parser already drops via
+ * the bodyLines slice; we don't filter here so the engine sees
+ * exactly the bytes the file contains.
+ */
+async function* streamLines(path: string): AsyncIterable<string> {
+  const stream = createReadStream(path, { encoding: 'utf8' });
+  const rl = createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
+  try {
+    for await (const line of rl) {
+      yield line;
+    }
+  } finally {
+    rl.close();
+    stream.destroy();
   }
 }
 
 function parseImportArgs(subargs: readonly string[]): Result<ImportArgs> {
   let inPath: string | null = null;
   let dryRun = false;
+  let trustSource = false;
   let onConflict: ImportConflictPolicy = 'skip';
 
   const args = [...subargs];
@@ -111,6 +175,11 @@ function parseImportArgs(subargs: readonly string[]): Result<ImportArgs> {
     const head = args[0] as string;
     if (head === '--dry-run') {
       dryRun = true;
+      args.shift();
+      continue;
+    }
+    if (head === '--trust-source') {
+      trustSource = true;
       args.shift();
       continue;
     }
@@ -161,5 +230,5 @@ function parseImportArgs(subargs: readonly string[]): Result<ImportArgs> {
   if (inPath === null) {
     return err({ code: 'INVALID_INPUT', message: '--in <path> is required' });
   }
-  return ok({ in: inPath, dryRun, onConflict });
+  return ok({ in: inPath, dryRun, onConflict, trustSource });
 }

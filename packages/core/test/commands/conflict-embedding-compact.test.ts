@@ -138,9 +138,19 @@ describe('createConflictCommands', () => {
       'conflict.resolve',
       'conflict.scan',
     ];
+    // `conflict.list` and `conflict.resolve` opt into the
+    // dashboard surface (the UI's conflicts table); the rest
+    // remain mcp+cli-only.
+    const dashboardSubset = new Set(['conflict.list', 'conflict.resolve']);
     for (const name of names) {
       const cmd = get(byName, name);
-      expect(cmd.surfaces).toEqual(['mcp', 'cli']);
+      expect(cmd.surfaces).toContain('mcp');
+      expect(cmd.surfaces).toContain('cli');
+      if (dashboardSubset.has(name)) {
+        expect(cmd.surfaces).toContain('dashboard');
+      } else {
+        expect(cmd.surfaces).not.toContain('dashboard');
+      }
     }
   });
 

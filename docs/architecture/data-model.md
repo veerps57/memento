@@ -120,14 +120,15 @@ type MemoryEventType =
   | "forgotten"
   | "restored"
   | "archived"
-  | "reembedded";
+  | "reembedded"
+  | "imported"; // ADR-0019: stamped by `memento import` in default (collapse) mode
 ```
 
 ### Audit-log invariants
 
 - The audit log is **append-only**. There is no command that deletes or modifies a `MemoryEvent`. Hard-deleting historical events would destroy the ability to reconstruct state and is rejected at the repository layer.
 - For every `Memory`, there is at least one `created` event with `at = createdAt` and `actor = owner`.
-- The `lastConfirmedAt` field on `Memory` equals `MAX(at)` over events of type `created | confirmed | updated | superseded | restored | reembedded` for that memory. `memento doctor` enforces this invariant.
+- The `lastConfirmedAt` field on `Memory` equals `MAX(at)` over events of type `created | confirmed | updated | superseded | restored | reembedded | imported` for that memory. `memento doctor` enforces this invariant.
 
 ### What the audit log enables
 

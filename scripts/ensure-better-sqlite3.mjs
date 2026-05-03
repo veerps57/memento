@@ -42,10 +42,94 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const PKG_NAME = 'better-sqlite3';
 const BINARY_REL_PATH = join('build', 'Release', 'better_sqlite3.node');
+
+// Environment allow-list for child-process invocations.
+//
+// Forwarding the parent `process.env` verbatim is a documented
+// supply-chain hazard during `npm install` / `pnpm install`: any
+// other dep's postinstall can stage env vars that this script's
+// child npm/npx then honours. The classic exploit shapes:
+//
+//   - `npm_config_script_shell` redirects `npm rebuild`'s install
+//     script through an attacker-chosen shell;
+//   - `npm_config_registry`, `npm_config_userconfig`,
+//     `npm_config_prefix` quietly redirect package fetch and config
+//     resolution;
+//   - `NODE_OPTIONS=--require=./malicious.js` lets a colluding
+//     package load arbitrary code into our spawned `node` process;
+//   - `PREBUILD_INSTALL_HOST` / `npm_config_better_sqlite3_binary_host_mirror`
+//     redirect where `prebuild-install` downloads the prebuilt
+//     binary from, substituting a malicious native module.
+//
+// We forward only the variables the legitimate workflow needs:
+// `PATH` (to find tools), the platform's home / temp / system
+// dirs (npm itself reads them), and `npm_execpath` /
+// `npm_node_execpath` so the child npm finds its own runtime.
+// `npm_config_cache` is forwarded because the install would
+// otherwise re-download into a fresh cache. Everything else —
+// notably every other `npm_config_*`, `NODE_OPTIONS`,
+// `NODE_PATH`, `*_BINARY_HOST*`, etc. — is dropped.
+const ENV_ALLOWLIST = [
+  'PATH',
+  'HOME',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'TMPDIR',
+  'TEMP',
+  'TMP',
+  'SystemRoot',
+  'ComSpec',
+  'npm_config_cache',
+  'npm_execpath',
+  'npm_node_execpath',
+];
+
+function safeEnv() {
+  const out = Object.create(null);
+  for (const key of ENV_ALLOWLIST) {
+    const value = process.env[key];
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * Resolve the `npm` / `npx` binary the parent install is using.
+ *
+ * `process.env.npm_execpath` points at the running npm's
+ * `npm-cli.js` (set by npm itself for every postinstall hook).
+ * Invoking it via `node $execpath ...` bypasses any
+ * `node_modules/.bin/npm` override that a malicious sibling dep
+ * might have planted on `PATH`. The same dir holds `npx-cli.js`,
+ * which is the npx counterpart.
+ *
+ * Fallback to a bare `PATH` lookup only when `npm_execpath` is
+ * unset (e.g. somebody invoking the script outside an
+ * install context).
+ */
+function resolveNpmCli(name) {
+  const execpath = process.env.npm_execpath;
+  if (typeof execpath === 'string' && existsSync(execpath)) {
+    if (name === 'npm') {
+      return { command: process.execPath, args: [execpath] };
+    }
+    if (name === 'npx') {
+      const npxPath = join(dirname(execpath), 'npx-cli.js');
+      if (existsSync(npxPath)) {
+        return { command: process.execPath, args: [npxPath] };
+      }
+    }
+  }
+  return {
+    command: process.platform === 'win32' ? `${name}.cmd` : name,
+    args: [],
+  };
+}
 
 function findPkgDir() {
   const pnpmDir = join(process.cwd(), 'node_modules', '.pnpm');
@@ -64,10 +148,11 @@ function bindingExists(pkgDir) {
 
 function fetchPrebuild(pkgDir) {
   console.error(`memento: fetching ${PKG_NAME} prebuild via prebuild-install...`);
+  const cli = resolveNpmCli('npx');
   const result = spawnSync(
-    process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    ['--yes', 'prebuild-install', '--runtime=node'],
-    { cwd: pkgDir, stdio: 'inherit', env: process.env },
+    cli.command,
+    [...cli.args, '--yes', 'prebuild-install', '--runtime=node'],
+    { cwd: pkgDir, stdio: 'inherit', env: safeEnv() },
   );
   return result.status === 0;
 }
@@ -76,11 +161,12 @@ function rebuildFromSource(pkgDir) {
   console.error(
     `memento: prebuild fetch did not place the binding; rebuilding ${PKG_NAME} from source...`,
   );
-  const result = spawnSync(
-    process.platform === 'win32' ? 'npm.cmd' : 'npm',
-    ['rebuild', PKG_NAME, '--build-from-source'],
-    { cwd: pkgDir, stdio: 'inherit', env: process.env },
-  );
+  const cli = resolveNpmCli('npm');
+  const result = spawnSync(cli.command, [...cli.args, 'rebuild', PKG_NAME, '--build-from-source'], {
+    cwd: pkgDir,
+    stdio: 'inherit',
+    env: safeEnv(),
+  });
   return result.status === 0;
 }
 

@@ -52,6 +52,7 @@ export interface ExportSnapshot {
 interface ExportArgs {
   readonly out: string | null;
   readonly includeEmbeddings: boolean;
+  readonly overwrite: boolean;
 }
 
 export const exportCommand: LifecycleCommand = {
@@ -79,7 +80,7 @@ export async function runExport(
     });
   }
 
-  const writer = await openWriter(args.value.out, input);
+  const writer = await openWriter(args.value.out, args.value.overwrite, input);
   if (!writer.ok) return writer;
 
   try {
@@ -110,12 +111,18 @@ export async function runExport(
 function parseExportArgs(subargs: readonly string[]): Result<ExportArgs> {
   let out: string | null = null;
   let includeEmbeddings = false;
+  let overwrite = false;
 
   const args = [...subargs];
   while (args.length > 0) {
     const head = args[0] as string;
     if (head === '--include-embeddings') {
       includeEmbeddings = true;
+      args.shift();
+      continue;
+    }
+    if (head === '--overwrite') {
+      overwrite = true;
       args.shift();
       continue;
     }
@@ -148,7 +155,7 @@ function parseExportArgs(subargs: readonly string[]): Result<ExportArgs> {
     return err({ code: 'INVALID_INPUT', message: `unknown argument '${head}' for export` });
   }
 
-  return ok({ out, includeEmbeddings });
+  return ok({ out, includeEmbeddings, overwrite });
 }
 
 interface OpenedWriter {
@@ -158,6 +165,7 @@ interface OpenedWriter {
 
 async function openWriter(
   out: string | null,
+  overwrite: boolean,
   input: LifecycleInput,
 ): Promise<Result<OpenedWriter>> {
   if (out === null) {
@@ -184,7 +192,37 @@ async function openWriter(
     });
   }
 
-  const stream = createWriteStream(out, { encoding: 'utf8' });
+  // Refuse to overwrite by default. The export contains memory
+  // content (post-scrub but still operator-private) and a
+  // hand-typed `--out path/to/old-export.jsonl` should not
+  // silently replace a backup the operator forgot about. The
+  // explicit `--overwrite` flag opts in. `mode: 0o600` makes the
+  // file user-private even on hosts with permissive umasks —
+  // memory content is operator data.
+  const stream = createWriteStream(out, {
+    encoding: 'utf8',
+    flags: overwrite ? 'w' : 'wx',
+    mode: 0o600,
+  });
+  // Wait for the open to settle so an `EEXIST` becomes a typed
+  // error rather than a stream-level emit later.
+  const opened = await new Promise<Error | null>((resolve) => {
+    stream.once('open', () => resolve(null));
+    stream.once('error', (e) => resolve(e));
+  });
+  if (opened !== null) {
+    const cause = opened as NodeJS.ErrnoException;
+    if (cause.code === 'EEXIST') {
+      return err({
+        code: 'INVALID_INPUT',
+        message: `refusing to overwrite existing file at '${out}' — pass --overwrite to replace it`,
+      });
+    }
+    return err({
+      code: 'STORAGE_ERROR',
+      message: `failed to open output file: ${cause.message}`,
+    });
+  }
   return ok({
     writer: {
       write: (line: string): Promise<void> =>

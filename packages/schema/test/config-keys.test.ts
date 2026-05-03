@@ -109,11 +109,17 @@ describe('CONFIG_KEYS registry', () => {
     // value re-exported as `DEFAULT_SCRUBBER_RULES` so the
     // first-run scrubbing behaviour matches the documented
     // baseline regardless of which side reads the config.
+    //
+    // Both keys are pinned at server start (`mutable: false`).
+    // A prompt-injected assistant calling
+    // `config.set scrubber.enabled false` before writing a
+    // secret would otherwise be a one-shot bypass of the only
+    // defence against accidentally persisting credentials.
     const { DEFAULT_SCRUBBER_RULES } = await import('../src/scrubber.js');
     expect(CONFIG_KEYS['scrubber.enabled'].default).toBe(true);
-    expect(CONFIG_KEYS['scrubber.enabled'].mutable).toBe(true);
+    expect(CONFIG_KEYS['scrubber.enabled'].mutable).toBe(false);
     expect(CONFIG_KEYS['scrubber.rules'].default).toBe(DEFAULT_SCRUBBER_RULES);
-    expect(CONFIG_KEYS['scrubber.rules'].mutable).toBe(true);
+    expect(CONFIG_KEYS['scrubber.rules'].mutable).toBe(false);
   });
 
   it('scrubber.rules schema rejects an array with duplicate ids', () => {

@@ -23,12 +23,40 @@
 // The byte-offset list in the report is in pre-scrub coordinates
 // (the schema is explicit about this) and is sorted so a reviewer
 // can re-run the rules on a fresh sample and compare deterministically.
+//
+// ReDoS budget. `applyRules` accepts an optional per-rule wallclock
+// budget. Between iterations of `re.exec`, the engine compares the
+// elapsed time against the cap and aborts the rule if it has
+// overshot — treating the truncated match list as final. This
+// catches the common "rule that produces many slow matches"
+// pattern. It cannot interrupt an in-progress `re.exec` call:
+// JavaScript's regex engine is atomic and synchronous, so a single
+// catastrophic match attempt still runs to completion. Defence
+// against that is structural — the default rule set is rewritten
+// to be ReDoS-safe and `scrubber.rules` is operator-pinned at
+// startup (immutable in the config registry).
 
 import type { ScrubReport, ScrubberRule, ScrubberRuleSet } from '@psraghuveer/memento-schema';
 
 export interface ScrubResult {
   readonly scrubbed: string;
   readonly report: ScrubReport;
+}
+
+export interface ApplyRulesOptions {
+  /**
+   * Per-rule wallclock budget in milliseconds. When set, the
+   * engine aborts a rule once `Date.now() - ruleStart` exceeds
+   * the cap; remaining matches for that rule are skipped.
+   * Defaults to no budget (unbounded).
+   */
+  readonly engineBudgetMs?: number;
+  /**
+   * Receives a notice when a rule was aborted by the budget.
+   * The host can log it to the audit channel; the scrubber
+   * itself does not emit telemetry to keep this module pure.
+   */
+  readonly onBudgetExceeded?: (ruleId: string, elapsedMs: number) => void;
 }
 
 interface Claim {
@@ -39,17 +67,32 @@ interface Claim {
   readonly matchIndex: number;
 }
 
-export function applyRules(content: string, rules: ScrubberRuleSet): ScrubResult {
+export function applyRules(
+  content: string,
+  rules: ScrubberRuleSet,
+  options: ApplyRulesOptions = {},
+): ScrubResult {
   const claims: Claim[] = [];
   const perRule = new Map<string, { count: number; severity: ScrubberRule['severity'] }>();
+  const budgetMs = options.engineBudgetMs;
 
   for (const rule of rules) {
     // Schema guarantees `g`/`y` are not in `rule.flags`, so
     // appending `g` cannot produce a duplicate-flag SyntaxError.
     const re = new RegExp(rule.pattern, `${rule.flags ?? ''}g`);
+    const ruleStart = budgetMs !== undefined ? Date.now() : 0;
     let match: RegExpExecArray | null = re.exec(content);
     let perRuleIndex = 0;
     while (match !== null) {
+      // Per-rule budget gate. Checked between iterations because
+      // `re.exec` itself is uninterruptible — see module header.
+      if (budgetMs !== undefined) {
+        const elapsed = Date.now() - ruleStart;
+        if (elapsed > budgetMs) {
+          options.onBudgetExceeded?.(rule.id, elapsed);
+          break;
+        }
+      }
       const start = match.index;
       const end = start + match[0].length;
       // Zero-length matches would loop forever and contribute

@@ -55,8 +55,18 @@ import {
   MemoryWriteInputSchema,
   MemoryWriteManyInputSchema,
 } from './inputs.js';
+import { enforceSafetyCaps, rationaleFromKind } from './safety-caps.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
+// Dashboard opt-in. The dashboard's UI today consumes
+// `memory.read`, `memory.list`, `memory.events`, `memory.confirm`,
+// `memory.update`, and `memory.forget`. Bulk variants
+// (`write_many`, `forget_many`, `archive_many`, `confirm_many`),
+// data-mutating writes (`write`, `supersede`), and admin
+// operations (`set_embedding`, `archive`, `restore`) stay
+// mcp+cli-only — adding them to the dashboard surface is an
+// explicit decision per command.
+const SURFACES_DASHBOARD = ['mcp', 'cli', 'dashboard'] as const;
 
 const MemoryOutputSchema = MemorySchema;
 const MemoryNullableOutputSchema = MemorySchema.nullable();
@@ -231,6 +241,19 @@ export function createMemoryCommands(
         'Create a new memory in the given scope.\n\nWorkflow: search first to avoid duplicates. If a similar memory exists, use memory.supersede to update it instead. Use memory.update for non-content changes (tags, kind, pinned, sensitive).\n\nFor `preference` and `decision` kinds, start the content with a single `topic: value` line followed by free prose. Conflict detection parses that first line — without it two contradictory preferences silently coexist. Example: `node-package-manager: pnpm\\n\\nRaghu prefers pnpm over npm for Node projects.`\n\nMinimal example (pinned, storedConfidence, summary, owner all have defaults):\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"content":"Memento uses SQLite for storage."}\n```\n\nFull example:\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"pinned":false,"content":"Memento uses SQLite for storage.","summary":"Storage engine choice","storedConfidence":0.95}\n```',
     },
     handler: async (input, ctx) => {
+      if (deps?.configStore !== undefined) {
+        const cap = enforceSafetyCaps(
+          'memory.write',
+          {
+            content: input.content,
+            summary: input.summary,
+            tags: input.tags,
+            rationale: rationaleFromKind(input.kind),
+          },
+          deps.configStore,
+        );
+        if (!cap.ok) return cap;
+      }
       const pinned = input.pinned ?? deps?.configStore?.get('write.defaultPinned') ?? false;
       const storedConfidence =
         input.storedConfidence ?? deps?.configStore?.get('write.defaultConfidence') ?? 1;
@@ -289,6 +312,28 @@ export function createMemoryCommands(
           details: { limit, received: input.items.length },
         });
       }
+      // Per-item content/summary/tag caps. We check every item up
+      // front so the whole batch fails fast on the first violation
+      // — without this, an oversize item N hits the cap mid-
+      // transaction and the rollback discards items 0..N-1's work.
+      if (deps?.configStore !== undefined) {
+        for (let i = 0; i < input.items.length; i += 1) {
+          const item = input.items[i];
+          if (item === undefined) continue;
+          const cap = enforceSafetyCaps(
+            'memory.write_many',
+            {
+              content: item.content,
+              summary: item.summary,
+              tags: item.tags,
+              rationale: rationaleFromKind(item.kind),
+            },
+            deps.configStore,
+            i,
+          );
+          if (!cap.ok) return cap;
+        }
+      }
       const defaultPinned = deps?.configStore?.get('write.defaultPinned') ?? false;
       const defaultConfidence = deps?.configStore?.get('write.defaultConfidence') ?? 1;
       const result = await runRepo<readonly { memory: Memory; idempotent: boolean }[]>(
@@ -334,7 +379,7 @@ export function createMemoryCommands(
   const readCommand: Command<typeof MemoryReadInputSchema, typeof MemoryNullableOutputSchema> = {
     name: 'memory.read',
     sideEffect: 'read',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: MemoryReadInputSchema,
     outputSchema: MemoryNullableOutputSchema,
     metadata: {
@@ -355,7 +400,7 @@ export function createMemoryCommands(
   const listCommand: Command<typeof MemoryListInputSchema, typeof MemoryListOutputSchema> = {
     name: 'memory.list',
     sideEffect: 'read',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: MemoryListInputSchema,
     outputSchema: MemoryListOutputSchema,
     metadata: {
@@ -408,6 +453,19 @@ export function createMemoryCommands(
           'Replace an existing memory with a new one in a single transaction. Use this instead of update when the content changes.\n\nExample:\n\n```json\n{"oldId":"01HYXZ...","next":{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["corrected"],"pinned":false,"content":"Updated fact content.","summary":null,"storedConfidence":0.9}}\n```',
       },
       handler: async (input, ctx) => {
+        if (deps?.configStore !== undefined) {
+          const cap = enforceSafetyCaps(
+            'memory.supersede',
+            {
+              content: input.next.content,
+              summary: input.next.summary,
+              tags: input.next.tags,
+              rationale: rationaleFromKind(input.next.kind),
+            },
+            deps.configStore,
+          );
+          if (!cap.ok) return cap;
+        }
         const pinned = input.next.pinned ?? deps?.configStore?.get('write.defaultPinned') ?? false;
         const storedConfidence =
           input.next.storedConfidence ?? deps?.configStore?.get('write.defaultConfidence') ?? 1;
@@ -450,7 +508,7 @@ export function createMemoryCommands(
   const confirmCommand: Command<typeof MemoryIdInputSchema, typeof MemoryOutputSchema> = {
     name: 'memory.confirm',
     sideEffect: 'write',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: MemoryIdInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
@@ -501,7 +559,7 @@ export function createMemoryCommands(
   const updateCommand: Command<typeof MemoryUpdateInputSchema, typeof MemoryOutputSchema> = {
     name: 'memory.update',
     sideEffect: 'write',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: MemoryUpdateInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
@@ -529,7 +587,7 @@ export function createMemoryCommands(
   const forgetCommand: Command<typeof MemoryForgetInputSchema, typeof MemoryOutputSchema> = {
     name: 'memory.forget',
     sideEffect: 'destructive',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: MemoryForgetInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
@@ -776,7 +834,7 @@ export function createMemoryCommands(
           return {
             name: 'memory.events',
             sideEffect: 'read',
-            surfaces: SURFACES,
+            surfaces: SURFACES_DASHBOARD,
             inputSchema: MemoryEventsInputSchema,
             outputSchema: MemoryEventListOutputSchema,
             metadata: {

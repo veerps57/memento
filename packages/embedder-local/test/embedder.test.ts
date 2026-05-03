@@ -123,4 +123,67 @@ describe('createLocalEmbedder', () => {
     expect(calls).toBe(2);
     expect(result).toHaveLength(DEFAULT_LOCAL_DIMENSION);
   });
+
+  describe('maxInputBytes', () => {
+    // A peer cannot OOM the embedder by submitting megabyte-long
+    // content. Inputs over the cap are truncated UTF-8-safely
+    // before reaching the model.
+    it('truncates oversize text before passing it to the model', async () => {
+      let received: string | undefined;
+      const captureEmbed: EmbedFn = async (text) => {
+        received = text;
+        return buildVector(DEFAULT_LOCAL_DIMENSION, 0);
+      };
+      const captureLoader: LocalEmbedderLoader = async () => captureEmbed;
+      const provider = createLocalEmbedder({ loader: captureLoader, maxInputBytes: 16 });
+      await provider.embed('a'.repeat(64));
+      expect(received).toBe('a'.repeat(16));
+    });
+
+    it('passes shorter inputs through unchanged', async () => {
+      let received: string | undefined;
+      const captureEmbed: EmbedFn = async (text) => {
+        received = text;
+        return buildVector(DEFAULT_LOCAL_DIMENSION, 0);
+      };
+      const captureLoader: LocalEmbedderLoader = async () => captureEmbed;
+      const provider = createLocalEmbedder({ loader: captureLoader, maxInputBytes: 32 });
+      await provider.embed('hello');
+      expect(received).toBe('hello');
+    });
+
+    it('truncates on a UTF-8 boundary even for multi-byte input', async () => {
+      let received: string | undefined;
+      const captureEmbed: EmbedFn = async (text) => {
+        received = text;
+        return buildVector(DEFAULT_LOCAL_DIMENSION, 0);
+      };
+      const captureLoader: LocalEmbedderLoader = async () => captureEmbed;
+      // 'é' is 2 UTF-8 bytes. Cap of 3 bytes leaves space for one
+      // 'a' + 'é' = 3 bytes, with no partial codepoint.
+      const provider = createLocalEmbedder({ loader: captureLoader, maxInputBytes: 3 });
+      await provider.embed('aééé');
+      // The decoder drops any partial sequence; the result is
+      // every full codepoint that fit.
+      expect(Buffer.byteLength(received ?? '', 'utf8')).toBeLessThanOrEqual(3);
+    });
+  });
+
+  describe('timeoutMs', () => {
+    it('rejects when a single embed exceeds the cap', async () => {
+      const slowEmbed: EmbedFn = () =>
+        new Promise<readonly number[]>((resolve) => {
+          setTimeout(() => resolve(buildVector(DEFAULT_LOCAL_DIMENSION, 0)), 200);
+        });
+      const slowLoader: LocalEmbedderLoader = async () => slowEmbed;
+      const provider = createLocalEmbedder({ loader: slowLoader, timeoutMs: 50 });
+      await expect(provider.embed('x')).rejects.toThrow(/timed out after 50ms/u);
+    });
+
+    it('does not affect fast embeds', async () => {
+      const provider = createLocalEmbedder({ loader, timeoutMs: 5_000 });
+      const v = await provider.embed('x');
+      expect(v).toHaveLength(DEFAULT_LOCAL_DIMENSION);
+    });
+  });
 });

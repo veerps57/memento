@@ -15,7 +15,8 @@
 // command refuses to overwrite an existing file otherwise so a
 // fat-fingered path doesn't silently destroy a previous backup.
 
-import { existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { chmodSync, existsSync, mkdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 
 import { type Result, err, ok } from '@psraghuveer/memento-schema';
@@ -60,13 +61,20 @@ export async function runBackup(
       message: `backup destination '${absDest}' already exists; pass --force to overwrite`,
     });
   }
-  // VACUUM INTO cannot overwrite an existing file — SQLite raises
-  // "output file already exists". Remove the stale destination so
-  // --force semantics work as advertised.
-  if (force && existsSync(absDest)) {
-    unlinkSync(absDest);
-  }
   mkdirSync(path.dirname(absDest), { recursive: true });
+
+  // Write to a sibling tempfile, then atomic-rename onto the
+  // destination. This closes the TOCTOU window between
+  // existsSync/unlink and the SQLite write — between those
+  // operations another process could replace `absDest` with a
+  // symlink pointing at a sensitive file, and `VACUUM INTO`
+  // would dutifully follow the symlink. The rename also makes
+  // the operation atomic from a reader's perspective: either
+  // the old file is intact, or the new file is fully written.
+  // The unique suffix prevents two concurrent `--force` backups
+  // from clobbering each other's tempfiles.
+  const tempSuffix = randomBytes(8).toString('hex');
+  const absTemp = `${absDest}.tmp.${process.pid}.${tempSuffix}`;
 
   const start = Date.now();
   const opened = await openAppForSurface(deps, {
@@ -76,15 +84,33 @@ export async function runBackup(
   if (!opened.ok) return opened;
   const app = opened.value;
   try {
-    // VACUUM INTO does not accept bound parameters; the
-    // destination must be embedded in the SQL string. We
-    // single-quote-escape to defend against paths containing
-    // apostrophes (rare but legal on macOS / Linux).
-    const escaped = absDest.replace(/'/gu, "''");
-    app.db.raw.exec(`vacuum into '${escaped}'`);
+    // SQLite 3.27+ binds the destination as a parameter to
+    // `VACUUM INTO ?`. Using a bound parameter eliminates the
+    // need for path-quote escaping and removes the entire class
+    // of "did we forget to escape something" bugs.
+    app.db.raw.prepare('vacuum into ?').run(absTemp);
   } finally {
     app.close();
   }
+
+  // Owner-only perms on the snapshot. Memory content survives
+  // the scrubber as a best-effort redaction; a permissive umask
+  // would expose the backup to other accounts on a shared host.
+  // chmodSync is a no-op on Windows.
+  try {
+    chmodSync(absTemp, 0o600);
+  } catch {
+    // Best-effort.
+  }
+
+  // `--force` removes any pre-existing destination *just before*
+  // the rename so the VACUUM has already produced a complete
+  // snapshot. If anything went wrong above, the original file
+  // is still intact.
+  if (force && existsSync(absDest)) {
+    unlinkSync(absDest);
+  }
+  renameSync(absTemp, absDest);
 
   const bytes = statSync(absDest).size;
   return ok({

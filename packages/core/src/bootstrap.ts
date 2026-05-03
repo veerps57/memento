@@ -162,6 +162,7 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     scrubber: {
       rules: configStore.get('scrubber.rules'),
       enabled: configStore.get('scrubber.enabled'),
+      engineBudgetMs: configStore.get('scrubber.engineBudgetMs'),
     },
   });
   const eventRepository = createEventRepository(db.db);

@@ -124,6 +124,7 @@ export async function runServe(deps: LifecycleDeps, input: LifecycleInput): Prom
       registry: app.registry,
       ctx,
       info: { name: 'memento', version },
+      maxMessageBytes: app.configStore.get('server.maxMessageBytes'),
     });
     return ok(undefined);
   } catch (cause) {

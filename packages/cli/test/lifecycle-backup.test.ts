@@ -334,4 +334,65 @@ describe('runBackup', () => {
       handle.close();
     }
   });
+
+  // The backup writes via a tempfile + atomic rename to close
+  // a TOCTOU window between unlink and `VACUUM INTO`. The
+  // `VACUUM INTO` itself uses a bound parameter rather than
+  // path-quote escaping, so an apostrophe in the destination
+  // path no longer relies on manual SQL escaping. Both
+  // properties are pinned here.
+  describe('overwrite TOCTOU + path safety', () => {
+    it('with --force, writes a complete snapshot even when the destination existed', async () => {
+      const dir = await tmpDir();
+      const dbPath = join(dir, 'memento.db');
+      await seedDb(dbPath);
+      const destPath = join(dir, 'backup.db');
+      // Pre-existing destination — represents the prior backup.
+      writeFileSync(destPath, 'pre-existing\n');
+
+      const deps = makeDeps();
+      const { io } = captureIO();
+      const result = await runBackup(deps, {
+        env: cliEnv({ dbPath }),
+        subargs: ['--force', destPath],
+        io,
+      });
+      expect(result.ok).toBe(true);
+      // The fresh backup should be a valid SQLite database, not
+      // the pre-existing text file.
+      const handle = openDatabase({ path: destPath });
+      try {
+        const row = handle.raw.prepare('select count(*) as n from memories').get() as {
+          n: number;
+        };
+        expect(row.n).toBe(1);
+      } finally {
+        handle.close();
+      }
+      // No tempfile residue.
+      const { readdirSync } = await import('node:fs');
+      const stragglers = readdirSync(dir).filter((f) => f.includes('.tmp.'));
+      expect(stragglers).toEqual([]);
+    });
+
+    it('handles a destination path containing an apostrophe', async () => {
+      // Apostrophes used to require manual SQL-quote escaping.
+      // With a bound parameter (`vacuum into ?`), the engine
+      // handles arbitrary characters in the path.
+      const dir = await tmpDir();
+      const dbPath = join(dir, 'memento.db');
+      await seedDb(dbPath);
+      const destPath = join(dir, "alice's-backup.db");
+
+      const deps = makeDeps();
+      const { io } = captureIO();
+      const result = await runBackup(deps, {
+        env: cliEnv({ dbPath }),
+        subargs: [destPath],
+        io,
+      });
+      expect(result.ok).toBe(true);
+      expect(existsSync(destPath)).toBe(true);
+    });
+  });
 });

@@ -345,8 +345,16 @@ export interface RepositoryDeps {
    * attached to the corresponding `created` event regardless of
    * whether any rule matched, so audit consumers can distinguish
    * "scrubber ran and was a no-op" from "scrubber did not run".
+   *
+   * `engineBudgetMs` caps each rule's wallclock runtime — see
+   * `applyRules` for the model. Hosts wire this from the
+   * `scrubber.engineBudgetMs` config key.
    */
-  scrubber?: { rules: ScrubberRuleSet; enabled?: boolean };
+  scrubber?: {
+    rules: ScrubberRuleSet;
+    enabled?: boolean;
+    engineBudgetMs?: number;
+  };
 }
 
 const DEFAULT_LIMIT = CONFIG_KEYS['memory.list.defaultLimit'].default;
@@ -361,16 +369,112 @@ export function createMemoryRepository(
   const eventIdFactory = deps.eventIdFactory ?? (() => ulid());
   const scrubberActive = deps.scrubber !== undefined && deps.scrubber.enabled !== false;
   const scrubberRules = deps.scrubber?.rules;
+  const scrubberBudgetMs = deps.scrubber?.engineBudgetMs;
 
-  function scrub(content: string): {
+  /**
+   * Scrub the three free-text fields a write carries — content,
+   * summary, and (for `decision` kinds) rationale — and merge
+   * the per-rule match counts into a single `ScrubReport`.
+   *
+   * The merged report keeps `byteOffsets` for `content` only.
+   * Carrying offsets for three independent strings would change
+   * the `ScrubReportSchema` shape (auditors need to know which
+   * field an offset applies to); the count aggregation alone is
+   * enough to answer "did rule X fire on this memory?" — the
+   * primary audit question — without a schema migration. A
+   * future ADR can extend this if per-field offsets become
+   * load-bearing.
+   *
+   * Summary and rationale are scrubbed because secret-bearing
+   * content arriving via either field defeats the whole defense
+   * if only `content` is checked. SECURITY.md's "best-effort
+   * redaction" promise covers all persisted free-text inputs,
+   * not the primary content stream alone.
+   */
+  function scrubAll(parts: {
     content: string;
+    summary: string | null;
+    rationale: string | null;
+  }): {
+    content: string;
+    summary: string | null;
+    rationale: string | null;
     report: ScrubReport | null;
   } {
     if (!scrubberActive || scrubberRules === undefined) {
-      return { content, report: null };
+      return {
+        content: parts.content,
+        summary: parts.summary,
+        rationale: parts.rationale,
+        report: null,
+      };
     }
-    const { scrubbed, report } = applyRules(content, scrubberRules);
-    return { content: scrubbed, report };
+    const opts = scrubberBudgetMs !== undefined ? { engineBudgetMs: scrubberBudgetMs } : {};
+    const contentResult = applyRules(parts.content, scrubberRules, opts);
+    const summaryResult =
+      parts.summary !== null ? applyRules(parts.summary, scrubberRules, opts) : null;
+    const rationaleResult =
+      parts.rationale !== null ? applyRules(parts.rationale, scrubberRules, opts) : null;
+
+    // Merge per-rule match counts. Severity is constant per
+    // rule id (the schema enforces id uniqueness across the
+    // active rule set), so any of the three reports' values
+    // for it agrees with the others.
+    const ruleCounts = new Map<
+      string,
+      { matches: number; severity: ScrubReport['rules'][number]['severity'] }
+    >();
+    const fold = (rules: ScrubReport['rules']): void => {
+      for (const r of rules) {
+        const existing = ruleCounts.get(r.ruleId);
+        if (existing !== undefined) {
+          existing.matches += r.matches;
+        } else {
+          ruleCounts.set(r.ruleId, { matches: r.matches, severity: r.severity });
+        }
+      }
+    };
+    fold(contentResult.report.rules);
+    if (summaryResult !== null) fold(summaryResult.report.rules);
+    if (rationaleResult !== null) fold(rationaleResult.report.rules);
+
+    return {
+      content: contentResult.scrubbed,
+      summary: summaryResult !== null ? summaryResult.scrubbed : parts.summary,
+      rationale: rationaleResult !== null ? rationaleResult.scrubbed : parts.rationale,
+      report: {
+        rules: Array.from(ruleCounts, ([ruleId, v]) => ({
+          ruleId,
+          matches: v.matches,
+          severity: v.severity,
+        })),
+        // Offsets retained only for `content` per the docstring above.
+        byteOffsets: contentResult.report.byteOffsets,
+      },
+    };
+  }
+
+  /**
+   * Splice a scrubbed rationale back into a `MemoryKind`. Only
+   * the `decision` variant carries a rationale; for every other
+   * kind the input is returned unchanged. Hoisted so the three
+   * write paths use one path.
+   */
+  function applyScrubbedRationale(
+    kind: MemoryWriteInput['kind'],
+    scrubbedRationale: string | null,
+  ): MemoryWriteInput['kind'] {
+    if (kind.type !== 'decision') return kind;
+    return { ...kind, rationale: scrubbedRationale };
+  }
+
+  /**
+   * Pull the rationale out of a `MemoryKind` for the scrubber.
+   * Mirrors `applyScrubbedRationale` in reverse — only
+   * `decision` carries the field.
+   */
+  function rationaleOf(kind: MemoryWriteInput['kind']): string | null {
+    return kind.type === 'decision' ? kind.rationale : null;
   }
 
   return {
@@ -398,7 +502,11 @@ export function createMemoryRepository(
       const id = memoryIdFactory();
       const now = clock();
       const tags = normaliseTags(input.tags);
-      const scrubbed = scrub(input.content);
+      const scrubbed = scrubAll({
+        content: input.content,
+        summary: input.summary,
+        rationale: rationaleOf(input.kind),
+      });
 
       // Build the candidate Memory and parse it. This validates
       // every cross-field invariant (status/supersededBy pairing,
@@ -410,11 +518,11 @@ export function createMemoryRepository(
         schemaVersion: MEMORY_SCHEMA_VERSION,
         scope: input.scope,
         owner: input.owner,
-        kind: input.kind,
+        kind: applyScrubbedRationale(input.kind, scrubbed.rationale),
         tags,
         pinned: input.pinned,
         content: scrubbed.content,
-        summary: input.summary,
+        summary: scrubbed.summary,
         status: 'active' as const,
         storedConfidence: input.storedConfidence,
         lastConfirmedAt: now,
@@ -467,18 +575,22 @@ export function createMemoryRepository(
         const id = memoryIdFactory();
         const now = clock();
         const tags = normaliseTags(input.tags);
-        const scrubbed = scrub(input.content);
+        const scrubbed = scrubAll({
+          content: input.content,
+          summary: input.summary,
+          rationale: rationaleOf(input.kind),
+        });
         const candidate = MemorySchema.parse({
           id,
           createdAt: now,
           schemaVersion: MEMORY_SCHEMA_VERSION,
           scope: input.scope,
           owner: input.owner,
-          kind: input.kind,
+          kind: applyScrubbedRationale(input.kind, scrubbed.rationale),
           tags,
           pinned: input.pinned,
           content: scrubbed.content,
-          summary: input.summary,
+          summary: scrubbed.summary,
           status: 'active' as const,
           storedConfidence: input.storedConfidence,
           lastConfirmedAt: now,
@@ -679,7 +791,11 @@ export function createMemoryRepository(
       const newId = memoryIdFactory();
       const now = clock();
       const tags = normaliseTags(newInput.tags);
-      const scrubbed = scrub(newInput.content);
+      const scrubbed = scrubAll({
+        content: newInput.content,
+        summary: newInput.summary,
+        rationale: rationaleOf(newInput.kind),
+      });
 
       const candidate = MemorySchema.parse({
         id: newId,
@@ -687,11 +803,11 @@ export function createMemoryRepository(
         schemaVersion: MEMORY_SCHEMA_VERSION,
         scope: newInput.scope,
         owner: newInput.owner,
-        kind: newInput.kind,
+        kind: applyScrubbedRationale(newInput.kind, scrubbed.rationale),
         tags,
         pinned: newInput.pinned,
         content: scrubbed.content,
-        summary: newInput.summary,
+        summary: scrubbed.summary,
         status: 'active' as const,
         storedConfidence: newInput.storedConfidence,
         lastConfirmedAt: now,

@@ -28,6 +28,7 @@ The template is at [`template.md`](template.md). Use it.
 | 0016 | [Assisted Extraction and Context Injection](0016-assisted-extraction-and-context-injection.md) | Accepted |
 | 0017 | [Async Extraction, Batched Embeddings, and Bulk Repository Operations](0017-async-extraction-batched-embeddings-bulk-ops.md) | Accepted |
 | 0018 | [Memento Dashboard as a sibling package](0018-dashboard-package.md) | Accepted |
+| 0019 | [Import re-stamp policy](0019-import-re-stamp-policy.md) | Accepted |
 
 ## When an ADR is required
 

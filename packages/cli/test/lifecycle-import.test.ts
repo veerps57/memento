@@ -10,6 +10,7 @@ import { join } from 'node:path';
 
 import {
   MIGRATIONS,
+  createMementoApp,
   createMemoryRepository,
   migrateToLatest,
   openDatabase,
@@ -38,10 +39,12 @@ async function tmpDir(): Promise<string> {
   return dir;
 }
 
+// `runImport` opens a full app to read scrubber config and the
+// `import.maxBytes` cap, so we forward `createApp` to the real
+// bootstrap. The other deps remain stubs since the import path
+// does not call them.
 const NULL_DEPS: LifecycleDeps = {
-  createApp: async () => {
-    throw new Error('createApp should not be called from runImport');
-  },
+  createApp: createMementoApp,
   migrateStore: async () => {
     throw new Error('migrateStore should not be called from runImport');
   },
@@ -269,5 +272,50 @@ describe('runImport', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('INVALID_INPUT');
+  });
+
+  // `import.maxBytes` upfront `fs.stat` rejects an oversize
+  // artefact before `createReadStream` opens. Without this, a
+  // multi-GB JSONL file OOMs the CLI before parsing starts. We
+  // seed the smallest override the schema permits (1 MiB) and
+  // hand the importer a 2 MiB file.
+  it('rejects an artefact larger than import.maxBytes with INVALID_INPUT', async () => {
+    const dir = await tmpDir();
+    const targetDb = join(dir, 'target.db');
+    await emptyMigrated(targetDb);
+
+    // Persist `import.maxBytes` = 1 MiB on the target via the
+    // command path; the next createApp will pick it up from the
+    // persisted config layer.
+    const seedApp = await createMementoApp({ dbPath: targetDb });
+    try {
+      const setCmd = seedApp.registry.get('config.set');
+      if (setCmd === undefined) throw new Error('config.set missing from registry');
+      const { executeCommand } = await import('@psraghuveer/memento-core');
+      const set = await executeCommand(
+        setCmd,
+        { key: 'import.maxBytes', value: 1024 * 1024 },
+        { actor: { type: 'cli' as const } },
+      );
+      if (!set.ok) throw new Error(`config.set failed: ${set.error.code}`);
+    } finally {
+      seedApp.close();
+    }
+
+    const oversize = join(dir, 'oversize.jsonl');
+    // 2 MiB of throwaway bytes — `fs.stat` reports the size and
+    // the importer should reject before reading.
+    await writeFile(oversize, 'x'.repeat(2 * 1024 * 1024), 'utf8');
+
+    const result = await runImport(NULL_DEPS, {
+      env: cliEnv({ dbPath: targetDb }),
+      subargs: ['--in', oversize],
+      io: NULL_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INVALID_INPUT');
+    expect(result.error.message).toMatch(/import\.maxBytes/u);
+    expect(result.error.message).toMatch(/exceeds/u);
   });
 });
