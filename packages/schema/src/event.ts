@@ -60,6 +60,14 @@ export type ScrubReport = z.infer<typeof ScrubReportSchema>;
  * - `restored`    — moved back to `active` from `forgotten`.
  * - `archived`    — moved to long-term storage; off active reads.
  * - `reembedded`  — embedding regenerated (model / dimension change).
+ * - `imported`    — memory landed via `memento import`. The
+ *                   importer never trusts caller-supplied audit
+ *                   events — by default the entire source event
+ *                   chain is collapsed into a single `imported`
+ *                   event whose payload retains the source
+ *                   provenance (artefact metadata + opaque
+ *                   original chain) for forensics. `--trust-source`
+ *                   replays the original events instead.
  */
 export const MEMORY_EVENT_TYPES = [
   'created',
@@ -70,6 +78,7 @@ export const MEMORY_EVENT_TYPES = [
   'restored',
   'archived',
   'reembedded',
+  'imported',
 ] as const;
 export type MemoryEventType = (typeof MEMORY_EVENT_TYPES)[number];
 
@@ -183,6 +192,40 @@ export const MemoryEventSchema = z.discriminatedUnion('type', [
         .object({
           model: z.string().min(1).max(128),
           dimension: z.number().int().positive().max(4096),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...eventBase,
+      type: z.literal('imported'),
+      payload: z
+        .object({
+          // Provenance of the source artefact. `sha256` is the
+          // artefact-footer hash so a forensic reviewer can tie
+          // the imported memory back to a specific export run.
+          source: z
+            .object({
+              mementoVersion: z.string().min(1).max(64),
+              exportedAt: TimestampSchema,
+              sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+            })
+            .strict(),
+          // The original event chain from the source artefact,
+          // retained as opaque structured data for forensics.
+          // The importer does not (and must not) replay these
+          // as live events under the default re-stamp policy
+          // — the bytes here are evidence, not history. The
+          // `--trust-source` flag instead inserts the original
+          // events directly and skips emitting an `imported`
+          // event, so when this payload is present it always
+          // means "the importer chose the safe default".
+          //
+          // Capped at 64 KiB stringified to bound storage; the
+          // CLI truncates with a marker on the way in if the
+          // chain exceeds this.
+          originalEvents: z.array(z.unknown()).max(1024),
         })
         .strict(),
     })

@@ -32,7 +32,20 @@ import { confirmGate } from '../confirm-gate.js';
  * the repository normalises tags (trim, lowercase, dedupe) on
  * ingest. Forcing callers to pre-normalise would push an
  * implementation detail of the schema layer onto every adapter.
+ *
+ * The hard ceilings on `content`, `summary`, and `tags` length
+ * here are structural — they bound the worst-case payload an
+ * MCP peer can submit regardless of `safety.*` config. The
+ * operator-tunable caps (`safety.memoryContentMaxBytes`,
+ * `safety.summaryMaxBytes`, `safety.tagMaxCount`) sit *below*
+ * these ceilings and are enforced at handler time. The two
+ * layers cooperate: schema = "no more than this, ever";
+ * config = "no more than this, by policy".
  */
+const CONTENT_HARD_MAX_BYTES = 1024 * 1024; // 1 MiB
+const SUMMARY_HARD_MAX_BYTES = 64 * 1024; // 64 KiB
+const TAGS_HARD_MAX_COUNT = 1024;
+
 export const MemoryWriteInputSchema = z
   .object({
     scope: ScopeSchema.describe(
@@ -46,6 +59,7 @@ export const MemoryWriteInputSchema = z
     ),
     tags: z
       .array(z.string())
+      .max(TAGS_HARD_MAX_COUNT)
       .describe(
         'Freeform tags for categorisation. Normalised to lowercase on ingest. Example: ["project:memento", "architecture"].',
       ),
@@ -58,9 +72,11 @@ export const MemoryWriteInputSchema = z
     content: z
       .string()
       .min(1)
+      .max(CONTENT_HARD_MAX_BYTES)
       .describe('The memory content — the actual information to remember. Must be non-empty.'),
     summary: z
       .string()
+      .max(SUMMARY_HARD_MAX_BYTES)
       .nullable()
       .default(null)
       .describe(

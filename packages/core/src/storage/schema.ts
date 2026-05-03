@@ -70,7 +70,8 @@ export interface MemoryEventsTable {
     | 'forgotten'
     | 'restored'
     | 'archived'
-    | 'reembedded';
+    | 'reembedded'
+    | 'imported';
   payload_json: string;
   scrub_report_json: string | null;
 }

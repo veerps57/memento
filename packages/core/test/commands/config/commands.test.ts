@@ -184,6 +184,36 @@ describe('createConfigCommands', () => {
       expect(res.error.code).toBe('IMMUTABLE');
       expect(res.error.message).toMatch(/storage\.busyTimeoutMs/);
     });
+
+    // Phase 1 hardening: `scrubber.enabled` and `scrubber.rules`
+    // are pinned at server start. A prompt-injected assistant
+    // calling `config.set scrubber.enabled false` before writing
+    // a secret must be rejected at this boundary — the scrubber
+    // is the load-bearing defence against accidentally
+    // persisting credentials.
+    it('rejects writes to scrubber.enabled with IMMUTABLE', async () => {
+      const { byName } = await fixture();
+      const res = await executeCommand(
+        get(byName, 'config.set'),
+        { key: 'scrubber.enabled', value: false },
+        { actor: cliActor },
+      );
+      if (res.ok) throw new Error('expected err');
+      expect(res.error.code).toBe('IMMUTABLE');
+      expect(res.error.message).toMatch(/scrubber\.enabled/);
+    });
+
+    it('rejects writes to scrubber.rules with IMMUTABLE', async () => {
+      const { byName } = await fixture();
+      const res = await executeCommand(
+        get(byName, 'config.set'),
+        { key: 'scrubber.rules', value: [] },
+        { actor: cliActor },
+      );
+      if (res.ok) throw new Error('expected err');
+      expect(res.error.code).toBe('IMMUTABLE');
+      expect(res.error.message).toMatch(/scrubber\.rules/);
+    });
   });
 
   describe('config.unset', () => {

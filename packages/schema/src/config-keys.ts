@@ -252,6 +252,24 @@ export const CONFIG_KEYS = {
     description: 'SQLite `busy_timeout` PRAGMA, in milliseconds. Pinned at server start.',
   }),
 
+  // — Server —
+  // Hard ceiling on the size of a single JSON-RPC message read
+  // from stdin. Without this, a peer that withholds a trailing
+  // newline can grow the read buffer until Node OOMs. Pinned
+  // at server start because the cap is enforced inside the
+  // stdio transport wrapper that wraps `process.stdin`.
+  'server.maxMessageBytes': defineKey({
+    schema: z
+      .number()
+      .int()
+      .min(64 * 1024)
+      .max(64 * 1024 * 1024),
+    default: 4 * 1024 * 1024,
+    mutable: false,
+    description:
+      'Hard upper bound on a single JSON-RPC message read from stdin, in bytes. Messages exceeding this are rejected and the transport closes the stream. Pinned at server start.',
+  }),
+
   // — Retrieval —
   // Pipeline shape per `docs/architecture/retrieval.md`. FTS5 is
   // always available; vector search is opt-in. The ranker is a
@@ -403,6 +421,37 @@ export const CONFIG_KEYS = {
     description:
       'Expected vector dimension for the configured embedder model. Must match `embedder.local.model`; the embedder rejects vectors of any other length. Pinned at server start.',
   }),
+  // Resource caps on the embedder. The model's context window
+  // is bounded (~512 tokens for bge-base); past that the embed
+  // pass spends time tokenising input that the model will
+  // truncate anyway. The byte cap protects against the DoS
+  // pattern "single MCP write_memory with megabyte content"
+  // while sitting comfortably above any realistic memory.
+  'embedder.local.maxInputBytes': defineKey({
+    schema: z
+      .number()
+      .int()
+      .min(1_024)
+      .max(1 * 1024 * 1024),
+    default: 32 * 1024,
+    mutable: false,
+    description:
+      'Maximum byte length of text passed to the local embedder. Inputs above this are truncated to the cap before tokenisation. Pinned at server start because crossing the cap would change retrieval semantics.',
+  }),
+  'embedder.local.timeoutMs': defineKey({
+    schema: z.number().int().min(500).max(120_000),
+    default: 10_000,
+    mutable: false,
+    description:
+      'Wallclock timeout for a single embed call, in milliseconds. The embedder rejects with a typed error after this elapses; auto-embed swallows it (the memory is written without a vector and `embedding rebuild` recovers).',
+  }),
+  'embedder.local.cacheDir': defineKey({
+    schema: z.string().min(1).nullable(),
+    default: null,
+    mutable: false,
+    description:
+      'Directory in which the local embedder caches downloaded model files. `null` resolves to `<XDG_CACHE_HOME>/memento/models` (or the platform equivalent) at startup; otherwise the literal path is used. Pinned at server start.',
+  }),
 
   'embedding.autoEmbed': defineKey({
     schema: z.boolean(),
@@ -419,19 +468,42 @@ export const CONFIG_KEYS = {
   // substitutions balance, ids unique); a bad override is
   // rejected at `ConfigStore` construction, not at the first
   // write.
+  //
+  // Both the master toggle and the rule set are immutable at
+  // runtime: `config.set` from MCP must not be able to disable
+  // the scrubber or weaken the rules. A prompt-injected
+  // assistant calling `config.set scrubber.enabled false`
+  // before writing a secret is a one-shot defence bypass we
+  // cannot afford. Operators flip these at startup via
+  // configuration overrides.
   'scrubber.enabled': defineKey({
     schema: z.boolean(),
     default: true,
-    mutable: true,
+    mutable: false,
     description:
-      'Master toggle for the write-path scrubber. When false, writes pass through unredacted and no `scrubReport` is recorded.',
+      'Master toggle for the write-path scrubber. When false, writes pass through unredacted and no `scrubReport` is recorded. Pinned at server start.',
   }),
   'scrubber.rules': defineKey({
     schema: ScrubberRuleSetSchema,
     default: DEFAULT_SCRUBBER_RULES,
+    mutable: false,
+    description:
+      'Active scrubber rule set. Order is significant — first match wins. Defaults to the rules shipped in `DEFAULT_SCRUBBER_RULES`. Pinned at server start.',
+  }),
+  // Per-rule wallclock budget for the scrubber engine. Without
+  // this, an operator-installed regex with catastrophic
+  // backtracking blocks the SQLite writer thread for the full
+  // duration of the match attempt. The engine aborts a rule
+  // that exceeds the budget and treats it as "no match" rather
+  // than failing the write — a partial scrub is preferable to
+  // a refused write at the cost of the matched secret being
+  // left unredacted.
+  'scrubber.engineBudgetMs': defineKey({
+    schema: z.number().int().min(1).max(1_000),
+    default: 50,
     mutable: true,
     description:
-      'Active scrubber rule set. Order is significant — first match wins. Defaults to the rules shipped in `DEFAULT_SCRUBBER_RULES`.',
+      'Per-rule wallclock budget for the scrubber engine, in milliseconds. A rule that exceeds the budget is aborted and treated as "no match" for that rule on this write.',
   }),
 
   // — Privacy —
@@ -496,6 +568,44 @@ export const CONFIG_KEYS = {
     mutable: true,
     description:
       'Maximum number of memories a single bulk-destructive call (`memory.forget_many`, `memory.archive_many`) may transition. Applied when `dryRun: false`; rehearsals are uncapped. Requests exceeding the cap are rejected with `INVALID_INPUT` before any row is touched.',
+  }),
+
+  // Hard upper bound on `memory.write` content length. The
+  // wire-input schema additionally pins a 1 MiB ceiling beyond
+  // which content is rejected outright; this key tunes the
+  // operator-visible cap below that ceiling. Memento stores
+  // distilled assertions, not transcripts — 64 KiB
+  // accommodates any realistic memory (long ADR rationale,
+  // mid-size code snippet) with margin to spare while
+  // shutting down the "single-call OOM" DoS class.
+  'safety.memoryContentMaxBytes': defineKey({
+    schema: z
+      .number()
+      .int()
+      .min(1_024)
+      .max(1024 * 1024),
+    default: 64 * 1024,
+    mutable: true,
+    description:
+      'Maximum byte length of `memory.write` (and supersede / extract) content. Inputs exceeding this are rejected with `INVALID_INPUT` before the scrubber or storage layer runs.',
+  }),
+  'safety.summaryMaxBytes': defineKey({
+    schema: z
+      .number()
+      .int()
+      .min(64)
+      .max(64 * 1024),
+    default: 2 * 1024,
+    mutable: true,
+    description:
+      'Maximum byte length of `memory.write` summary. Summaries are one-line listings; the cap reflects that intent.',
+  }),
+  'safety.tagMaxCount': defineKey({
+    schema: z.number().int().min(1).max(1024),
+    default: 64,
+    mutable: true,
+    description:
+      'Maximum number of tags accepted on a single `memory.write`. Each tag is independently capped at 64 characters by `TagSchema`.',
   }),
 
   // — Extraction —
@@ -626,6 +736,24 @@ export const CONFIG_KEYS = {
     mutable: true,
     description:
       'Default destination path for `memento export` when `--out` is not passed. `null` means write to stdout; a string is treated as a filesystem path.',
+  }),
+
+  // — Import —
+  // Hard upper bound on the size of a single `memento import`
+  // artefact, in bytes. Without a cap, a 10 GB JSONL file is
+  // read into a single Node string and OOMs the CLI before
+  // parsing begins. The cap is checked via `fs.stat` before
+  // the read starts.
+  'import.maxBytes': defineKey({
+    schema: z
+      .number()
+      .int()
+      .min(1024 * 1024)
+      .max(8 * 1024 * 1024 * 1024),
+    default: 256 * 1024 * 1024,
+    mutable: true,
+    description:
+      'Maximum byte length of an artefact accepted by `memento import`. Files exceeding this are rejected before any read begins. Default is 256 MiB.',
   }),
 
   // — User —

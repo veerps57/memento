@@ -140,6 +140,7 @@ describe('MemoryEventSchema', () => {
         case 'restored':
         case 'archived':
         case 'reembedded':
+        case 'imported':
           return t;
         default:
           return assertNever(t);
