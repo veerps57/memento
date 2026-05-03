@@ -711,5 +711,91 @@ describe('createMemoryRepository', () => {
       const report = JSON.parse(replacement!.scrub_report_json);
       expect(report.rules[0]?.ruleId).toBe('test-secret');
     });
+
+    // Phase 3: secrets must be redacted regardless of which
+    // free-text field they arrive in. Before this change only
+    // `content` was scrubbed — an LLM auto-generating a summary
+    // from raw content trivially round-tripped the secret into
+    // the persisted summary, defeating the whole defence.
+    it('write() also scrubs the summary and aggregates matches into the report', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+        scrubber: { rules: [secretRule] },
+      });
+      const m = await repo.write(
+        {
+          ...baseInput,
+          content: 'leaked sk-ABCDEFGH then nothing',
+          summary: 'caller paraphrased sk-ZZZZZZZZ here',
+        },
+        { actor },
+      );
+      expect(m.content).toContain('<r:test-secret>');
+      expect(m.summary).toBe('caller paraphrased <r:test-secret> here');
+      expect(m.summary).not.toContain('ZZZZZZZZ');
+
+      const ev = handle.raw
+        .prepare("select scrub_report_json from memory_events where type = 'created'")
+        .get() as { scrub_report_json: string };
+      const report = JSON.parse(ev.scrub_report_json);
+      // Aggregated count across content + summary.
+      expect(report.rules).toEqual([{ ruleId: 'test-secret', matches: 2, severity: 'high' }]);
+    });
+
+    it('write() scrubs the rationale on a decision-kind memory', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+        scrubber: { rules: [secretRule] },
+      });
+      const m = await repo.write(
+        {
+          ...baseInput,
+          kind: { type: 'decision', rationale: 'rejected because sk-PRIVATEK leaked' },
+          content: 'choose option B',
+        },
+        { actor },
+      );
+      expect(m.kind.type).toBe('decision');
+      if (m.kind.type === 'decision') {
+        expect(m.kind.rationale).toBe('rejected because <r:test-secret> leaked');
+      }
+      const ev = handle.raw
+        .prepare("select scrub_report_json from memory_events where type = 'created'")
+        .get() as { scrub_report_json: string };
+      const report = JSON.parse(ev.scrub_report_json);
+      expect(report.rules[0]?.ruleId).toBe('test-secret');
+      expect(report.rules[0]?.matches).toBe(1);
+    });
+
+    it('supersede() scrubs summary and rationale on the replacement', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+        scrubber: { rules: [secretRule] },
+      });
+      const original = await repo.write(baseInput, { actor });
+      const { current } = await repo.supersede(
+        original.id,
+        {
+          ...baseInput,
+          kind: { type: 'decision', rationale: 'pivoted because sk-NEWPRIVK' },
+          content: 'pivoted approach',
+          summary: 'note about sk-INSUMMARY',
+        },
+        { actor },
+      );
+      expect(current.summary).not.toContain('INSUMMARY');
+      if (current.kind.type === 'decision') {
+        expect(current.kind.rationale).not.toContain('NEWPRIVK');
+      }
+    });
   });
 });

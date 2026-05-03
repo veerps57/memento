@@ -163,7 +163,45 @@ export const DEFAULT_SCRUBBER_RULES: ScrubberRuleSet = ScrubberRuleSetSchema.par
   {
     id: 'jwt',
     description: 'JWT-shaped token (header.payload.signature, base64url)',
-    pattern: 'eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}',
+    // Real-world JWT shapes: the header is base64url of an
+    // algorithm object — `{"alg":"HS256","typ":"JWT"}` is ~37
+    // chars, `{"alg":"none"}` is ~20 — so `{8,}` after `eyJ` is
+    // a safe floor. The payload can legitimately encode the
+    // empty object `{}` (3 chars: `e30`); the previous `{8,}`
+    // missed those. The signature ranges from 0 chars
+    // (unsigned) to 43+ (HS256/RS256); `{4,}` covers every
+    // signed JWT while keeping false positives low. The `eyJ`
+    // anchor is what carries the "JWT-shaped" signal, not the
+    // segment lengths.
+    pattern: 'eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{2,}\\.[A-Za-z0-9_-]{4,}',
+    placeholder: '<redacted:{{rule.id}}>',
+    severity: 'high',
+  },
+  {
+    id: 'private-key-block',
+    description: 'PEM-encoded private key block (RSA/EC/PGP/etc.)',
+    // Match a single `-----BEGIN ... PRIVATE KEY-----` block to
+    // its corresponding END marker. Non-greedy `[\s\S]+?` is
+    // the right shape: every iteration the engine extends by
+    // one char and tries the END suffix; if absent, it advances
+    // one. Linear in input size — ReDoS-safe. SECURITY.md
+    // advertises this rule as part of the default scrubber
+    // coverage; before this entry the claim was a documentation
+    // bug.
+    pattern: '-----BEGIN [A-Z ]+PRIVATE KEY-----[\\s\\S]+?-----END [A-Z ]+PRIVATE KEY-----',
+    placeholder: '<redacted:{{rule.id}}>',
+    severity: 'high',
+  },
+  {
+    id: 'bearer-token',
+    description: 'HTTP Authorization: Bearer header',
+    // `\bBearer` anchors the literal so prose containing "bear"
+    // / "bearer" mid-word does not match. The class
+    // `[A-Za-z0-9._~+/=-]` covers JWT-style tokens, opaque
+    // base64 tokens, and URL-safe variants; `{16,}` keeps
+    // out the trivial "Bearer foo" false positive. Single
+    // bounded class + single quantifier — linear, ReDoS-safe.
+    pattern: '\\bBearer\\s+[A-Za-z0-9._~+/=-]{16,}',
     placeholder: '<redacted:{{rule.id}}>',
     severity: 'high',
   },
