@@ -28,14 +28,14 @@ These are encoded as tests and CI gates where possible. Do not bypass them.
 1. **Single command registry → MCP and CLI as adapters.** Every command exists in the registry once and is projected to both surfaces by adapters. Parity is structural, not aspirational.
 2. **No hardcoded behavioral constants.** Anything that affects retrieval, decay, conflict detection, scrubbing, or storage behavior MUST be a `ConfigKey`. Adding a constant in code is a code-review rejection.
 3. **Every state-changing operation writes an audit event** (`MemoryEvent` for memory changes, `ConfigEvent` for config changes).
-4. **`OwnerRef` is always populated**, even when it is always `{ type: 'local', id: 'self' }`. The model is multi-user-ready from day one.
+4. **`OwnerRef` is always populated**, even when it is always `{ type: 'local', id: 'self' }`. The model is multi-user-ready from day one. `memento import` enforces this rule by rewriting any non-local-self `OwnerRef` in an imported artefact to the local owner — see [ADR-0019](docs/adr/0019-import-re-stamp-policy.md).
 5. **Immutable fields stay immutable.** `id`, `createdAt`, `schemaVersion`, and `scope` are never mutated after creation. To "move" a memory between scopes, supersede it with a new memory in the new scope.
 6. **Status transitions are explicit.** A `forgotten` memory does not silently become `active`. Every transition has its own command (`forget`, `restore`, `archive`, `supersede`).
 7. **Exhaustive switches on discriminated unions** use the `assertNever` pattern. A structural test asserts that decay, retrieval, and conflict-detection rules exist for every `MemoryKind`.
 8. **Conflict detection runs via a post-write hook**, never inline. The write path does not block on conflict checks beyond a configured timeout.
 9. **Decay is computed at query time, not stored.** Effective confidence is `stored × decayFactor(now − lastConfirmedAt, halfLife)`. The `compact` job materializes archives for memories that have decayed below threshold.
 10. **`ScopeResolver` is composed of small, mockable resolvers** (`GitRemoteResolver`, `WorkspacePathResolver`, `SessionResolver`). The composite is a thin policy layer.
-11. **`MemoryEvent` is the audit source of truth.** `lastConfirmedAt` on `Memory` is a denormalized cache, validated at write-time and by `npx @psraghuveer/memento doctor`.
+11. **`MemoryEvent` is the audit source of truth.** `lastConfirmedAt` on `Memory` is a denormalized cache, validated at write-time and by `npx @psraghuveer/memento doctor`. `memento import` never trusts caller-supplied audit claims: by default the source artefact's per-memory event chain is collapsed into one synthetic `imported` event whose `actor` and `at` reflect the importer, not the source — see [ADR-0019](docs/adr/0019-import-re-stamp-policy.md).
 12. **No configurable invariants.** Integrity rules (immutability, status transitions, supersession atomicity) are hardcoded. Configurable invariants are no invariants.
 13. **`memory.update` only mutates non-content fields** (tags, kind, pinned, sensitive). Content changes route through `supersede` to preserve history. The error message points the caller to the right command.
 14. **Embedding model migration is explicit.** `memento embedding rebuild` is the only way to re-embed memories. Never silent.

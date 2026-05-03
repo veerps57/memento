@@ -1,6 +1,6 @@
 # ADR-0013: Portable export/import — JSONL artefact for machine migration and exit
 
-- **Status:** Accepted
+- **Status:** Accepted (amended by [ADR-0019](0019-import-re-stamp-policy.md) — the import side never trusts caller-supplied audit claims; the artefact format itself is unchanged)
 - **Date:** 2026-04-26
 - **Deciders:** core
 - **Tags:** lifecycle, portability, audit, schema

@@ -103,7 +103,7 @@ Export the configured database to a portable `memento-export/v1` JSONL artefact 
 
 ### `memento import`
 
-Import a `memento-export/v1` JSONL artefact into the configured database (ADR-0013)
+Import a `memento-export/v1` JSONL artefact into the configured database (ADR-0013, ADR-0019)
 
 ### `memento init`
 

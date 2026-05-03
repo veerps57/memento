@@ -355,3 +355,209 @@ describe('importSnapshot — validation', () => {
     expect(result.error.code).toBe('INVALID_INPUT');
   });
 });
+
+describe('importSnapshot — re-stamp policy (ADR-0019)', () => {
+  // Phase 4 hardening: imports never trust the artefact's audit
+  // claims. OwnerRef is rewritten, content is re-scrubbed, and
+  // (under default settings) the per-memory event chain is
+  // collapsed into one synthetic `memory.imported` event.
+
+  it('rewrites OwnerRef to local-self even when the artefact claims otherwise', async () => {
+    const source = await fileBackedFixture();
+    const repo = createMemoryRepository(source.db);
+    // The MemoryWriteInput type requires owner to be `OwnerRef`.
+    // The repo's local mode accepts only local-self, but here we
+    // hand-craft a memory that *claims* a non-local owner by
+    // directly editing the JSONL line after export.
+    await repo.write(baseInput, { actor });
+    const cap = makeWriter();
+    await exportSnapshot({
+      dbPath: source.path,
+      writer: cap.writer,
+      includeEmbeddings: false,
+      mementoVersion: '0.0.0-test',
+    });
+    const lines = cap.lines.map((l) => l.replace(/\n$/, ''));
+    // Find the memory record line and rewrite its owner. We
+    // recompute the footer over the new header+body so the SHA
+    // check passes; only the re-stamp policy should fire.
+    const memoryIdx = lines.findIndex((l) => l.includes('"type":"memory"'));
+    expect(memoryIdx).toBeGreaterThan(0);
+    const memoryRec = JSON.parse(lines[memoryIdx]!) as {
+      type: 'memory';
+      data: { owner: { type: string; id: string } };
+    };
+    memoryRec.data.owner = { type: 'team', id: 'attacker' };
+    lines[memoryIdx] = JSON.stringify(memoryRec);
+    const { createHash } = await import('node:crypto');
+    const hash = createHash('sha256');
+    hash.update(`${lines[0]}\n`);
+    for (const l of lines.slice(1, -1)) hash.update(`${l}\n`);
+    lines[lines.length - 1] = JSON.stringify({ type: 'footer', sha256: hash.digest('hex') });
+
+    const target = await fileBackedFixture();
+    const result = await importSnapshot({
+      db: target.db,
+      source: lines,
+      onConflict: 'abort',
+      dryRun: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const targetRepo = createMemoryRepository(target.db);
+    const replayed = await targetRepo.list();
+    expect(replayed).toHaveLength(1);
+    expect(replayed[0]!.owner).toEqual({ type: 'local', id: 'self' });
+  });
+
+  it('collapses the per-memory event chain into a single `imported` event by default', async () => {
+    const source = await fileBackedFixture();
+    const repo = createMemoryRepository(source.db);
+    const m = await repo.write(baseInput, { actor });
+    // Multiple confirms produce additional events on the source.
+    await repo.confirm(m.id, { actor });
+    await repo.confirm(m.id, { actor });
+    const cap = makeWriter();
+    await exportSnapshot({
+      dbPath: source.path,
+      writer: cap.writer,
+      includeEmbeddings: false,
+      mementoVersion: '0.0.0-test',
+    });
+    const lines = cap.lines.map((l) => l.replace(/\n$/, ''));
+
+    const target = await fileBackedFixture();
+    const result = await importSnapshot({
+      db: target.db,
+      source: lines,
+      onConflict: 'abort',
+      dryRun: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // One synthetic event per imported memory, regardless of how
+    // many real events the artefact carried.
+    expect(result.value.applied.memoryEvents).toBe(1);
+
+    const events = target.raw
+      .prepare('select type, payload_json from memory_events where memory_id = ?')
+      .all(m.id) as Array<{ type: string; payload_json: string }>;
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe('imported');
+    const payload = JSON.parse(events[0]!.payload_json) as {
+      source: { mementoVersion: string };
+      originalEvents: unknown[];
+    };
+    expect(payload.source.mementoVersion).toBe('0.0.0-test');
+    // Original events ride along as opaque data — three on the
+    // source (created + 2 × confirmed).
+    expect(payload.originalEvents).toHaveLength(3);
+  });
+
+  it('preserves the original event chain when --trust-source is set', async () => {
+    const source = await fileBackedFixture();
+    const repo = createMemoryRepository(source.db);
+    const m = await repo.write(baseInput, { actor });
+    await repo.confirm(m.id, { actor });
+    const cap = makeWriter();
+    await exportSnapshot({
+      dbPath: source.path,
+      writer: cap.writer,
+      includeEmbeddings: false,
+      mementoVersion: '0.0.0-test',
+    });
+    const lines = cap.lines.map((l) => l.replace(/\n$/, ''));
+
+    const target = await fileBackedFixture();
+    const result = await importSnapshot({
+      db: target.db,
+      source: lines,
+      onConflict: 'abort',
+      dryRun: false,
+      trustSource: true,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.applied.memoryEvents).toBe(2);
+
+    const types = (
+      target.raw
+        .prepare('select type from memory_events where memory_id = ? order by id')
+        .all(m.id) as Array<{ type: string }>
+    ).map((r) => r.type);
+    expect(types).toEqual(['created', 'confirmed']);
+  });
+
+  it('re-scrubs content with the importer rules even when the source had a stricter scrubber', async () => {
+    // Source machine: scrubber off (e.g. an export from a host
+    // configured to bypass scrubbing). Target: real rules.
+    const source = await fileBackedFixture();
+    const repo = createMemoryRepository(source.db);
+    await repo.write({ ...baseInput, content: 'leaked sk-IMPORT123 token' }, { actor });
+    const cap = makeWriter();
+    await exportSnapshot({
+      dbPath: source.path,
+      writer: cap.writer,
+      includeEmbeddings: false,
+      mementoVersion: '0.0.0-test',
+    });
+    const lines = cap.lines.map((l) => l.replace(/\n$/, ''));
+
+    const target = await fileBackedFixture();
+    const result = await importSnapshot({
+      db: target.db,
+      source: lines,
+      onConflict: 'abort',
+      dryRun: false,
+      scrubber: {
+        rules: [
+          {
+            id: 'test-secret',
+            description: 'fake',
+            pattern: 'sk-[A-Za-z0-9]{6,}',
+            placeholder: '<r:{{rule.id}}>',
+            severity: 'high',
+          },
+        ],
+      },
+    });
+    expect(result.ok).toBe(true);
+    const targetRepo = createMemoryRepository(target.db);
+    const replayed = (await targetRepo.list())[0];
+    expect(replayed?.content).toContain('<r:test-secret>');
+    expect(replayed?.content).not.toContain('IMPORT123');
+  });
+
+  it('rejects an artefact whose memory_event payload exceeds maxRecordBytes', async () => {
+    const source = await fileBackedFixture();
+    const repo = createMemoryRepository(source.db);
+    const m = await repo.write(baseInput, { actor });
+    // Forget produces an event with a `reason` payload — the
+    // schema caps `reason` at 512 chars, so we use the actual cap
+    // value to make the event payload sizable but legal.
+    await repo.forget(m.id, 'a'.repeat(400), { actor });
+    const cap = makeWriter();
+    await exportSnapshot({
+      dbPath: source.path,
+      writer: cap.writer,
+      includeEmbeddings: false,
+      mementoVersion: '0.0.0-test',
+    });
+    const lines = cap.lines.map((l) => l.replace(/\n$/, ''));
+
+    const target = await fileBackedFixture();
+    const result = await importSnapshot({
+      db: target.db,
+      source: lines,
+      onConflict: 'abort',
+      dryRun: false,
+      // The forget event's payload is `{"reason":"<400 chars>"}`
+      // ≈ 412 bytes. A 64-byte cap rejects.
+      maxRecordBytes: 64,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INVALID_INPUT');
+    expect(result.error.message).toMatch(/exceeds maxRecordBytes/u);
+  });
+});

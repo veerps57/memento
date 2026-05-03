@@ -15,7 +15,7 @@ A memory layer that stores these things faithfully is a liability. The scrubber'
 
 ## Where it runs
 
-The scrubber runs **on every write**, before persistence, inside the same transaction. There is no path to write a memory that bypasses the scrubber except by setting `scrubber.enabled = false` (which logs at WARN every server start).
+The scrubber runs **on every write**, before persistence, inside the same transaction. There is no path to write a memory that bypasses the scrubber except by setting `scrubber.enabled = false`. That setting (and the `scrubber.rules` set) is **immutable at runtime** — it can only be flipped at server start via configuration overrides, never via a runtime `config.set`. This is deliberate: a prompt-injected assistant calling `config.set scrubber.enabled false` before writing a secret would otherwise be a one-shot bypass of the entire defence.
 
 ```text
 memory.write → validate input → scrub → persist (memories + memory_events)
@@ -23,7 +23,11 @@ memory.write → validate input → scrub → persist (memories + memory_events)
                                   └─▶ scrubReport → memory_events.scrubReport
 ```
 
+Three free-text fields are scrubbed on every write: `content`, `summary`, and (for `decision`-kind memories) `kind.rationale`. Earlier the scrubber operated on `content` only — an LLM auto-generating a summary from raw content trivially round-tripped the secret into the persisted summary. The merged `scrubReport` aggregates per-rule match counts across all three fields; `byteOffsets` are recorded for `content` only.
+
 The `MemoryEvent.scrubReport` records what the scrubber did: which rules matched, how many replacements were made, and the byte-offsets of the matches in the pre-scrub content. The pre-scrub content itself is **not** stored, anywhere. The point is to not have it on disk.
+
+**Imports run the scrubber too.** `memento import` re-runs the scrubber over every imported memory's content / summary / rationale using the **importer's** current rule set, regardless of what the source artefact already had. An artefact authored on a host with weaker scrubber rules has its secrets re-redacted on the way in. See ADR-0019.
 
 ## Rules
 
@@ -42,14 +46,15 @@ interface ScrubberRule {
 
 Rules are evaluated in order. The first match for a region wins; subsequent rules cannot re-match an already-scrubbed region. Order matters and is part of the configuration.
 
-The default rule set ships in `@psraghuveer/memento-core/scrubber/defaults.ts` and covers:
+The default rule set is the single canonical list in `@psraghuveer/memento-schema` (re-exported from `@psraghuveer/memento-core/scrubber/defaults.ts` so consumers can import without depending on the schema package directly). It covers:
 
 - Generic API keys (high-entropy strings prefixed by common conventions: `sk-`, `xoxb-`, `ghp_`, etc.).
-- AWS access keys (`AKIA[0-9A-Z]{16}`) and secret keys (heuristic).
-- JWT-shaped tokens (`eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+`).
-- Email addresses (`<email-redacted>` placeholder; opt-out via config).
-- IPv4 / IPv6 addresses (opt-out by default; `severity: 'low'`).
-- Conventional secret-bearing variable assignments (`PASSWORD=...`, `SECRET=...`, etc.).
+- AWS access keys (`AKIA[0-9A-Z]{16}` / `ASIA…`).
+- JWT-shaped tokens — `eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{4,}`. The middle-segment minimum is 2 chars so unsigned JWTs whose payload encodes the empty object `{}` (`e30`) are caught.
+- PEM-encoded private-key blocks (`-----BEGIN [A-Z ]+PRIVATE KEY-----…-----END …-----`).
+- HTTP `Authorization: Bearer <token>` headers (word-boundary anchored so prose containing "bear"/"bearer" mid-word does not match).
+- Email addresses — `[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`. The domain is split into non-overlapping label classes so `a.a.a.a.a@a.a.a.a.a` does not trigger quadratic backtracking.
+- Conventional secret-bearing variable assignments (`PASSWORD=...`, `SECRET=...`, `API_KEY=…`, `TOKEN=…`).
 
 The defaults are intentionally **biased toward false positives**. False positives are visible and recoverable (the scrubReport shows what was redacted; the user can edit the rule); false negatives leak secrets to disk, which is irrecoverable.
 
@@ -76,7 +81,7 @@ Rules are validated by Zod at config load. Invalid regexes (RE2-incompatible, in
 
 The scrubber uses the Node `RegExp` engine but restricts patterns to RE2-compatible syntax to avoid catastrophic backtracking. The validation step rejects unbounded lookarounds and quantifier nesting that could produce ReDoS. A future swap to a true RE2 binding is a localized change.
 
-A per-write timeout (`scrubber.timeoutMs`, default `100`) bounds total scrub time. Hitting the timeout fails the write with a structured error pointing at the offending rule (the last rule that started before the timeout). This is preferable to dropping the rule silently.
+A per-rule wallclock budget (`scrubber.engineBudgetMs`, default `50`) bounds each rule's runtime. Between iterations of `re.exec`, the engine checks if the rule has accumulated more than the budget; if so, the rule is aborted and treated as "no match for this rule on this write". The budget cannot interrupt an in-progress single match attempt — JavaScript's `RegExp` engine is atomic and synchronous — so the structural defence against ReDoS is the rule set itself: every default rule is engineered for linear-time matching, and `scrubber.rules` is immutable at runtime so only operator-vetted overrides are loaded. The budget catches the "rule that produces many slow matches" pattern that the structural defence does not bound.
 
 ## Disabling
 

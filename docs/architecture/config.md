@@ -14,6 +14,9 @@ type ConfigKey =
   | "server.transport" // 'stdio'
   | "server.logLevel" // 'trace' | 'debug' | 'info' | 'warn' | 'error'
 
+  // — Server —
+  | "server.maxMessageBytes" // hard cap on a single JSON-RPC message (immutable)
+
   // — Storage —
   | "storage.path" // override default DB path
   | "storage.busyTimeoutMs"
@@ -62,10 +65,25 @@ type ConfigKey =
   | "embedder.local.model" // default 'bge-base-en-v1.5', resolved as `Xenova/<model>`
   | "embedder.local.dimension" // default 768; must match the chosen model
 
+  | "embedder.local.maxInputBytes" // UTF-8 truncation cap; immutable
+  | "embedder.local.timeoutMs" // wallclock cap on a single embed; immutable
+  | "embedder.local.cacheDir" // model cache directory; null → XDG default; immutable
+
   // — Scrubber —
-  | "scrubber.enabled"
-  | "scrubber.rules" // ordered list of rule objects
+  | "scrubber.enabled" // immutable: cannot be flipped at runtime via config.set
+  | "scrubber.rules" // immutable: ordered list of rule objects
+  | "scrubber.engineBudgetMs" // per-rule wallclock budget; aborts a slow rule mid-scan
   | "scrubber.placeholderFormat" // template string
+
+  // — Safety —
+  | "safety.batchWriteLimit" // max items per memory.write_many
+  | "safety.bulkDestructiveLimit" // max rows per forget_many/archive_many
+  | "safety.memoryContentMaxBytes" // operator-tunable cap on memory.write content
+  | "safety.summaryMaxBytes" // cap on memory.write summary
+  | "safety.tagMaxCount" // cap on memory.write tag count
+
+  // — Import —
+  | "import.maxBytes" // hard cap on an artefact accepted by `memento import`
 
   // — Reserved —
   | "plugin.*"; // reserved namespace, currently inert
@@ -100,7 +118,15 @@ Configuration is mutable at runtime via:
 
 Every mutation writes a `ConfigEvent` with `{ key, oldValue, newValue, source, actor, at }`. Configuration history is queryable: `memento config history --key=<key>`.
 
-Some keys are immutable after server start — e.g. `storage.busyTimeoutMs`, `retrieval.fts.tokenizer`, `retrieval.vector.backend`. The schema marks these (`mutable: false`); attempts to mutate them at runtime return an `IMMUTABLE` error. The set is small and pinned in the reference docs.
+Some keys are immutable after server start. The schema marks these (`mutable: false`); attempts to mutate them at runtime return an `IMMUTABLE` error. The current set:
+
+- `storage.busyTimeoutMs`
+- `retrieval.fts.tokenizer`, `retrieval.vector.backend`
+- `embedder.local.model`, `embedder.local.dimension`, `embedder.local.maxInputBytes`, `embedder.local.timeoutMs`, `embedder.local.cacheDir`
+- `server.maxMessageBytes`
+- `scrubber.enabled`, `scrubber.rules` — pinned at server start so a prompt-injected MCP `config.set` cannot disable redaction or weaken the rule set before writing a secret. See ADR-0019 for the related "imports never trust caller-supplied audit claims" stance.
+
+The set is small and pinned in the reference docs.
 
 ## Defaults
 

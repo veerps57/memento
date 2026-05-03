@@ -165,6 +165,35 @@ describe('createMemoryCommands', () => {
       if (result.ok) return;
       expect(result.error.code).toBe('INVALID_INPUT');
     });
+
+    // Phase 2 hardening: end-to-end coverage of `enforceSafetyCaps`
+    // through the command boundary. The helper itself is unit-
+    // tested separately; this test pins the call-site so a future
+    // refactor that drops the call (without touching the helper)
+    // still fails.
+    it('returns INVALID_INPUT when content exceeds safety.memoryContentMaxBytes', async () => {
+      const { byName } = await fixture({
+        configOverrides: { 'safety.memoryContentMaxBytes': 1024 },
+      });
+      const cmd = get(byName, 'memory.write');
+      const result = await executeCommand(cmd, { ...writeInput, content: 'a'.repeat(2048) }, ctx);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/safety\.memoryContentMaxBytes/u);
+    });
+
+    it('returns INVALID_INPUT when summary exceeds safety.summaryMaxBytes', async () => {
+      const { byName } = await fixture({
+        configOverrides: { 'safety.summaryMaxBytes': 64 },
+      });
+      const cmd = get(byName, 'memory.write');
+      const result = await executeCommand(cmd, { ...writeInput, summary: 'a'.repeat(128) }, ctx);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/safety\.summaryMaxBytes/u);
+    });
   });
 
   describe('memory.read / memory.list', () => {

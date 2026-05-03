@@ -241,7 +241,73 @@ describe('runExport', () => {
     if (!withEmb.ok) return;
     expect(withEmb.value.counts.embeddings).toBe(1);
   });
-});
 
-// Ensure unused imports do not surface in lint:
-void writeFile;
+  // Phase 4 hardening: refuse-to-clobber by default + restrictive
+  // file mode. Memory content is operator-private even after
+  // scrubbing; an inadvertent --out path that lands on an existing
+  // backup must not silently replace it.
+  describe('overwrite protection', () => {
+    it('returns INVALID_INPUT when the destination already exists and --overwrite is absent', async () => {
+      const dbPath = await tmpDb();
+      await seedDb(dbPath);
+      const outPath = `${dbPath}.jsonl`;
+      // Pre-populate the destination.
+      await writeFile(outPath, 'pre-existing\n', 'utf8');
+
+      const { io } = captureIO();
+      const result = await runExport(NULL_DEPS, {
+        env: cliEnv({ dbPath }),
+        subargs: ['--out', outPath],
+        io,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/refusing to overwrite/u);
+      expect(result.error.message).toMatch(/--overwrite/u);
+      // Pre-existing content is intact.
+      const preserved = await readFile(outPath, 'utf8');
+      expect(preserved).toBe('pre-existing\n');
+    });
+
+    it('overwrites the destination when --overwrite is set', async () => {
+      const dbPath = await tmpDb();
+      await seedDb(dbPath);
+      const outPath = `${dbPath}.jsonl`;
+      await writeFile(outPath, 'pre-existing\n', 'utf8');
+
+      const { io } = captureIO();
+      const result = await runExport(NULL_DEPS, {
+        env: cliEnv({ dbPath }),
+        subargs: ['--out', outPath, '--overwrite'],
+        io,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.outPath).toBe(outPath);
+      const replaced = await readFile(outPath, 'utf8');
+      expect(replaced).not.toBe('pre-existing\n');
+      expect(replaced).toMatch(/"type":"header"/);
+    });
+
+    it('creates the export file with mode 0o600', async () => {
+      // POSIX-only invariant. Windows ACL semantics differ; skip
+      // there rather than assert a meaningless permission bitmask.
+      if (process.platform === 'win32') return;
+      const dbPath = await tmpDb();
+      await seedDb(dbPath);
+      const outPath = `${dbPath}.jsonl`;
+      const { io } = captureIO();
+      const result = await runExport(NULL_DEPS, {
+        env: cliEnv({ dbPath }),
+        subargs: ['--out', outPath],
+        io,
+      });
+      expect(result.ok).toBe(true);
+      const { stat } = await import('node:fs/promises');
+      const info = await stat(outPath);
+      // eslint-disable-next-line no-bitwise
+      expect(info.mode & 0o777).toBe(0o600);
+    });
+  });
+});
