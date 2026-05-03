@@ -37,7 +37,7 @@ These are encoded as tests and CI gates where possible. Do not bypass them.
 10. **`ScopeResolver` is composed of small, mockable resolvers** (`GitRemoteResolver`, `WorkspacePathResolver`, `SessionResolver`). The composite is a thin policy layer.
 11. **`MemoryEvent` is the audit source of truth.** `lastConfirmedAt` on `Memory` is a denormalized cache, validated at write-time and by `npx @psraghuveer/memento doctor`.
 12. **No configurable invariants.** Integrity rules (immutability, status transitions, supersession atomicity) are hardcoded. Configurable invariants are no invariants.
-13. **`memory.update` only mutates non-content fields** (tags, kind, pinned). Content changes route through `supersede` to preserve history. The error message points the caller to the right command.
+13. **`memory.update` only mutates non-content fields** (tags, kind, pinned, sensitive). Content changes route through `supersede` to preserve history. The error message points the caller to the right command.
 14. **Embedding model migration is explicit.** `memento embedding rebuild` is the only way to re-embed memories. Never silent.
 
 ## Before you start a change
@@ -110,7 +110,15 @@ The cost of asking is small. The cost of a confidently wrong PR is large.
 
 ## For AI agents specifically
 
-If you are an AI agent, please:
+If you are running in Claude Code, install the [`memento-dev` skill](skills/memento-dev/SKILL.md) — it encodes this entire document in load-on-intent form so the rules reach you automatically when you start working on the codebase, instead of relying on you remembering to read this file. One command from a clone:
+
+```bash
+cp -R skills/memento-dev ~/.claude/skills/
+```
+
+Restart Claude Code afterwards. See [`skills/README.md`](skills/README.md#contributors-the-memento-dev-skill-claude-code-only) for verification + the differences between this contributor skill and the end-user `memento` skill.
+
+Whether or not the skill is installed:
 
 - **Disclose your involvement** in the PR description (the PR template has a section for this).
 - **Verify every line you generate.** Hallucinated imports, fabricated API calls, and invented config keys are the most common failure modes.

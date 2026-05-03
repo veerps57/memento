@@ -19,9 +19,9 @@ This is purely additive: the skill bundle does not change Memento's MCP/CLI surf
 
 ## Installation
 
-Skills are loaded by the AI client, not by Memento itself. The install path therefore depends on which client you use.
+Skills are loaded by the AI client, not by Memento itself. The install path depends on which client you use, **and on which skill you are installing** — `memento` is for end users of any AI assistant, `memento-dev` is for contributors editing this repo.
 
-### Claude Code (and Cowork)
+### End users: the `memento` skill (Claude Code, Cowork)
 
 The fastest path is to let `memento init` print the exact copy command for your install:
 
@@ -41,13 +41,33 @@ cp -R skills/memento ~/.claude/skills/
 
 Claude Code's default skills location is `~/.claude/skills/`, but check your installation — some setups use a project-local `.claude/skills/` directory.
 
-### Updating the skill after a Memento upgrade
+#### Updating after a Memento upgrade
 
 The installed copy at `~/.claude/skills/memento/` does **not** auto-refresh when you bump the Memento package. After every upgrade — `npm i -g @psraghuveer/memento`, a new `npx` cache, or a clone update — re-run `memento init` and re-paste the install command (or re-`cp` from your clone) to pick up the latest skill instructions. `memento init` is idempotent; the second run just reprints.
 
+### Contributors: the `memento-dev` skill (Claude Code only)
+
+If you have a clone of this repo and you use Claude Code, install the contributor skill so the four guiding principles, the 14 architectural rules, the verification chain, and the common pitfalls auto-load on intent match for any change you make under `packages/`:
+
+```bash
+cp -R skills/memento-dev ~/.claude/skills/
+```
+
+Restart Claude Code. The skill triggers on prompts like "add a command", "add a config key", "add a migration", "open an ADR", or any edit under `packages/`. It deliberately does **not** trigger when you are merely *using* Memento as a dependency in another project — the trigger description checks for the repo-root markers (`AGENTS.md` plus the `packages/` layout) before firing.
+
+`memento init` does **not** print a snippet for this skill — it is a contributor tool, not an end-user one. Install once per machine; `git pull` updates the in-repo copy, but you must re-`cp` to pick up changes. (Skill content rarely shifts.)
+
+#### Verifying the dev skill auto-triggers
+
+Open a fresh Claude Code session inside this repo and ask:
+
+> What's the rule about hardcoded behavioral constants?
+
+The skill should fire and the assistant should answer with rule 2 (no hardcoded behavioral constants — every behavioral knob is a `ConfigKey`). If it doesn't, the skill is either not in `~/.claude/skills/memento-dev/` or the client cache needs invalidating (full restart, not just a new chat).
+
 ### Other MCP clients
 
-Skills are an Anthropic-specific feature. For clients that do not support skills (Cursor, Cline, OpenCode, VS Code Agent mode, etc.), continue to use the persona snippet in [`docs/guides/teach-your-assistant.md`](../docs/guides/teach-your-assistant.md). The snippet's content mirrors what the skill teaches; the difference is delivery mechanism.
+Skills are an Anthropic-specific feature. For clients that do not support skills (Cursor, Cline, OpenCode, VS Code Agent mode, etc.), continue to use the persona snippet in [`docs/guides/teach-your-assistant.md`](../docs/guides/teach-your-assistant.md). The snippet's content mirrors what the `memento` skill teaches; the difference is delivery mechanism. There is no equivalent contributor surface for non-skill clients today — `AGENTS.md` is the canonical document, and contributors using non-skill clients should read it before opening a PR.
 
 ## Verifying it works
 

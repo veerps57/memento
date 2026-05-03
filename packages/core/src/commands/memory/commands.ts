@@ -228,7 +228,7 @@ export function createMemoryCommands(
     outputSchema: MemoryOutputSchema,
     metadata: {
       description:
-        'Create a new memory in the given scope.\n\nWorkflow: search first to avoid duplicates. If a similar memory exists, use memory.supersede to update it instead. Use memory.update for non-content changes (tags, pinned).\n\nMinimal example (pinned, storedConfidence, summary, owner all have defaults):\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"content":"Memento uses SQLite for storage."}\n```\n\nFull example:\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"pinned":false,"content":"Memento uses SQLite for storage.","summary":"Storage engine choice","storedConfidence":0.95}\n```',
+        'Create a new memory in the given scope.\n\nWorkflow: search first to avoid duplicates. If a similar memory exists, use memory.supersede to update it instead. Use memory.update for non-content changes (tags, kind, pinned, sensitive).\n\nFor `preference` and `decision` kinds, start the content with a single `topic: value` line followed by free prose. Conflict detection parses that first line — without it two contradictory preferences silently coexist. Example: `node-package-manager: pnpm\\n\\nRaghu prefers pnpm over npm for Node projects.`\n\nMinimal example (pinned, storedConfidence, summary, owner all have defaults):\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"content":"Memento uses SQLite for storage."}\n```\n\nFull example:\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"pinned":false,"content":"Memento uses SQLite for storage.","summary":"Storage engine choice","storedConfidence":0.95}\n```',
     },
     handler: async (input, ctx) => {
       const pinned = input.pinned ?? deps?.configStore?.get('write.defaultPinned') ?? false;
@@ -253,6 +253,7 @@ export function createMemoryCommands(
       );
       if (result.ok) {
         fireAfterWrite(hooks, result.value, ctx);
+        return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
       }
       return result;
     },
@@ -269,7 +270,7 @@ export function createMemoryCommands(
     outputSchema: MemoryWriteManyOutputSchema,
     metadata: {
       description:
-        'Atomically create multiple memories in a single transaction. Per-item clientToken idempotency is honoured; on any failure the whole batch rolls back.',
+        'Atomically create multiple memories in a single transaction. Per-item clientToken idempotency is honoured; on any failure the whole batch rolls back.\n\nProgrammatic / operator surface — AI assistants typically do NOT reach for this. For multiple explicit user statements ("remember A, B, and C"), prefer N sequential `write_memory` calls so one bad item does not roll the others back. For end-of-session sweeps over things the user mentioned in passing, use `extract_memory` (server dedups + scrubs + lowers confidence). Use `write_many_memories` only when you genuinely need all-or-nothing transactional semantics — e.g. importing a curated batch from a doc.',
       mcpName: 'write_many_memories',
     },
     handler: async (input, ctx) => {
@@ -337,9 +338,18 @@ export function createMemoryCommands(
     inputSchema: MemoryReadInputSchema,
     outputSchema: MemoryNullableOutputSchema,
     metadata: {
-      description: 'Fetch a single memory by id, or null if absent.',
+      description:
+        'Fetch a single memory by id, or null if absent. By default the embedding vector is stripped (callers almost never need 768 floats); pass `includeEmbedding: true` for the raw vector.',
     },
-    handler: (input) => runRepo<Memory | null>('memory.read', () => repo.read(input.id)),
+    handler: async (input) => {
+      const result = await runRepo<Memory | null>('memory.read', () => repo.read(input.id));
+      if (!result.ok || result.value === null) {
+        return result;
+      }
+      return ok(
+        projectMemoryForOutput(result.value, deps?.configStore, input.includeEmbedding === true),
+      );
+    },
   };
 
   const listCommand: Command<typeof MemoryListInputSchema, typeof MemoryListOutputSchema> = {
@@ -376,10 +386,11 @@ export function createMemoryCommands(
       return ok(
         result.value.map((m) => {
           const view = projectMemoryView(m, redact);
+          const embeddingStatus = computeEmbeddingStatus(m, deps?.configStore);
           if (stripEmbedding) {
-            return { ...view, embedding: null };
+            return { ...view, embedding: null, embeddingStatus };
           }
-          return view;
+          return { ...view, embeddingStatus };
         }),
       );
     },
@@ -427,6 +438,10 @@ export function createMemoryCommands(
           // `previous` row is now superseded and will be
           // filtered out by the detector's status check.
           fireAfterWrite(hooks, result.value.current, ctx);
+          return ok({
+            previous: projectMemoryForOutput(result.value.previous, deps?.configStore, false),
+            current: projectMemoryForOutput(result.value.current, deps?.configStore, false),
+          });
         }
         return result;
       },
@@ -442,8 +457,13 @@ export function createMemoryCommands(
       description:
         'Re-affirm an active memory (bumps lastConfirmedAt, resetting confidence decay).\n\nExample:\n\n```json\n{"id":"01HYXZ..."}\n```',
     },
-    handler: (input, ctx) =>
-      runRepo<Memory>('memory.confirm', () => repo.confirm(input.id, ctxToRepoCtx(ctx))),
+    handler: async (input, ctx) => {
+      const result = await runRepo<Memory>('memory.confirm', () =>
+        repo.confirm(input.id, ctxToRepoCtx(ctx)),
+      );
+      if (!result.ok) return result;
+      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+    },
   };
 
   const confirmManyCommand: Command<
@@ -486,10 +506,10 @@ export function createMemoryCommands(
     outputSchema: MemoryOutputSchema,
     metadata: {
       description:
-        'Update taxonomy fields (tags / kind / pinned) of an active memory. Does NOT change content — use memory.supersede for that.\n\nExample:\n\n```json\n{"id":"01HYXZ...","patch":{"tags":["updated-tag"],"pinned":true}}\n```',
+        'Update non-content fields (tags / kind / pinned / sensitive) of an active memory. Does NOT change content — use memory.supersede for that.\n\nExample:\n\n```json\n{"id":"01HYXZ...","patch":{"tags":["updated-tag"],"pinned":true}}\n```',
     },
-    handler: (input, ctx) =>
-      runRepo<Memory>('memory.update', () =>
+    handler: async (input, ctx) => {
+      const result = await runRepo<Memory>('memory.update', () =>
         repo.update(
           input.id,
           {
@@ -500,7 +520,10 @@ export function createMemoryCommands(
           },
           ctxToRepoCtx(ctx),
         ),
-      ),
+      );
+      if (!result.ok) return result;
+      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+    },
   };
 
   const forgetCommand: Command<typeof MemoryForgetInputSchema, typeof MemoryOutputSchema> = {
@@ -513,10 +536,13 @@ export function createMemoryCommands(
       description:
         'Soft-remove an active memory; reversible via memory.restore.\n\nExample:\n\n```json\n{"id":"01HYXZ...","reason":"No longer relevant","confirm":true}\n```',
     },
-    handler: (input, ctx) =>
-      runRepo<Memory>('memory.forget', () =>
+    handler: async (input, ctx) => {
+      const result = await runRepo<Memory>('memory.forget', () =>
         repo.forget(input.id, input.reason, ctxToRepoCtx(ctx)),
-      ),
+      );
+      if (!result.ok) return result;
+      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+    },
   };
 
   const restoreCommand: Command<typeof MemoryIdInputSchema, typeof MemoryOutputSchema> = {
@@ -529,8 +555,13 @@ export function createMemoryCommands(
       description:
         'Move a forgotten or archived memory back to active.\n\nExample:\n\n```json\n{"id":"01HYXZ..."}\n```',
     },
-    handler: (input, ctx) =>
-      runRepo<Memory>('memory.restore', () => repo.restore(input.id, ctxToRepoCtx(ctx))),
+    handler: async (input, ctx) => {
+      const result = await runRepo<Memory>('memory.restore', () =>
+        repo.restore(input.id, ctxToRepoCtx(ctx)),
+      );
+      if (!result.ok) return result;
+      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+    },
   };
 
   const archiveCommand: Command<typeof MemoryArchiveInputSchema, typeof MemoryOutputSchema> = {
@@ -544,8 +575,13 @@ export function createMemoryCommands(
         'Move a memory to long-term storage. Idempotent on already-archived rows. Requires confirm: true.\n\nExample:\n\n```json\n{"id":"01HYXZ...","confirm":true}\n```',
       mcp: { idempotentHint: true },
     },
-    handler: (input, ctx) =>
-      runRepo<Memory>('memory.archive', () => repo.archive(input.id, ctxToRepoCtx(ctx))),
+    handler: async (input, ctx) => {
+      const result = await runRepo<Memory>('memory.archive', () =>
+        repo.archive(input.id, ctxToRepoCtx(ctx)),
+      );
+      if (!result.ok) return result;
+      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+    },
   };
 
   const forgetManyCommand: Command<
@@ -709,8 +745,8 @@ export function createMemoryCommands(
       mcpName: 'set_memory_embedding',
       mcp: { idempotentHint: true },
     },
-    handler: (input, ctx) =>
-      runRepo<Memory>('memory.set_embedding', () =>
+    handler: async (input, ctx) => {
+      const result = await runRepo<Memory>('memory.set_embedding', () =>
         repo.setEmbedding(
           input.id,
           {
@@ -720,7 +756,12 @@ export function createMemoryCommands(
           },
           ctxToRepoCtx(ctx),
         ),
-      ),
+      );
+      if (!result.ok) return result;
+      // Operators of this command supplied the vector themselves;
+      // echoing it back would just be redundant payload.
+      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+    },
   };
 
   // Order is the registration order — keep it grouped by side
@@ -807,4 +848,53 @@ export function projectMemoryView(memory: Memory, redact: boolean): MemoryView {
     return { ...memory, content: null, redacted: true };
   }
   return { ...memory, redacted: false };
+}
+
+/**
+ * Compute the wire-level `embeddingStatus` projection field.
+ *
+ * The embedder runs asynchronously after a write (or as a
+ * dedicated reembed pass), so a freshly-created memory typically
+ * has `embedding === null` for a beat or two. Without this field
+ * an assistant reading the write response would have to guess
+ * whether `null` means "not computed yet," "embedder is off," or
+ * "this command stripped the vector for payload size."
+ *
+ * Pure projection. No I/O. The vector-enabled signal comes from
+ * the live `ConfigStore` — reembedding-after-config-flip is
+ * outside this command's frame and is handled by `embedding
+ * rebuild`.
+ */
+export function computeEmbeddingStatus(
+  memory: Pick<Memory, 'embedding'>,
+  configStore: ConfigStore | undefined,
+): 'present' | 'pending' | 'disabled' {
+  if (memory.embedding !== null) return 'present';
+  const vectorEnabled = configStore?.get('retrieval.vector.enabled') ?? false;
+  return vectorEnabled ? 'pending' : 'disabled';
+}
+
+/**
+ * Project a single-memory wire response. Strips the embedding
+ * vector by default (callers almost never need 768 floats) and
+ * always sets `embeddingStatus` so the consumer can distinguish
+ * "stripped for payload size" from "not yet computed" from
+ * "vector retrieval is off."
+ *
+ * `memory.read` opts back in via `includeEmbedding: true` for
+ * the rare debugging case. Every other single-memory command
+ * (`write`, `update`, `confirm`, `forget`, `archive`, `restore`,
+ * `supersede`, `set_embedding`) strips unconditionally — the
+ * vector is reachable from `read` if the operator wants it.
+ */
+function projectMemoryForOutput(
+  memory: Memory,
+  configStore: ConfigStore | undefined,
+  includeEmbedding: boolean,
+): Memory {
+  const embeddingStatus = computeEmbeddingStatus(memory, configStore);
+  if (includeEmbedding) {
+    return { ...memory, embeddingStatus };
+  }
+  return { ...memory, embedding: null, embeddingStatus };
 }

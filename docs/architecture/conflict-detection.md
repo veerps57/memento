@@ -60,6 +60,17 @@ Each policy is implemented as a function that takes `(newMemory, candidate, conf
 
 The default heuristics are intentionally conservative — Memento prefers a few high-confidence conflicts to many low-confidence ones. Tuning is via `conflict.<kind>.*` config.
 
+The `preference` and `decision` policies parse the **first line** of `content` as `key: value` (or `key = value`). Two memories with the same key and different values are flagged. Free-prose content without a parseable key/value line never conflicts — that's the conservative bias in action. The bundled assistant skill (`skills/memento/SKILL.md`) teaches AIs to author preferences and decisions in the two-line form so the detector has the structural anchor it needs:
+
+```text
+node-package-manager: pnpm
+
+Raghu prefers pnpm over npm for Node projects — disk-efficient
+and faster on his laptop.
+```
+
+Without that first line, two contradictory preferences ("I use bun" vs "I use npm") will silently coexist instead of being surfaced for triage. The detector is doing what the doc says — the responsibility for shape lives at the write boundary.
+
 ## Surfacing
 
 Conflicts are read, not pushed:

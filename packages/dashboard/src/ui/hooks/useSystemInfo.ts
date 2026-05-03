@@ -32,6 +32,15 @@ export interface SystemInfo {
     readonly forgotten: number;
     readonly superseded: number;
   };
+  /**
+   * Single-user identity. `preferredName` is the value of the
+   * `user.preferredName` config; the dashboard wordmark uses it
+   * to render `<name>@memento_` (a shell-prompt style cue),
+   * falling back to `memento_` when null.
+   */
+  readonly user: {
+    readonly preferredName: string | null;
+  };
 }
 
 export interface ScopeSummary {

@@ -51,15 +51,19 @@ Call `extract_memory` with a batch of candidates for anything durable that came 
 
 When in doubt, include the candidate. The server is the gatekeeper, not you.
 
+`extract_memory` returns a `mode` field: `'sync'` means the response arrays are authoritative (you can tell the user "I saved 3 things and skipped 1 duplicate" directly); `'async'` (the default per `extraction.processing` config) means the server accepted the batch and is processing in background — the response will look empty (`written: [], skipped: [], superseded: []`) but a `hint` field tells you what to do next, and the work lands as memories within ~1–5 seconds. Don't retry on an async response — it's a fire-and-forget receipt, not an error.
+
 ## What to write — and what not to
 
-**Write** durable assertions about the user, their preferences, their tools, their conventions, their projects, or their decisions:
+**Write** durable assertions about the user, their preferences, their tools, their conventions, their projects, or their decisions. For `preference` and `decision` memories, **start the content with a `topic: value` line** before any prose — this single line is what conflict detection parses, so without it two contradictory preferences (e.g. "I use bun" vs "I use npm") will silently coexist instead of being surfaced for triage. Free prose can follow on subsequent lines for retrieval and human readability.
 
-- "Raghu prefers pnpm over npm for Node projects."
-- "The staging cluster lives at gke-staging in us-central1."
-- "Raghu writes in British English."
-- "Decision: SQLite as the storage engine. Rationale: single-file, no daemon, FTS5 built in." (kind=`decision`, with rationale)
-- "Snippet: the canonical way to read a Memento memory by id is `memento read <id>`." (kind=`snippet`, language=`shell`)
+- `preference` ✓ `node-package-manager: pnpm\n\nRaghu prefers pnpm over npm for Node projects — disk-efficient and faster on his laptop.`
+- `preference` ✓ `writing-style: British English\n\nRaghu defaults to British spellings ('colour', 'organisation') and en-dashes.`
+- `fact` ✓ "The staging cluster lives at gke-staging in us-central1." (no key:value needed; facts use a different conflict heuristic — token overlap + negation flip — so prose is fine)
+- `decision` ✓ `storage-engine: SQLite\n\nChosen for the single-file local-first story; no daemon to manage, FTS5 built in, prebuilt for every common platform.` (kind=`decision`, with `rationale` field)
+- `snippet` ✓ "the canonical way to read a Memento memory by id is `memento read <id>`." (kind=`snippet`, language=`shell`)
+
+For attribution, call `info_system` once per session and use `user.preferredName` if set (e.g. "Raghu prefers …"). When it's `null`, write "The user prefers …" instead — never invent a name from chat context.
 
 **Do not write** transient context:
 
@@ -106,14 +110,16 @@ For a `repo` scope, never invent the remote. Either ask the user, read it from t
 
 If the user changes their mind about something durable ("actually, switched from pnpm to bun"), call `supersede_memory` with the old memory's id and a new memory describing the current state. Both rows are preserved and linked; the audit log retains the history of what the user used to believe.
 
-`update_memory` does **not** let you change content — its schema rejects content edits and points you at supersede in the error message. `update_memory` mutates only `tags`, `kind`, and `pinned`. This restriction is intentional: history is the whole point of having an audit log.
+`update_memory` does **not** let you change content — its schema rejects content edits and points you at supersede in the error message. `update_memory` mutates only `tags`, `kind`, `pinned`, `sensitive`. This restriction is intentional: history is the whole point of having an audit log.
 
 ## Forgetting and archiving
 
 Both are reversible (memories move to `forgotten` / `archived` status, never hard-deleted) but require `confirm: true` in the input — the schema rejects calls without it.
 
-- `forget_memory` — "the user said this in error" or "this is no longer relevant."
-- `archive_memory` — "this is historical and should not surface in default queries."
+The one-line distinction: **`forget` retracts (the memory was wrong or never should have been written); `archive` retires (the memory was right at the time, but is no longer current).**
+
+- `forget_memory` — user said it in error, was a misunderstanding, or is no longer true. The memory is "removed" from the active corpus. Example: user said "I prefer Vim" but actually meant Emacs.
+- `archive_memory` — completed todo, sunset project, decision that has been superseded by a newer one and the old context is no longer useful. The memory is moved out of default queries but stays in the audit history. Example: a `todo` that the user finished, or a `decision` from a project that has been mothballed.
 - `restore_memory` — reverses either.
 
 Bulk variants (`forget_many_memories`, `archive_many_memories`) default to `dryRun: true` so a generous filter rehearses without mutating. Always preview before you apply, and show the matched count to the user before flipping `dryRun: false`.
@@ -132,11 +138,13 @@ If a memory contains personally-identifying notes the user wants kept but redact
 
 ## A worked end-to-end example
 
+Session start: call `info_system` once. Response includes `user: { preferredName: "Raghu" }`. Use that name (or "The user" when null) when authoring memory content.
+
 User: *"Remember that I always prefer pnpm over npm for Node projects."*
 
 You:
 
-1. Call `write_memory` with `{"scope":{"type":"global"},"kind":{"type":"preference"},"tags":["tooling","node"],"content":"Raghu prefers pnpm over npm for Node projects."}`.
+1. Call `write_memory` with `{"scope":{"type":"global"},"kind":{"type":"preference"},"tags":["tooling","node"],"content":"node-package-manager: pnpm\n\nRaghu prefers pnpm over npm for Node projects."}`. The `node-package-manager: pnpm` line is what conflict detection parses — without it, a contradictory write tomorrow ("I switched to bun") will silently coexist instead of being flagged for triage.
 2. Reply briefly in chat: "Got it — saved as a global preference."
 
 User: *"What was that I said earlier about my preferred CSS framework?"*
@@ -152,12 +160,61 @@ User: *"Actually, I switched from Tailwind to vanilla CSS — too much abstracti
 You:
 
 1. Call `search_memory` to find the prior preference; note its id.
-2. Call `supersede_memory` with `{"oldId":"<that id>","next":{"scope":{"type":"global"},"kind":{"type":"preference"},"tags":["css"],"content":"Raghu prefers vanilla CSS over Tailwind. Reason: Tailwind feels like too much abstraction.","pinned":false,"summary":null,"storedConfidence":1}}`.
+2. Call `supersede_memory` with `{"oldId":"<that id>","next":{"scope":{"type":"global"},"kind":{"type":"preference"},"tags":["css"],"content":"css-framework: vanilla\n\nRaghu prefers vanilla CSS over Tailwind. Reason: Tailwind feels like too much abstraction.","pinned":false,"summary":null,"storedConfidence":1}}`.
 3. Confirm in chat.
 
 End of session, before you sign off:
 
-1. Call `extract_memory` with a batch of any durable claims that came up but were not explicitly remembered (the user mentioned they prefer Vitest, that the team uses Conventional Commits, that production runs on Postgres 15, etc.). The server dedups; you do not need to be precious.
+1. Call `extract_memory` with a batch of any durable claims that came up but were not explicitly remembered (the user mentioned they prefer Vitest, that the team uses Conventional Commits, that production runs on Postgres 15, etc.). The server dedups; you do not need to be precious. The default config is `extraction.processing: async`, so the response arrays will be empty and `mode: 'async'` — that's the receipt, not a failure. The writes land as memories in the next few seconds.
+
+## Quick decision tree
+
+When the four most-touched judgement calls come up, fall back to these one-line rules.
+
+### Which write tool?
+
+| Situation | Tool | Why |
+| --- | --- | --- |
+| User explicitly states one durable thing ("remember X"). | `write_memory` | One round-trip. Explicit attribution. |
+| User explicitly states several durable things in one breath ("remember A, B, and C"). | N × `write_memory` (sequential) | Each is independently true; one failing shouldn't roll the others back. Prefer this over `write_many_memories` unless you actually need atomicity. |
+| End-of-session sweep — things the user mentioned in passing but didn't say "remember". | `extract_memory` | Server dedups, scrubs, lowers confidence (0.8). Async by default — fire and forget. |
+| Bulk-loading from a paste / doc / migration where atomicity matters. | `write_many_memories` | Programmatic surface — rare in normal AI use; reach for it only when you genuinely need "all-or-nothing" semantics. |
+
+### Which kind?
+
+| If the user… | Use | Notes |
+| --- | --- | --- |
+| stated a fact about the world / project / their situation | `fact` | Default when nothing else fits. |
+| expressed a preference, taste, or "I always do X" pattern (no explicit rationale) | `preference` | First line: `topic: value`. |
+| chose path X over Y/Z and gave a "because" | `decision` | First line: `topic: choice`. Always set the `rationale` field. The presence of a rationale is what makes it a decision, not a preference. |
+| asked you to do or remember an action item | `todo` | Optional `due` timestamp. Use sparingly — Memento is not a task tracker. |
+| supplied a reusable code fragment | `snippet` | Set `language` for syntax-aware retrieval. |
+
+When unsure between `preference` and `decision`: **does the user expect to defend the choice if asked "why"?** Yes → decision (with rationale). No → preference.
+
+### Which scope?
+
+| Statement is about… | Scope | Example |
+| --- | --- | --- |
+| The user themselves (their tastes, their tools, their writing voice) | `global` | "I prefer pnpm", "I write in British English" |
+| The repository you're currently in (its conventions, its decisions, its team norms) | `repo` (with the canonical git remote) | "This repo uses Apache-2.0", "We squash-merge to main" |
+| A directory tree with no git remote (off-VCS workspace) | `workspace` (with absolute path) | "This staging dir uses local Postgres" |
+| In-flight work on one branch that should not leak | `branch` | "On the `feat/x` branch we're trying approach Y" |
+| Working memory you don't want persisted | `session` | Cleared on server restart. |
+
+When the same statement plausibly fits two scopes, pick the **broader** one — the user can narrow later, but a too-narrow scope hides the memory from sessions where it would have helped. Always call `list_scopes_system` once at session start to discover what scopes the user already has memories in; reusing existing scopes keeps recall coherent.
+
+For `repo` scope, **never invent the git remote.** Read it from the user's environment, ask, or fall back to `workspace` / `global`. A wrong remote is a leak.
+
+### When to deviate from defaults
+
+The defaults (`storedConfidence: 1.0`, `pinned: false`, `sensitive: false`) are right for the vast majority of writes. Deviate only on these signals:
+
+- **`storedConfidence < 1.0`** — the user said it tentatively ("I think I prefer X", "maybe Y", "leaning toward Z"). Drop to `0.6–0.8`. Direct, declarative statements stay at the default `1.0`.
+- **`pinned: true`** — only for foundational facts that should never decay regardless of recency: the user's name, their primary stack, a repo's canonical license. Pinning everything ruins the decay signal that lets stale memories age out.
+- **`sensitive: true`** — personally-identifying notes the user would not want surfacing in casual list views (job title, family details, medical context). The flag hides snippets from default search/list output until an operator explicitly fetches by id. Not for secrets or credentials — those should never reach Memento at all (the scrubber catches common shapes, but the right answer is "don't write them in the first place").
+
+You almost never need to set `clientToken` — it's a programmatic-idempotency surface for scripts and migrations, not for AI assistants making one-off writes from chat.
 
 ## Why this matters
 

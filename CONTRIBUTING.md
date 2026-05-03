@@ -102,6 +102,18 @@ Then open `http://localhost:5173` in your browser. Vite proxies `/api/*` to the 
 
 The user-facing walkthrough (what each view shows, the Cmd-K command palette, the inline config editor, troubleshooting) lives in [`docs/guides/dashboard.md`](docs/guides/dashboard.md). The architectural decision is [ADR-0018](docs/adr/0018-dashboard-package.md).
 
+### Install the contributor skill (Claude Code only)
+
+If you use [Claude Code](https://www.anthropic.com/claude-code) for development, install the bundled `memento-dev` skill so the four guiding principles, the 14 architectural rules, the verification chain, and the common pitfalls auto-load on intent match for any change you make in the repo:
+
+```bash
+cp -R skills/memento-dev ~/.claude/skills/
+```
+
+Restart Claude Code. The skill triggers on prompts like "add a command", "add a config key", "add a migration", or any edit under `packages/`. It is the load-on-intent companion to this `CONTRIBUTING.md` and to [`AGENTS.md`](AGENTS.md) — same content, different delivery. Verify it is loaded by asking your assistant in this checkout: *"What's the rule about hardcoded behavioral constants?"* — the skill should fire and the assistant should answer with rule 2.
+
+The skill is optional: every rule it surfaces also lives in `AGENTS.md`. If you don't use Claude Code, read [`AGENTS.md`](AGENTS.md) directly — it's the source of truth either way. See [`skills/README.md`](skills/README.md) for installation details and the equivalent end-user `memento` skill (a different artifact for AI assistants *using* Memento, not contributors *editing* it).
+
 ## Workflow
 
 ### 1. Open an issue first (for non-trivial changes)

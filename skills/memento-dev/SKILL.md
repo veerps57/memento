@@ -1,6 +1,6 @@
 ---
 name: memento-dev
-description: How to contribute changes to the Memento codebase — the local-first MCP memory layer at github.com/veerps57/memento. Trigger this skill whenever the user is working in a checkout of the Memento repo (look for AGENTS.md and packages/{schema,core,server,cli,dashboard,embedder-local} at the repo root) and any of the following holds — the user is editing source under packages/, the user is adding or changing a command / config key / migration / ADR, the user mentions "the Memento repo" or "this repo" while inside a Memento checkout, the user is debugging a failing pnpm verify run, or the user asks "how do I contribute" / "where does X go" / "what are the rules". Do NOT trigger this skill when Memento is merely a dependency of another project (look for a memento entry in package.json dependencies, not at the repo root) — that is an end-user context where the `memento` skill applies. Do NOT trigger for unrelated TypeScript work, even if a Memento checkout happens to be open elsewhere.
+description: How to contribute changes to the Memento codebase — the local-first MCP memory layer at github.com/veerps57/memento. Trigger this skill whenever the user is working in a checkout of the Memento repo (look for AGENTS.md and packages/{schema,core,server,cli,dashboard,embedder-local,landing} at the repo root) and any of the following holds — the user is editing source under packages/, the user is adding or changing a command / config key / migration / ADR, the user mentions "the Memento repo" or "this repo" while inside a Memento checkout, the user is debugging a failing pnpm verify run, or the user asks "how do I contribute" / "where does X go" / "what are the rules". Do NOT trigger this skill when Memento is merely a dependency of another project (look for a memento entry in package.json dependencies, not at the repo root) — that is an end-user context where the `memento` skill applies. Do NOT trigger for unrelated TypeScript work, even if a Memento checkout happens to be open elsewhere.
 ---
 
 # Memento Dev
@@ -36,7 +36,7 @@ Encoded as tests and CI gates where possible. Do not bypass them.
 10. **`ScopeResolver` composes small, mockable resolvers** (`GitRemoteResolver`, `WorkspacePathResolver`, `SessionResolver`). Adding a new scope dimension means adding a resolver, not mutating the composite.
 11. **`MemoryEvent` is the audit source of truth.** `lastConfirmedAt` on `Memory` is a denormalized cache, validated at write-time and by `npx @psraghuveer/memento doctor`.
 12. **No configurable invariants.** Integrity rules (immutability, status transitions, supersession atomicity) are hardcoded. Configurable invariants are no invariants.
-13. **`memory.update` only mutates non-content fields** (tags, kind, pinned). Content changes route through `supersede` to preserve history. The error message points the caller to the right command.
+13. **`memory.update` only mutates non-content fields** (tags, kind, pinned, sensitive). Content changes route through `supersede` to preserve history. The error message points the caller to the right command.
 14. **Embedding model migration is explicit.** `memento embedding rebuild` is the only way to re-embed memories. Never silent.
 
 ## Common pitfalls
@@ -48,6 +48,8 @@ Encoded as tests and CI gates where possible. Do not bypass them.
 - **Adding a new `MemoryKind`** without updating decay, retrieval, AND conflict policies. The structural test fails.
 - **Bypassing the scrubber in tests.** Use `--scrubber.enabled=false` in a fixture if you need raw input; do not skip the call site.
 - **Bypassing `assertNever` exhaustiveness checks.** They exist precisely to catch missed cases when adding new variants.
+- **Touching one postinstall without the other.** `scripts/ensure-better-sqlite3.mjs` (root) and `packages/cli/scripts/postinstall.mjs` (CLI) cooperate to prevent the "Could not locate the bindings file" trap. The CLI hook early-exits via `isWorkspaceCheckout()` so it doesn't fight the root heal in dev. Edit them together — editing one in isolation re-introduces the trap for every fresh contributor.
+- **Adding a `preference` or `decision` feature that authors content as freeform prose.** The conflict detector's `preference` and `decision` policies parse the **first line** of `content` as `topic: value` (or `topic = value`) — that's the structural anchor that makes "I use bun" vs "I use npm" surface as a conflict. Free-prose content silently bypasses detection. New surfaces that auto-write preferences must include the first-line anchor; the assistant skill (`skills/memento/SKILL.md`) teaches the same pattern. See [`docs/architecture/conflict-detection.md`](docs/architecture/conflict-detection.md) for the rationale.
 
 ## How to do common tasks
 

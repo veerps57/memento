@@ -85,6 +85,52 @@ describe('memory.extract', () => {
     expect(result.value.superseded.length).toBe(0);
     expect(result.value.written[0]!.content).toBe('User prefers dark mode');
     expect(result.value.written[1]!.content).toBe('Always use pnpm');
+    // Persona-3 follow-up: every response carries a `mode` field so
+    // a caller can distinguish "the arrays are authoritative" (sync)
+    // from "the arrays will always be empty; check the store after"
+    // (async) without inspecting the absence of `batchId`.
+    expect(result.value.mode).toBe('sync');
+    expect(result.value.batchId).toBeUndefined();
+    expect(result.value.status).toBeUndefined();
+  });
+
+  // Persona-3 follow-up: in async mode the response is intentionally
+  // empty (work happens in background per ADR-0017 §2). Without the
+  // mode + hint fields the response is indistinguishable from a sync
+  // call where everything was deduped — that ambiguity left AI
+  // assistants unable to tell the user what just happened.
+  describe('async response shape', () => {
+    it('returns mode=async, an actionable hint, and a batchId', async () => {
+      const { command } = await fixture({ 'extraction.processing': 'async' });
+      const result = await executeCommand(
+        command,
+        { candidates: [{ kind: 'fact', content: 'Some durable fact' }] },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.written).toEqual([]);
+      expect(result.value.skipped).toEqual([]);
+      expect(result.value.superseded).toEqual([]);
+      expect(result.value.mode).toBe('async');
+      expect(result.value.status).toBe('accepted');
+      expect(typeof result.value.batchId).toBe('string');
+      expect(result.value.hint).toMatch(/processing/i);
+      expect(result.value.hint).toMatch(/list_memories|search_memory/);
+    });
+
+    it('dry-run stays synchronous even when extraction.processing is async', async () => {
+      const { command } = await fixture({ 'extraction.processing': 'async' });
+      const result = await executeCommand(
+        command,
+        { candidates: [{ kind: 'fact', content: 'preview only' }], dryRun: true },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.mode).toBe('sync');
+      expect(result.value.written.length).toBe(1);
+    });
   });
 
   it('applies autoTag to written memories', async () => {

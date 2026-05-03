@@ -88,6 +88,19 @@ const SystemInfoOutputSchema = z
         superseded: z.number().int().nonnegative(),
       })
       .strict(),
+    /**
+     * Single-user identity surfaced to assistants. `preferredName`
+     * is the value of the `user.preferredName` config; when null
+     * the assistant should fall back to "The user" when authoring
+     * memory content. Lifted into `system.info` (rather than
+     * forcing a separate `config.get`) because it's needed on the
+     * critical path of every write.
+     */
+    user: z
+      .object({
+        preferredName: z.string().nullable(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -155,7 +168,7 @@ export function createSystemCommands(deps: CreateSystemCommandsDeps): readonly A
     outputSchema: SystemInfoOutputSchema,
     metadata: {
       description:
-        'Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, and per-status memory counts. Read-only; safe to call freely.\n\nTip: call system.list_scopes to discover valid scopes for memory.write.',
+        'Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, per-status memory counts, and `user.preferredName` (the name an assistant should use when authoring memory content; falls back to "The user" when null). Read-only; safe to call freely — call once at session start to learn the user\'s name and the store\'s capabilities.\n\nTip: call system.list_scopes to discover valid scopes for memory.write.',
     },
     handler: async () =>
       runRepo('system.info', async () => {
@@ -184,6 +197,9 @@ export function createSystemCommands(deps: CreateSystemCommandsDeps): readonly A
             dimension: deps.configStore.get('embedder.local.dimension'),
           },
           counts,
+          user: {
+            preferredName: deps.configStore.get('user.preferredName'),
+          },
         };
       }),
   };

@@ -113,6 +113,22 @@ const MemoryExtractOutputSchema = z
     batchId: z.string().optional(),
     /** Present only in async mode. `'accepted'` means the batch is processing in background. */
     status: z.enum(['accepted']).optional(),
+    /**
+     * Always set. `'sync'` — the response arrays are authoritative
+     * and the work is done. `'async'` — the response arrays will
+     * always be empty; results land as memories within seconds and
+     * can be confirmed via `memory.list` or `memory.search`. The
+     * default mode is `async` (per `extraction.processing` config)
+     * because extract is a fire-and-forget batch operation; an
+     * assistant should not block on the response.
+     */
+    mode: z.enum(['sync', 'async']),
+    /**
+     * Optional next-step nudge for the assistant. Set in async mode
+     * because the empty response arrays would otherwise be silent
+     * about what to do or check next.
+     */
+    hint: z.string().optional(),
   })
   .strict();
 
@@ -139,7 +155,7 @@ export function createMemoryExtractCommand(
     outputSchema: MemoryExtractOutputSchema,
     metadata: {
       description:
-        'Batch-extract candidate memories from a conversation. The server handles dedup against existing memories, scrubbing, and writing. The assistant\'s job is reduced to dumping "what seemed worth remembering."\n\nThe server deduplicates automatically — when in doubt, include the candidate.\n\nExample:\n\n```json\n{"candidates":[{"kind":"preference","content":"User prefers dark mode in all editors"},{"kind":"fact","content":"The production database is PostgreSQL 15"}]}\n```',
+        'Batch-extract candidate memories from a conversation. The server handles dedup against existing memories, scrubbing, and writing. The assistant\'s job is reduced to dumping "what seemed worth remembering."\n\nThe server deduplicates automatically — when in doubt, include the candidate.\n\nThe response carries a `mode` field. When `mode: "sync"`, the `written`, `skipped`, and `superseded` arrays are authoritative and you can report them directly. When `mode: "async"` (the default per `extraction.processing` config), those arrays are intentionally empty — the server returned a receipt and is processing in background. The accompanying `hint` field explains what to expect; do not retry. Writes land as memories within ~1–5 seconds and can be confirmed with `list_memories` or `search_memory` if needed.\n\nExample:\n\n```json\n{"candidates":[{"kind":"preference","content":"User prefers dark mode in all editors"},{"kind":"fact","content":"The production database is PostgreSQL 15"}]}\n```',
       mcpName: 'extract_memory',
     },
     handler: async (input, ctx) => {
@@ -194,6 +210,8 @@ export function createMemoryExtractCommand(
           superseded: [],
           batchId,
           status: 'accepted' as const,
+          mode: 'async' as const,
+          hint: `Processing ${input.candidates.length} candidate(s) in background. Results land as memories within ~1–5 seconds; verify with list_memories or search_memory if needed. The empty arrays above are expected in async mode — no action required.`,
         });
       }
 
@@ -274,7 +292,7 @@ export function createMemoryExtractCommand(
         }
       }
 
-      return ok({ written, skipped, superseded });
+      return ok({ written, skipped, superseded, mode: 'sync' as const });
     },
   };
 }

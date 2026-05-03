@@ -67,6 +67,7 @@ interface SystemInfo {
   vectorEnabled: boolean;
   embedder: { configured: boolean; model: string; dimension: number };
   counts: { active: number; archived: number; forgotten: number; superseded: number };
+  user: { preferredName: string | null };
 }
 
 async function info(app: MementoApp): Promise<SystemInfo> {
@@ -131,6 +132,26 @@ describe('system.info', () => {
     expect(setResult.ok).toBe(true);
 
     expect((await info(app)).vectorEnabled).toBe(true);
+  });
+
+  // Persona-3 follow-up. The skill teaches AIs to attribute writes
+  // ("Raghu prefers pnpm" rather than "User prefers pnpm"), but
+  // there was no canonical way to discover the user's preferred
+  // handle. `system.info.user.preferredName` is now that surface,
+  // backed by the `user.preferredName` config key.
+  it('returns user.preferredName from config (null by default)', async () => {
+    const app = await newApp({ dbPath: ':memory:' });
+    const out = await info(app);
+    expect(out.user).toEqual({ preferredName: null });
+  });
+
+  it('reflects a configured user.preferredName', async () => {
+    const app = await newApp({
+      dbPath: ':memory:',
+      configOverrides: { 'user.preferredName': 'Raghu' },
+    });
+    const out = await info(app);
+    expect(out.user).toEqual({ preferredName: 'Raghu' });
   });
 
   it('counts memories by status', async () => {

@@ -49,6 +49,41 @@ editing, the error message you just saw, what the user typed
 five minutes ago). Memento is not a chat log.
 ```
 
+### Use a `topic: value` first line for preferences and decisions
+
+Conflict detection on `preference` and `decision` memories parses the *first line* of `content` as `topic: value` (or `topic = value`). Two memories with the same topic and different values are flagged for triage. Free-prose content without a parseable first line never conflicts — so an assistant that writes "Raghu prefers bun" today and "Raghu uses npm" tomorrow leaves both rows active with no surfaced contradiction.
+
+Teach the assistant the two-line shape:
+
+```text
+For `preference` and `decision` memories, start `content` with a
+single `topic: value` line followed by free prose for context.
+The first line is the structural anchor that conflict detection
+parses; without it, contradictory preferences silently coexist
+instead of being surfaced to the user.
+
+Example:
+  node-package-manager: pnpm
+
+  Raghu prefers pnpm over npm for Node projects — disk-efficient
+  and faster on his laptop.
+
+`fact`, `todo`, and `snippet` use different conflict heuristics
+and don't need the first-line anchor.
+```
+
+### Attribute statements with the user's preferred name
+
+`info_system` exposes `user.preferredName`. Read it once at session start and use it when authoring memory content (`Raghu prefers pnpm` rather than `User prefers pnpm`). The user sets it via `memento config set user.preferredName "<name>"`. When `null`, write "The user" — never invent a name from chat context.
+
+```text
+At session start, call `info_system` and read `user.preferredName`.
+Use that name when writing memory content (e.g. "Raghu prefers
+pnpm"). If it is null, use "The user" instead. Do not invent a
+name from chat context — the config key is the only source of
+truth for how to refer to the user.
+```
+
 ## When to confirm
 
 `get_memory_context` and `search_memory` return memories without bumping their `lastConfirmedAt` timestamp. The timestamp only moves when the assistant explicitly calls `confirm_memory` after actually using the memory. This keeps decay semantics meaningful — a memory that is loaded into context but never acted on still ages.
@@ -63,7 +98,7 @@ to it makes ranking worse over time.
 
 ## When to supersede vs. update
 
-Memento's `update_memory` is restricted to non-content fields (tags, kind, pinned). A content change must go through `supersede_memory`, which preserves both rows and links them.
+Memento's `update_memory` is restricted to non-content fields (tags, kind, pinned, sensitive). A content change must go through `supersede_memory`, which preserves both rows and links them.
 
 ```text
 If the user changes their mind about something durable
@@ -119,7 +154,18 @@ memory; treat chat as ephemeral.
 - Before ending a session, call `extract_memory` with a batch of
   candidates for anything worth remembering that wasn't written
   explicitly during the conversation. The server deduplicates
-  automatically — when in doubt, include it.
+  automatically — when in doubt, include it. The default
+  configuration is async: the response will be `{written:[],
+  skipped:[], superseded:[], mode:"async", batchId, hint, status:
+  "accepted"}` — that is the receipt, not a failure. Writes land
+  as memories within seconds; do not retry.
+- For preferences and decisions, start `content` with a single
+  `topic: value` line followed by prose. Conflict detection
+  parses that line; without it, contradictory preferences
+  silently coexist.
+- Use the user's preferred name from `info_system.user.preferredName`
+  when authoring memory content; fall back to "The user" when
+  that field is null.
 - For changes of mind, use `supersede_memory`, not `update_memory`.
 - Never write secrets, tokens, or credentials.
 ```

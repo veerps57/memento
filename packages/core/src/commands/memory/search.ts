@@ -36,7 +36,7 @@ import type { SearchPage } from '../../retrieval/index.js';
 import type { MementoSchema } from '../../storage/schema.js';
 import { repoErrorToMementoError } from '../errors.js';
 import type { Command } from '../types.js';
-import { projectMemoryView } from './commands.js';
+import { computeEmbeddingStatus, projectMemoryView } from './commands.js';
 import { MemorySearchInputSchema } from './search-input.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
@@ -162,16 +162,19 @@ export function createMemorySearchCommand(
           { actor: ctx.actor },
         );
         const annotated = await annotateWithConflicts(deps, page);
-        if (!(input.includeEmbedding === true)) {
-          return ok({
-            ...annotated,
-            results: annotated.results.map((r) => ({
+        const stripEmbedding = !(input.includeEmbedding === true);
+        return ok({
+          ...annotated,
+          results: annotated.results.map((r) => {
+            const embeddingStatus = computeEmbeddingStatus(r.memory, deps.configStore);
+            return {
               ...r,
-              memory: { ...r.memory, embedding: null },
-            })),
-          });
-        }
-        return ok(annotated);
+              memory: stripEmbedding
+                ? { ...r.memory, embedding: null, embeddingStatus }
+                : { ...r.memory, embeddingStatus },
+            };
+          }),
+        });
       } catch (caught) {
         return err<MementoError>(repoErrorToMementoError(caught, 'memory.search'));
       }

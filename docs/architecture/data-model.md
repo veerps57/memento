@@ -57,6 +57,7 @@ interface Memory {
 
   // — Embeddings (optional) —
   embedding: Embedding | null; // present only when local embedder is enabled
+  embeddingStatus?: 'present' | 'pending' | 'disabled'; // wire-only
 }
 
 type MemoryKind =
@@ -84,6 +85,7 @@ interface OwnerRef {
 - `lastConfirmedAt` is a **denormalized cache** of the most recent `MemoryEvent` for this memory. `memento doctor` recomputes and verifies it.
 - `owner` is always populated, even when always `{type:'local',id:'self'}`. The model is multi-user-ready from day one.
 - `embedding` is present iff `retrieval.vector.enabled = true` **at the time the memory was written or last embedded**. Embedding model migration is explicit via `memento embedding rebuild`.
+- `embeddingStatus` is a **wire-only projection field** computed at the command-output boundary. Storage and the repository layer do not produce it. Single-memory command responses (`write`, `read`, `update`, `confirm`, `forget`, `archive`, `restore`, `supersede`, `set_embedding`) and the list / search / context views all set it to `'present'` (vector exists), `'pending'` (`retrieval.vector.enabled = true` but the async embedder hasn't caught up yet — common right after a write), or `'disabled'` (vector retrieval is off). The field replaces the previous ambiguity where `embedding: null` could mean any of three different states.
 
 ### Why `kind` is a discriminated union
 
@@ -93,7 +95,7 @@ This is principle 3 (Extensible) in code: adding a `MemoryKind` is a localized c
 
 ### Why content updates require supersession
 
-`memory.update` is restricted to `tags`, `kind`, `pinned`. Content changes route through `memory.supersede`, which atomically writes a new memory and links the old one. This preserves history (every claim Memento ever made is recoverable) and makes "what did I believe at time T?" answerable from the audit log alone.
+`memory.update` is restricted to `tags`, `kind`, `pinned`, `sensitive` — taxonomy and presentation fields only. Content changes route through `memory.supersede`, which atomically writes a new memory and links the old one. This preserves history (every claim Memento ever made is recoverable) and makes "what did I believe at time T?" answerable from the audit log alone.
 
 The error message returned when a caller attempts to mutate `content` via `update` points at `supersede` explicitly.
 
