@@ -1,7 +1,32 @@
-# Memento landing page — allow all crawlers.
+# Memento landing page — public marketing site, all crawlers welcome.
 # Single-page static site; no admin / private routes to disallow.
+
 User-agent: *
 Allow: /
 
-# Sitemap will be added when a custom domain is in place
-# (single-URL sitemap until then is no extra signal).
+# Explicit allows for major AI crawlers. Memento is open source and
+# the landing page is intentionally citeable; we want LLM-backed
+# search engines and assistants to surface it accurately. If this
+# policy changes (e.g. opt-out of training corpora), tighten here.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+Sitemap: https://runmemento.com/sitemap.xml

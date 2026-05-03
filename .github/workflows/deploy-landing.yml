@@ -53,12 +53,11 @@ jobs:
 
       - name: Build landing
         env:
-          # GitHub Pages serves the site at
-          # https://<owner>.github.io/<repo>/, so Vite's `base`
-          # must include the repo segment for asset URLs to
-          # resolve. When a custom domain is in place, change
-          # this to `/`.
-          VITE_BASE_PATH: /memento/
+          # Custom domain (runmemento.com) serves at the apex,
+          # so Vite's `base` is `/`. The CNAME file in
+          # packages/landing/public/ tells GitHub Pages which
+          # host to serve.
+          VITE_BASE_PATH: /
         run: pnpm -F @psraghuveer/memento-landing build
 
       - name: Configure Pages

@@ -1,0 +1,40 @@
+# Memento
+
+> A local-first, LLM-agnostic memory layer for AI assistants. Memento runs an MCP server over a single SQLite file on the user's machine, giving any MCP-capable AI assistant (Claude Code, Claude Desktop, Cursor, GitHub Copilot, Cline, OpenCode, Aider, custom agents) durable, structured memory about the user, their work, and their decisions. No cloud, no vendor lock-in, no outbound network calls by default.
+
+Memento solves a problem that every AI session re-creates: re-explaining preferences, project conventions, prior decisions, and dead-ends. Each tool has its own siloed answer (`CLAUDE.md`, `.cursorrules`, `copilot-instructions.md`, ChatGPT Memory) — but the human is the constant, and their memory should not fragment across vendors. Memento is the one place that memory lives.
+
+Key properties: local-first (single SQLite file under the user's home directory), LLM-agnostic (no model dependencies, no proprietary APIs), tool-agnostic (MCP for AI agents, CLI for humans and scripts, kept in lockstep by a single command registry), privacy-conscious (built-in regex scrubber strips secrets before persistence), auditable (every write produces an event in an append-only log), and versioned (typed memories with explicit lifecycles: active, superseded, forgotten, archived). Apache-2.0 licensed.
+
+## Install
+
+- [npm package](https://www.npmjs.com/package/@psraghuveer/memento): `npx @psraghuveer/memento init` creates the database, runs migrations, and prints copy-paste MCP snippets for Claude Code, Claude Desktop, Cursor, VS Code Agent mode, and OpenCode.
+
+## Documentation
+
+- [README](https://github.com/veerps57/memento/blob/main/README.md): Quickstart, install, MCP client setup, "your first 5 minutes" walkthrough.
+- [ARCHITECTURE.md](https://github.com/veerps57/memento/blob/main/ARCHITECTURE.md): Internal design, data model, storage engine, retrieval pipeline.
+- [CLI reference](https://github.com/veerps57/memento/blob/main/docs/reference/cli.md): All CLI commands and flags.
+- [MCP tools reference](https://github.com/veerps57/memento/blob/main/docs/reference/mcp-tools.md): All MCP tools exposed to clients.
+- [Config keys reference](https://github.com/veerps57/memento/blob/main/docs/reference/config-keys.md): Every configurable behavior with defaults and value schemas.
+- [Architecture Decision Records](https://github.com/veerps57/memento/tree/main/docs/adr): Decision history with rationale.
+
+## Guides
+
+- [MCP client setup](https://github.com/veerps57/memento/blob/main/docs/guides/mcp-client-setup.md): Step-by-step wiring for each supported client.
+- [Operations](https://github.com/veerps57/memento/blob/main/docs/guides/operations.md): `compact`, `backup`, `status`, scheduling.
+- [Embeddings](https://github.com/veerps57/memento/blob/main/docs/guides/embeddings.md): Vector retrieval, model download, configuration.
+- [Conflict workflow](https://github.com/veerps57/memento/blob/main/docs/guides/conflicts.md): How memories that disagree get triaged.
+- [Dashboard](https://github.com/veerps57/memento/blob/main/docs/guides/dashboard.md): Local-first web UI for browsing, audit, and curation.
+- [Teach your assistant](https://github.com/veerps57/memento/blob/main/docs/guides/teach-your-assistant.md): Persona snippet so AI assistants use Memento well.
+- [Troubleshooting](https://github.com/veerps57/memento/blob/main/docs/guides/troubleshooting.md): Common failure modes and fixes.
+
+## Source
+
+- [GitHub repository](https://github.com/veerps57/memento): Apache-2.0 licensed.
+- [GitHub Discussions](https://github.com/veerps57/memento/discussions): Questions and ideas.
+- [Issue tracker](https://github.com/veerps57/memento/issues): Bugs and accepted work.
+
+## Optional
+
+- [Full content snapshot](https://runmemento.com/llms-full.txt): A single-file dump of README + key reference material for one-shot ingestion.
