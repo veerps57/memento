@@ -80,7 +80,7 @@ export const MemoryWriteInputSchema = z
       .max(128)
       .optional()
       .describe(
-        'Optional idempotency token. If a memory with the same (scope, clientToken) already exists and is active, the existing id is returned without creating a duplicate.',
+        'Optional idempotency token. If a memory with the same (scope, clientToken) already exists and is active, the existing id is returned without creating a duplicate. Programmatic surface (scripts, migrations, retry-safe pipelines) — AI assistants writing one-off statements from chat typically omit this.',
       ),
     sensitive: z
       .boolean()
@@ -114,6 +114,12 @@ export const MemoryWriteManyInputSchema = z
 export const MemoryReadInputSchema = z
   .object({
     id: MemoryIdSchema.describe('The ULID of the memory to read.'),
+    includeEmbedding: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether to include the full embedding vector in the response. Defaults to false. Embedding vectors can be large (hundreds of floats); leave omitted unless you specifically need the raw vector for debugging.',
+      ),
   })
   .strict();
 
@@ -249,6 +255,7 @@ export const MemoryUpdateInputSchema = z
         'Patch object — must contain at least one of `tags`, `kind`, `pinned`, `sensitive`. Cannot mutate content, scope, or storedConfidence (use memory.supersede or memory.confirm instead).',
       )
       .superRefine((patch, ctx) => {
+        let forbiddenKeyFlagged = false;
         for (const key of Object.keys(patch)) {
           if (ALLOWED_PATCH_KEYS.has(key)) continue;
           const redirect = PATCH_KEY_REDIRECTS[key];
@@ -258,7 +265,15 @@ export const MemoryUpdateInputSchema = z
             message:
               redirect ?? `unknown patch key '${key}' (allowed: tags, kind, pinned, sensitive)`,
           });
+          forbiddenKeyFlagged = true;
         }
+        // When a forbidden key (e.g. `content`) is the only key in
+        // the patch the redirect message above already tells the
+        // caller exactly what to do (use memory.supersede). Adding
+        // a second "must change at least one field" error on top
+        // is noisy — short-circuit when the forbidden-key path
+        // already fired so the response stays one actionable line.
+        if (forbiddenKeyFlagged) return;
         if (
           patch.tags === undefined &&
           patch.kind === undefined &&

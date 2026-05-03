@@ -73,6 +73,12 @@ describe('memory.context', () => {
     if (!result.ok) return;
     expect(result.value.results).toEqual([]);
     expect(result.value.resolvedKinds).toEqual(['fact', 'preference', 'decision']);
+    // Persona-3 follow-up: a fresh AI session calling
+    // get_memory_context on an empty store would otherwise see only
+    // an empty array and might never start writing. The hint
+    // explicitly tells it the store is empty + what to do next.
+    expect(result.value.hint).toMatch(/store is empty/i);
+    expect(result.value.hint).toMatch(/write_memory|extract_memory/);
   });
 
   it('returns active memories ranked by score', async () => {
@@ -338,6 +344,10 @@ describe('memory.context', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.results[0]!.memory.embedding).toBeNull();
+    // Persona-3 follow-up: with `embedding: null` ambiguous between
+    // "stripped for payload size" and "vector retrieval is off", we
+    // surface `embeddingStatus` so callers always know which one.
+    expect(result.value.results[0]!.memory.embeddingStatus).toBeDefined();
   });
 
   it('returns all active memories when kinds is empty array', async () => {

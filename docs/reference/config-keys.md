@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 68 keys.
+Total: 69 keys.
 
 ## `decay.*`
 
@@ -157,3 +157,9 @@ Total: 68 keys.
 | --- | --- | --- | --- |
 | `export.includeEmbeddings` | `false` | yes | Default for `memento export` when `--include-embeddings` is not passed. Embeddings are model-bound and rebuildable, so the default is `false`; flip to `true` only if you know the destination machine cannot rebuild them. |
 | `export.defaultPath` | `null` | yes | Default destination path for `memento export` when `--out` is not passed. `null` means write to stdout; a string is treated as a filesystem path. |
+
+## `user.*`
+
+| Key | Default | Mutable | Description |
+| --- | --- | --- | --- |
+| `user.preferredName` | `null` | yes | How an assistant should refer to the user when writing memory content. Surfaced in `system.info` so the assistant can attribute statements (e.g. "Raghu prefers pnpm" rather than "User prefers pnpm"). When `null`, the assistant should write "The user" instead. Set with `memento config set user.preferredName "<name>"`. |

@@ -72,7 +72,7 @@ Both writes succeed or both fail. There is no transient state where one is updat
 
 ### Why supersession over editing
 
-`memory.update` is restricted to non-content fields (`tags`, `kind`, `pinned`). Content changes always go through `supersede`. This guarantees:
+`memory.update` is restricted to non-content fields (`tags`, `kind`, `pinned`, `sensitive`). Content changes always go through `supersede`. This guarantees:
 
 - **History is preserved.** Every claim Memento ever made is recoverable.
 - **Time travel works.** "What did I believe at time T?" is answerable from the audit log.

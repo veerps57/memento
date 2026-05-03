@@ -156,6 +156,23 @@ const MemoryBaseSchema = z
      * unchanged.
      */
     sensitive: z.boolean().default(false),
+
+    /**
+     * Wire-level signal of embedding state. Optional because the
+     * storage / repository layers do not produce it — it's
+     * computed at the command-output projection boundary by
+     * {@link projectMemoryForOutput} so an assistant reading a
+     * single-memory response can tell whether the vector is
+     * `'present'` (computed and indexed), `'pending'` (the
+     * embedder hasn't caught up yet — common right after a
+     * `memory.write`), or `'disabled'` (`retrieval.vector.enabled`
+     * is `false`).
+     *
+     * The field is also why the wire output now strips the raw
+     * vector by default: callers that need to know "is there an
+     * embedding?" no longer have to inspect 768 floats.
+     */
+    embeddingStatus: z.enum(['present', 'pending', 'disabled']).optional(),
   })
   .strict();
 

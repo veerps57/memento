@@ -627,6 +627,21 @@ export const CONFIG_KEYS = {
     description:
       'Default destination path for `memento export` when `--out` is not passed. `null` means write to stdout; a string is treated as a filesystem path.',
   }),
+
+  // — User —
+  // Single-user-mode identity. The data model is multi-user-ready
+  // (`OwnerRef` exists from day one, AGENTS.md rule 4) but v1
+  // ships single-user only, so just one knob here: how the
+  // assistant should refer to the user when authoring memory
+  // content. Without this, every assistant either invents a name
+  // from chat context or writes "User prefers …" — both feel off.
+  'user.preferredName': defineKey({
+    schema: z.string().min(1).max(64).nullable(),
+    default: null,
+    mutable: true,
+    description:
+      'How an assistant should refer to the user when writing memory content. Surfaced in `system.info` so the assistant can attribute statements (e.g. "Raghu prefers pnpm" rather than "User prefers pnpm"). When `null`, the assistant should write "The user" instead. Set with `memento config set user.preferredName "<name>"`.',
+  }),
 } as const;
 
 /**

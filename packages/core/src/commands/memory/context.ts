@@ -39,7 +39,7 @@ import { scopeKey } from '../../scope/resolver.js';
 import type { MementoSchema } from '../../storage/schema.js';
 import { repoErrorToMementoError } from '../errors.js';
 import type { Command } from '../types.js';
-import { projectMemoryView } from './commands.js';
+import { computeEmbeddingStatus, projectMemoryView } from './commands.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
 
@@ -89,6 +89,13 @@ const MemoryContextOutputSchema = z
   .object({
     results: z.array(ContextResultSchema),
     resolvedKinds: z.array(z.enum(MEMORY_KIND_TYPES)),
+    /**
+     * Optional next-step nudge for the assistant. Set only when
+     * the response is otherwise silent (no results) — gives a
+     * clear signal that the empty array means "store is empty"
+     * rather than "no relevant matches for the current scope."
+     */
+    hint: z.string().optional(),
   })
   .strict();
 
@@ -200,20 +207,37 @@ export function createMemoryContextCommand(
         // Apply limit and project to output view.
         const redact = cfg.get('privacy.redactSensitiveSnippets');
         const page = ranked.slice(0, limit);
-        const results = page.map((r) => ({
-          memory: projectMemoryView(r.memory, redact) as MemoryView,
-          score: r.score,
-          breakdown: r.breakdown,
-        }));
+        const results = page.map((r) => {
+          const view = projectMemoryView(r.memory, redact) as MemoryView;
+          const embeddingStatus = computeEmbeddingStatus(r.memory, deps.configStore);
+          return {
+            memory: { ...view, embedding: null, embeddingStatus },
+            score: r.score,
+            breakdown: r.breakdown,
+          };
+        });
 
-        // Strip embeddings from the output.
-        const stripped = results.map((r) => ({
-          ...r,
-          memory: { ...r.memory, embedding: null },
-        }));
+        // Set a next-step nudge only when results are empty so an
+        // assistant calling `get_memory_context` on a fresh store
+        // gets an actionable signal instead of an opaque silence.
+        // Distinguish "store is genuinely empty" from "matched
+        // nothing for this scope" so the assistant's reply is
+        // accurate.
+        if (results.length === 0) {
+          const totalActive = await deps.memoryRepository.list({ status: 'active', limit: 1 });
+          const hint =
+            totalActive.length === 0
+              ? 'Store is empty. Capture user preferences as they come up via write_memory, or use extract_memory at session end.'
+              : 'No memories matched the requested scope/kinds/tags. Try search_memory with a topic, or call get_memory_context with no arguments to see the global top-ranked set.';
+          return ok({
+            results,
+            resolvedKinds: kinds as MemoryKindType[],
+            hint,
+          });
+        }
 
         return ok({
-          results: stripped,
+          results,
           resolvedKinds: kinds as MemoryKindType[],
         });
       } catch (caught) {

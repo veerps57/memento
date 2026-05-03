@@ -273,6 +273,8 @@ Batch-extract candidate memories from a conversation. The server handles dedup a
 
 The server deduplicates automatically — when in doubt, include the candidate.
 
+The response carries a `mode` field. When `mode: "sync"`, the `written`, `skipped`, and `superseded` arrays are authoritative and you can report them directly. When `mode: "async"` (the default per `extraction.processing` config), those arrays are intentionally empty — the server returned a receipt and is processing in background. The accompanying `hint` field explains what to expect; do not retry. Writes land as memories within ~1–5 seconds and can be confirmed with `list_memories` or `search_memory` if needed.
+
 Example:
 
 ```json
@@ -319,7 +321,7 @@ Examples:
 
 ### `memento memory read`
 
-Fetch a single memory by id, or null if absent.
+Fetch a single memory by id, or null if absent. By default the embedding vector is stripped (callers almost never need 768 floats); pass `includeEmbedding: true` for the raw vector.
 
 - **Side-effect:** `read` — Pure read; safe to call freely.
 
@@ -366,7 +368,7 @@ Example:
 
 ### `memento memory update`
 
-Update taxonomy fields (tags / kind / pinned) of an active memory. Does NOT change content — use memory.supersede for that.
+Update non-content fields (tags / kind / pinned / sensitive) of an active memory. Does NOT change content — use memory.supersede for that.
 
 Example:
 
@@ -380,7 +382,9 @@ Example:
 
 Create a new memory in the given scope.
 
-Workflow: search first to avoid duplicates. If a similar memory exists, use memory.supersede to update it instead. Use memory.update for non-content changes (tags, pinned).
+Workflow: search first to avoid duplicates. If a similar memory exists, use memory.supersede to update it instead. Use memory.update for non-content changes (tags, kind, pinned, sensitive).
+
+For `preference` and `decision` kinds, start the content with a single `topic: value` line followed by free prose. Conflict detection parses that first line — without it two contradictory preferences silently coexist. Example: `node-package-manager: pnpm\n\nRaghu prefers pnpm over npm for Node projects.`
 
 Minimal example (pinned, storedConfidence, summary, owner all have defaults):
 
@@ -400,11 +404,13 @@ Full example:
 
 Atomically create multiple memories in a single transaction. Per-item clientToken idempotency is honoured; on any failure the whole batch rolls back.
 
+Programmatic / operator surface — AI assistants typically do NOT reach for this. For multiple explicit user statements ("remember A, B, and C"), prefer N sequential `write_memory` calls so one bad item does not roll the others back. For end-of-session sweeps over things the user mentioned in passing, use `extract_memory` (server dedups + scrubs + lowers confidence). Use `write_many_memories` only when you genuinely need all-or-nothing transactional semantics — e.g. importing a curated batch from a doc.
+
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
 ### `memento system info`
 
-Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, and per-status memory counts. Read-only; safe to call freely.
+Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, per-status memory counts, and `user.preferredName` (the name an assistant should use when authoring memory content; falls back to "The user" when null). Read-only; safe to call freely — call once at session start to learn the user's name and the store's capabilities.
 
 Tip: call system.list_scopes to discover valid scopes for memory.write.
 

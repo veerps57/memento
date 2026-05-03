@@ -53,9 +53,12 @@ function counterFactory(prefix: string): () => string {
 
 const fixedClock = '2025-01-01T00:00:00.000Z';
 
-async function fixture(): Promise<{
+async function fixture(opts?: {
+  configOverrides?: Parameters<typeof createConfigStore>[0];
+}): Promise<{
   repo: MemoryRepository;
   byName: Map<string, AnyCommand>;
+  configStore: ReturnType<typeof createConfigStore>;
 }> {
   const handle = openDatabase({ path: ':memory:' });
   handles.push(handle);
@@ -65,9 +68,10 @@ async function fixture(): Promise<{
     memoryIdFactory: counterFactory('M0') as never,
     eventIdFactory: counterFactory('E0'),
   });
-  const commands = createMemoryCommands(repo);
+  const configStore = createConfigStore(opts?.configOverrides);
+  const commands = createMemoryCommands(repo, undefined, { configStore });
   const byName = new Map(commands.map((c) => [c.name, c]));
-  return { repo, byName };
+  return { repo, byName, configStore };
 }
 
 const writeInput = {
@@ -317,6 +321,146 @@ describe('createMemoryCommands', () => {
     });
   });
 
+  // Pinned by the persona-3 lean-response pass: every single-memory
+  // command's wire output strips the raw 768-float embedding (the
+  // assistant almost never needs it; carrying it inflates context
+  // for free) and instead exposes a small `embeddingStatus` enum
+  // — `'present'` / `'pending'` / `'disabled'` — so the assistant
+  // can still tell whether the vector exists. `memory.read` is
+  // the one opt-in path back to the raw vector. These tests pin
+  // both sides so a future "let's just always include the vector"
+  // refactor fails loudly.
+  describe('embeddingStatus + lean responses', () => {
+    it('write returns embedding=null and embeddingStatus=disabled when vector retrieval is off', async () => {
+      const { byName } = await fixture({
+        configOverrides: { 'retrieval.vector.enabled': false },
+      });
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      expect(writeRes.ok).toBe(true);
+      if (!writeRes.ok) return;
+      expect(writeRes.value.embedding).toBeNull();
+      expect(writeRes.value.embeddingStatus).toBe('disabled');
+    });
+
+    it('write returns embedding=null and embeddingStatus=pending when vector is on but the embedder has not run', async () => {
+      const { byName } = await fixture({
+        configOverrides: { 'retrieval.vector.enabled': true },
+      });
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      expect(writeRes.ok).toBe(true);
+      if (!writeRes.ok) return;
+      expect(writeRes.value.embedding).toBeNull();
+      expect(writeRes.value.embeddingStatus).toBe('pending');
+    });
+
+    it('read defaults to stripped output; opts back in via includeEmbedding=true', async () => {
+      const { byName } = await fixture();
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+      await executeCommand(
+        get(byName, 'memory.set_embedding'),
+        { id: writeRes.value.id, model: 'test', dimension: 3, vector: [0.1, 0.2, 0.3] },
+        ctx,
+      );
+
+      const stripped = await executeCommand(
+        get(byName, 'memory.read'),
+        { id: writeRes.value.id },
+        ctx,
+      );
+      expect(stripped.ok).toBe(true);
+      if (!stripped.ok) return;
+      expect(stripped.value?.embedding).toBeNull();
+      expect(stripped.value?.embeddingStatus).toBe('present');
+
+      const full = await executeCommand(
+        get(byName, 'memory.read'),
+        { id: writeRes.value.id, includeEmbedding: true },
+        ctx,
+      );
+      expect(full.ok).toBe(true);
+      if (!full.ok) return;
+      expect(full.value?.embedding?.dimension).toBe(3);
+      expect(full.value?.embeddingStatus).toBe('present');
+    });
+
+    it('confirm / update / forget / restore / archive all strip the embedding by default', async () => {
+      const { byName } = await fixture();
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+      const id = writeRes.value.id;
+      await executeCommand(
+        get(byName, 'memory.set_embedding'),
+        { id, model: 'test', dimension: 3, vector: [0.1, 0.2, 0.3] },
+        ctx,
+      );
+
+      // confirm
+      const confirmed = await executeCommand(get(byName, 'memory.confirm'), { id }, ctx);
+      expect(confirmed.ok && confirmed.value.embedding).toBeNull();
+
+      // update (taxonomy-only)
+      const updated = await executeCommand(
+        get(byName, 'memory.update'),
+        { id, patch: { pinned: true } },
+        ctx,
+      );
+      expect(updated.ok && updated.value.embedding).toBeNull();
+
+      // forget
+      const forgotten = await executeCommand(
+        get(byName, 'memory.forget'),
+        { id, confirm: true, reason: 'persona-3 test' },
+        ctx,
+      );
+      expect(forgotten.ok && forgotten.value.embedding).toBeNull();
+
+      // restore
+      const restored = await executeCommand(get(byName, 'memory.restore'), { id }, ctx);
+      expect(restored.ok && restored.value.embedding).toBeNull();
+
+      // archive
+      const archived = await executeCommand(
+        get(byName, 'memory.archive'),
+        { id, confirm: true },
+        ctx,
+      );
+      expect(archived.ok && archived.value.embedding).toBeNull();
+    });
+
+    it('supersede strips embeddings on both previous and current', async () => {
+      const { byName } = await fixture();
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+      await executeCommand(
+        get(byName, 'memory.set_embedding'),
+        {
+          id: writeRes.value.id,
+          model: 'test',
+          dimension: 3,
+          vector: [0.1, 0.2, 0.3],
+        },
+        ctx,
+      );
+
+      const sup = await executeCommand(
+        get(byName, 'memory.supersede'),
+        {
+          oldId: writeRes.value.id,
+          next: { ...writeInput, content: 'updated' },
+        },
+        ctx,
+      );
+      expect(sup.ok).toBe(true);
+      if (!sup.ok) return;
+      expect(sup.value.previous.embedding).toBeNull();
+      expect(sup.value.previous.embeddingStatus).toBe('present');
+      expect(sup.value.current.embedding).toBeNull();
+      // `current` is freshly written; embedder hasn't run yet.
+      expect(sup.value.current.embeddingStatus).toBe('pending');
+    });
+  });
+
   describe('memory.supersede', () => {
     it('replaces the active head and returns previous + current', async () => {
       const { byName } = await fixture();
@@ -469,6 +613,12 @@ describe('createMemoryCommands', () => {
       expect(result.error.code).toBe('INVALID_INPUT');
       expect(result.error.message).toMatch(/cannot update `content`/);
       expect(result.error.message).toMatch(/memory\.supersede/);
+      // Persona-3 follow-up: when a forbidden key is the only key in
+      // the patch, the redirect message above is enough — adding the
+      // generic "patch must change at least one field" on top is
+      // noise. The superRefine short-circuits in that case so the
+      // response stays a single actionable line.
+      expect(result.error.message).not.toMatch(/at least one field/);
     });
 
     it('rejects update of scope with a hint pointing at memory.supersede', async () => {
@@ -626,8 +776,23 @@ describe('createMemoryCommands', () => {
       );
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.embedding).not.toBeNull();
-      expect(result.value.embedding?.dimension).toBe(3);
+      // Per the lean-response design (persona-3 pass), single-memory
+      // command outputs strip the embedding vector — the operator
+      // already supplied it, so echoing 768 floats back is just
+      // payload bloat. Confirm the wire-level signal instead.
+      expect(result.value.embedding).toBeNull();
+      expect(result.value.embeddingStatus).toBe('present');
+      // Round-trip through `memory.read` with `includeEmbedding: true`
+      // proves the vector actually persisted; this is the documented
+      // opt-in path for callers that want the raw vector back.
+      const readRes = await executeCommand(
+        get(byName, 'memory.read'),
+        { id: writeRes.value.id, includeEmbedding: true },
+        ctx,
+      );
+      expect(readRes.ok).toBe(true);
+      if (!readRes.ok) return;
+      expect(readRes.value?.embedding?.dimension).toBe(3);
     });
 
     it('returns INVALID_INPUT on dimension/vector mismatch', async () => {

@@ -57,12 +57,27 @@ function TopBar({
   readonly onMenuClick: () => void;
   readonly drawerOpen: boolean;
 }): JSX.Element {
+  // Pull the user's preferred name from `system.info.user.preferredName`
+  // (config key `user.preferredName`). When set, the wordmark renders
+  // shell-prompt style — `<name>@memento_` — to match the dashboard's
+  // terminal aesthetic. When null (default), falls back to plain
+  // `memento_`. We tolerate the loading state with the same fallback;
+  // the wordmark must paint instantly on first render.
+  const { data: info } = useSystemInfo();
+  const preferredName = info?.user.preferredName ?? null;
+
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-bg px-3 sm:px-4">
       {/* Wordmark with blinking-cursor caret. The caret is
           purely decorative; it is not the actual focus indicator.
           Hidden on widths below 320px (impossibly narrow) only. */}
       <Link to="/" className="flex items-center gap-1 font-mono text-sm">
+        {preferredName !== null ? (
+          <>
+            <span className="text-muted">{preferredName.toLowerCase()}</span>
+            <span className="text-muted">@</span>
+          </>
+        ) : null}
         <span className="font-semibold tracking-widish">memento</span>
         <span className="text-muted">_</span>
         <span aria-hidden className="inline-block h-3 w-1.5 animate-pulse bg-fg" />
