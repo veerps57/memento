@@ -10,12 +10,8 @@
       name="description"
       content="A local-first, LLM-agnostic memory layer for AI assistants. Runs as an MCP server over a single SQLite file on your machine. No cloud, no vendor lock-in."
     />
-    <!-- Canonical + OG URL.
-         TODO when custom domain lands: swap both occurrences to
-         the new origin (e.g. https://memento.dev/). The github.io
-         URL is the production URL until then. -->
-    <link rel="canonical" href="https://veerps57.github.io/memento/" />
-    <meta property="og:url" content="https://veerps57.github.io/memento/" />
+    <link rel="canonical" href="https://runmemento.com/" />
+    <meta property="og:url" content="https://runmemento.com/" />
     <meta property="og:site_name" content="Memento" />
     <meta property="og:title" content="Memento — A local-first, LLM-agnostic memory layer for AI assistants" />
     <meta
@@ -23,29 +19,57 @@
       content="One place for everything your AI assistants should remember about you. Works with Claude, Cursor, Copilot, Cline, OpenCode, and any MCP client."
     />
     <meta property="og:type" content="website" />
-    <!-- Twitter Cards: `summary` (text-only) until an OG image exists. -->
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:image" content="https://runmemento.com/og.png" />
+    <meta property="og:image:width" content="2470" />
+    <meta property="og:image:height" content="1226" />
+    <meta
+      property="og:image:alt"
+      content="Memento — a local-first, LLM-agnostic memory layer for AI assistants."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Memento — A local-first, LLM-agnostic memory layer for AI assistants" />
     <meta
       name="twitter:description"
       content="One place for everything your AI assistants should remember. MCP-native. Local-first. Works with Claude, Cursor, Copilot, Cline, OpenCode."
     />
-    <!-- Schema.org SoftwareApplication. Helps search engines
-         understand what Memento is, render rich results, and
-         link the npm package + repo as the install path. -->
+    <meta name="twitter:image" content="https://runmemento.com/og.png" />
+    <meta
+      name="twitter:image:alt"
+      content="Memento — a local-first, LLM-agnostic memory layer for AI assistants."
+    />
+    <!-- Schema.org graph: WebSite (site identity) + SoftwareApplication
+         (the product). Helps search engines render rich results and
+         lets LLM crawlers cite the npm package and repo as canonical
+         install paths. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Memento",
-        "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "macOS, Linux, Windows",
-        "description": "A local-first, LLM-agnostic memory layer for AI assistants. Runs as an MCP server over a single SQLite file on your machine.",
-        "license": "https://www.apache.org/licenses/LICENSE-2.0",
-        "url": "https://veerps57.github.io/memento/",
-        "downloadUrl": "https://www.npmjs.com/package/@psraghuveer/memento",
-        "codeRepository": "https://github.com/veerps57/memento",
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://runmemento.com/#website",
+            "name": "Memento",
+            "url": "https://runmemento.com/",
+            "description": "A local-first, LLM-agnostic memory layer for AI assistants.",
+            "inLanguage": "en"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://runmemento.com/#software",
+            "name": "Memento",
+            "applicationCategory": "DeveloperApplication",
+            "operatingSystem": "macOS, Linux, Windows",
+            "description": "A local-first, LLM-agnostic memory layer for AI assistants. Runs as an MCP server over a single SQLite file on your machine. No cloud, no vendor lock-in. Works with Claude Code, Cursor, Copilot, Cline, OpenCode, and any MCP-capable client.",
+            "license": "https://www.apache.org/licenses/LICENSE-2.0",
+            "url": "https://runmemento.com/",
+            "downloadUrl": "https://www.npmjs.com/package/@psraghuveer/memento",
+            "codeRepository": "https://github.com/veerps57/memento",
+            "softwareVersion": "1",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "isPartOf": { "@id": "https://runmemento.com/#website" }
+          }
+        ]
       }
     </script>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230E0E10'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='18' fill='%23E8B86C'%3Em%3C/text%3E%3C/svg%3E" />
