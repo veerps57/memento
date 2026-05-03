@@ -274,10 +274,10 @@ describe('runImport', () => {
     expect(result.error.code).toBe('INVALID_INPUT');
   });
 
-  // Phase 4 hardening: `import.maxBytes` upfront `fs.stat` rejects
-  // an oversize artefact before `createReadStream` opens. Without
-  // this, a multi-GB JSONL file OOMs the CLI before parsing starts.
-  // We seed the smallest override the schema permits (1 MiB) and
+  // `import.maxBytes` upfront `fs.stat` rejects an oversize
+  // artefact before `createReadStream` opens. Without this, a
+  // multi-GB JSONL file OOMs the CLI before parsing starts. We
+  // seed the smallest override the schema permits (1 MiB) and
   // hand the importer a 2 MiB file.
   it('rejects an artefact larger than import.maxBytes with INVALID_INPUT', async () => {
     const dir = await tmpDir();

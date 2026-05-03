@@ -113,8 +113,26 @@ describe('createMemoryCommands', () => {
       'memory.set_embedding',
     ];
     expect([...byName.keys()].sort()).toEqual([...expected].sort());
+    // Every memory.* command exposes mcp + cli; the
+    // dashboard-eligible subset additionally includes 'dashboard'.
+    // New commands default to mcp+cli only — adding to the
+    // dashboard surface is an explicit per-command decision.
+    const dashboardSubset = new Set([
+      'memory.read',
+      'memory.list',
+      'memory.events',
+      'memory.confirm',
+      'memory.update',
+      'memory.forget',
+    ]);
     for (const cmd of byName.values()) {
-      expect(cmd.surfaces).toEqual(['mcp', 'cli']);
+      expect(cmd.surfaces).toContain('mcp');
+      expect(cmd.surfaces).toContain('cli');
+      if (dashboardSubset.has(cmd.name)) {
+        expect(cmd.surfaces).toContain('dashboard');
+      } else {
+        expect(cmd.surfaces).not.toContain('dashboard');
+      }
     }
   });
 
@@ -166,9 +184,9 @@ describe('createMemoryCommands', () => {
       expect(result.error.code).toBe('INVALID_INPUT');
     });
 
-    // Phase 2 hardening: end-to-end coverage of `enforceSafetyCaps`
-    // through the command boundary. The helper itself is unit-
-    // tested separately; this test pins the call-site so a future
+    // End-to-end coverage of `enforceSafetyCaps` through the
+    // command boundary. The helper itself is unit-tested
+    // separately; this test pins the call-site so a future
     // refactor that drops the call (without touching the helper)
     // still fails.
     it('returns INVALID_INPUT when content exceeds safety.memoryContentMaxBytes', async () => {

@@ -1,14 +1,15 @@
-// Phase 2 hardening: handler-time enforcement of the
-// operator-tunable `safety.*` content/summary/tag caps.
+// Handler-time enforcement of the operator-tunable `safety.*`
+// content / summary / tag caps from
+// `packages/schema/src/config-keys.ts`.
 //
 // The Zod input schemas already pin a hard ceiling on these
 // fields (`memory.write` rejects > 1 MiB content / > 64 KiB
 // summary / > 1024 tags at the boundary, regardless of config).
 // This helper sits *below* those ceilings and lets an operator
 // tighten the policy without a schema change — typically to the
-// 64 KiB / 2 KiB / 64 defaults from `config-keys.ts`. Two layers
-// cooperate: schema = "no more than this, ever"; config = "no
-// more than this, by policy".
+// 64 KiB / 2 KiB / 64 defaults shipped in the registry. Two
+// layers cooperate: schema = "no more than this, ever"; config =
+// "no more than this, by policy".
 //
 // We measure UTF-8 byte length rather than UTF-16 code units so
 // the cap matches the on-disk shape of the content (SQLite stores

@@ -13,7 +13,7 @@
 2. The artefact's `MemoryEvent.actor` and `at`. AGENTS.md rule 11 names `MemoryEvent` "the audit source of truth" — but with verbatim insert, an attacker (or a buggy export) could land events claiming any actor / any timestamp, and `memento doctor` could not tell forged events from real ones.
 3. The artefact's `payload` and `evidence` JSON. `MemoryEvent.payload` is `unknown` per its variant; an artefact could stuff multi-megabyte blobs into individual records to bloat storage or game retrieval.
 
-The audit work that flagged this (security review, May 2026) classified the violation as the largest single finding in `memento import`. The threat model has two realistic shapes:
+An end-to-end security review classified this as the largest single finding in `memento import`. The threat model has two realistic shapes:
 
 - **Hand-crafted artefact.** A user receives a `.jsonl` from someone else (a coworker's "here's my decisions about project X", a malicious `gist`, a doctored backup). Importing today writes those memories with whatever audit history the file claims, leaving no marker that the data arrived via import.
 - **Audit-log forgery.** A forged artefact carries a memory with a ULID that lexicographically precedes the user's real recent activity, plus matching events dated-back to make the forgery look chronologically plausible. The audit log on the target machine is now compromised.
@@ -101,5 +101,4 @@ The `memory.imported` variant lives alongside `created`, `confirmed`, `updated`,
 - ADR-0013 (portable export/import format).
 - `AGENTS.md` rules 4 (OwnerRef), 11 (MemoryEvent as audit truth).
 - `SECURITY.md` (threat model: untrusted memory content, scrubber as best-effort).
-- Phase 1 of the May-2026 security hardening pass (added `'imported'` to `MEMORY_EVENT_TYPES`, migration 0006 widens the CHECK constraint).
-- Phase 4 of the same hardening pass (this change).
+- Migration `0006_memory_events_imported_type.ts` (widens the SQLite CHECK constraint on `memory_events.type` to admit the new variant).

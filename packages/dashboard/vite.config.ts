@@ -31,7 +31,15 @@ export default defineConfig({
   build: {
     outDir: path.resolve(here, 'dist-ui'),
     emptyOutDir: true,
-    sourcemap: true,
+    // Sourcemaps are off for the shipped build. The static
+    // handler in `src/server/index.ts` serves the bundle
+    // directory, so any `.map` file emitted next to the JS
+    // would be reachable by anyone who could reach the
+    // dashboard URL — a detailed map of routes, API call
+    // sites, and internal helpers. Set to `'hidden'` if you
+    // need maps locally for crash-report tooling without
+    // serving them.
+    sourcemap: false,
     target: 'es2022',
   },
   server: {

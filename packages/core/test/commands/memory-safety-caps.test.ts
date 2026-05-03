@@ -1,7 +1,9 @@
-// Phase 2 hardening: handler-time enforcement of `safety.*`
-// caps. The schema-level ceilings (1 MiB / 64 KiB / 1024) are
-// covered by `memory-input-bounds.test.ts`; here we pin the
-// operator-tunable layer that sits below them.
+// Handler-time enforcement of `safety.*` caps. The schema-level
+// ceilings (1 MiB / 64 KiB / 1024) are covered by
+// `memory-input-bounds.test.ts`; here we pin the operator-tunable
+// layer that sits below them. See
+// `packages/core/src/commands/memory/safety-caps.ts` for the
+// implementation contract.
 
 import { describe, expect, it } from 'vitest';
 import { enforceSafetyCaps, rationaleFromKind } from '../../src/commands/memory/safety-caps.js';

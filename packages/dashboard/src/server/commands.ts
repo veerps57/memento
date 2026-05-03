@@ -9,19 +9,21 @@
 // (ADR-0003). A generic POST `/api/commands/:name` endpoint lets
 // the dashboard call any registered command without per-command
 // route boilerplate. New commands the registry adds surface
-// automatically.
+// automatically *if* the registration explicitly opts onto the
+// dashboard surface.
 //
 // The route is a thin wrapper over `executeCommand(...)` from
 // `@psraghuveer/memento-core`, so input validation, output
 // validation, and `Result` semantics flow through unchanged. The
 // HTTP serialization is the only addition.
 //
-// Side-effect class is enforced on the way in: only commands
-// whose `surfaces` set includes a synthetic `dashboard` marker
-// would be admitted if we ever wanted to gate the surface, but
-// for v0 every registered command on the `cli` surface is also
-// reachable from the dashboard. The CLI / MCP / dashboard split
-// is presentation, not capability.
+// Surface gate. Only commands whose `surfaces` array includes
+// `'dashboard'` are admitted. Anything else returns
+// `INVALID_INPUT` with a clear hint pointing the caller at the
+// CLI alternative. The split is structural, not aspirational —
+// new commands default to mcp+cli-only and adding them to the
+// dashboard surface is an explicit decision visible in the
+// registration site's diff.
 
 import type { AnyCommand, CommandContext, CommandRegistry } from '@psraghuveer/memento-core';
 import { executeCommand } from '@psraghuveer/memento-core';
@@ -33,33 +35,49 @@ export interface CommandRouterDeps {
   readonly ctx: CommandContext;
 }
 
+const DASHBOARD_SURFACE = 'dashboard';
+
+function isDashboardSurfaced(cmd: AnyCommand): boolean {
+  return cmd.surfaces.includes(DASHBOARD_SURFACE);
+}
+
 /**
  * Build the `/api/commands/*` sub-app. Mounted by
  * {@link createDashboardServer}.
  *
  * Routes:
- *   - GET  /                  list every registered command (name,
- *                             sideEffect, description) for client-side
- *                             discovery / the command palette.
+ *   - GET  /                  list every dashboard-surfaced command
+ *                             (name, sideEffect, description) for
+ *                             client-side discovery / the command
+ *                             palette. Commands not on the dashboard
+ *                             surface are omitted.
  *   - POST /:name             execute the named command with the
- *                             POST body as input. Returns the command's
- *                             `Result` envelope verbatim, so the client
- *                             handles success / error uniformly.
+ *                             POST body as input. Rejects commands
+ *                             not on the dashboard surface with a
+ *                             clear `INVALID_INPUT`.
  */
 export function createCommandRouter(deps: CommandRouterDeps): Hono {
   const router = new Hono();
-  const byName = new Map<string, AnyCommand>(deps.registry.list().map((cmd) => [cmd.name, cmd]));
+  const byName = new Map<string, AnyCommand>(
+    deps.registry
+      .list()
+      .filter(isDashboardSurfaced)
+      .map((cmd) => [cmd.name, cmd]),
+  );
 
   router.get('/', (c) =>
     c.json({
       ok: true,
-      value: deps.registry.list().map((cmd) => ({
-        name: cmd.name,
-        sideEffect: cmd.sideEffect,
-        surfaces: cmd.surfaces,
-        description: cmd.metadata.description,
-        ...(cmd.metadata.deprecated !== undefined ? { deprecated: cmd.metadata.deprecated } : {}),
-      })),
+      value: deps.registry
+        .list()
+        .filter(isDashboardSurfaced)
+        .map((cmd) => ({
+          name: cmd.name,
+          sideEffect: cmd.sideEffect,
+          surfaces: cmd.surfaces,
+          description: cmd.metadata.description,
+          ...(cmd.metadata.deprecated !== undefined ? { deprecated: cmd.metadata.deprecated } : {}),
+        })),
     }),
   );
 
@@ -67,6 +85,22 @@ export function createCommandRouter(deps: CommandRouterDeps): Hono {
     const name = c.req.param('name');
     const command = byName.get(name);
     if (command === undefined) {
+      // Distinguish "command exists but not on dashboard surface"
+      // from "command does not exist at all" so the failure mode
+      // is actionable: the operator sees they should use the CLI.
+      const allCommand = deps.registry.list().find((cmd) => cmd.name === name);
+      if (allCommand !== undefined) {
+        return c.json(
+          {
+            ok: false,
+            error: {
+              code: 'INVALID_INPUT',
+              message: `Command '${name}' is not exposed on the dashboard surface. Use the CLI ('npx memento ...') or MCP if you need it.`,
+            },
+          },
+          400,
+        );
+      }
       return c.json(
         {
           ok: false,

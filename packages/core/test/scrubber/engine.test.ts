@@ -87,8 +87,8 @@ describe('applyRules', () => {
   });
 
   describe('engineBudgetMs', () => {
-    // Phase 2 ReDoS hedge: a per-rule wallclock budget aborts a
-    // rule that has accumulated too much wallclock time. The
+    // ReDoS hedge: a per-rule wallclock budget aborts a rule
+    // that has accumulated too much wallclock time. The
     // gate fires *between* `re.exec` iterations once
     // `Date.now() - ruleStart > budgetMs`; the engine cannot
     // interrupt an in-progress single match attempt (JS regex

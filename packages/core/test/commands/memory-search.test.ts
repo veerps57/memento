@@ -75,11 +75,13 @@ const baseInput = {
 };
 
 describe('memory.search command', () => {
-  it('declares read sideEffect and exposes both surfaces', async () => {
+  it('declares read sideEffect and exposes mcp/cli/dashboard surfaces', async () => {
     const { command } = await fixture();
     expect(command.name).toBe('memory.search');
     expect(command.sideEffect).toBe('read');
-    expect([...command.surfaces].sort()).toEqual(['cli', 'mcp']);
+    // memory.search is the dashboard's primary read surface, so
+    // its `surfaces` includes 'dashboard'.
+    expect([...command.surfaces].sort()).toEqual(['cli', 'dashboard', 'mcp']);
   });
 
   it('returns ranked results validated against the output schema', async () => {

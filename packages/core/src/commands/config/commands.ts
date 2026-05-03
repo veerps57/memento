@@ -50,7 +50,14 @@ import {
   ConfigSetInputSchema,
 } from './inputs.js';
 
-const SURFACES = ['mcp', 'cli'] as const;
+// All `config.*` commands surface on the dashboard so the
+// dashboard's config view (read + edit) works. The destructive
+// bypass an attacker could cook up via
+// `config.set scrubber.enabled false` is closed by marking
+// `scrubber.enabled` and `scrubber.rules` immutable in
+// `packages/schema/src/config-keys.ts`; the immutability gate
+// fires regardless of which surface invoked the command.
+const SURFACES = ['mcp', 'cli', 'dashboard'] as const;
 
 const ConfigEntryListOutputSchema = z.array(ConfigEntrySchema);
 const ConfigEventListOutputSchema = z.array(ConfigEventSchema);

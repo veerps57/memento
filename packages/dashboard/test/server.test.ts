@@ -6,19 +6,20 @@
 // the wiring against the real registry without process-level
 // state.
 //
-// What we pin
-// -----------
+// Three independent defence layers are pinned here (see the
+// module header in `src/server/security.ts` for the threat
+// model):
 //
-// 1. `/api/health` returns a structured Result envelope.
-// 2. `/api/commands/system.info` round-trips through
-//    `executeCommand` and returns the registry's exact output
-//    shape (counts by status, vector flag, version, dbPath,
-//    embedder details).
-// 3. POST without an `Origin` header is rejected — the CSRF
-//    guard from `security.ts`.
-// 4. POST with a non-localhost `Origin` is rejected.
-// 5. POST to an unknown command name returns NOT_FOUND.
-// 6. Body-parse failures return INVALID_INPUT.
+// 1. Per-launch token (Authorization header) on every `/api/*`
+//    request.
+// 2. Same-origin guard with EXACT-PORT match on mutating
+//    requests.
+// 3. Host-header allowlist — every request must carry a Host
+//    that resolves to the bound port.
+//
+// Plus the dashboard-surface filter on `/api/commands`: only
+// commands whose `surfaces` array includes `'dashboard'` are
+// admitted; the rest return INVALID_INPUT pointing at the CLI.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -38,7 +39,32 @@ const createAppNoVector: typeof createMementoApp = (opts: CreateMementoAppOption
     configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
   });
 
-const ALLOWED_ORIGIN = 'http://127.0.0.1:51234';
+const TEST_TOKEN = 'test-token-32-bytes-of-entropy-here';
+const TEST_PORT = 51234;
+const ALLOWED_ORIGIN = `http://127.0.0.1:${TEST_PORT}`;
+const ALLOWED_HOST = `127.0.0.1:${TEST_PORT}`;
+const AUTH = `Bearer ${TEST_TOKEN}`;
+
+/**
+ * Build a Request that satisfies the Host + auth gates so each
+ * test can focus on the property under test rather than every
+ * test having to remember every header. Per-test overrides win.
+ */
+function authedRequest(
+  url: string,
+  init: RequestInit & { skipAuth?: boolean; skipHost?: boolean } = {},
+): Request {
+  const headers = new Headers(init.headers);
+  if (init.skipAuth !== true) headers.set('authorization', AUTH);
+  if (init.skipHost !== true && !headers.has('host')) headers.set('host', ALLOWED_HOST);
+  // Rewrite the URL host to match the bound port so the
+  // Hono router's `c.req.header('host')` agrees with the
+  // explicit `host` header in `headers`. The two should be
+  // consistent on real traffic.
+  const u = new URL(url);
+  u.host = ALLOWED_HOST;
+  return new Request(u.toString(), { ...init, headers });
+}
 
 describe('createDashboardServer', () => {
   let app: Awaited<ReturnType<typeof createMementoApp>>;
@@ -49,6 +75,8 @@ describe('createDashboardServer', () => {
     serverApp = createDashboardServer({
       registry: app.registry,
       ctx: { actor: { type: 'cli' } },
+      token: TEST_TOKEN,
+      port: TEST_PORT,
       // Suppress the static handler — we're testing the API.
       uiDir: null,
     });
@@ -59,8 +87,8 @@ describe('createDashboardServer', () => {
   });
 
   describe('GET /api/health', () => {
-    it('returns ok with bundle status', async () => {
-      const res = await serverApp.fetch(new Request('http://localhost/api/health'));
+    it('returns ok with bundle status when authenticated', async () => {
+      const res = await serverApp.fetch(authedRequest('http://localhost/api/health'));
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
         ok: boolean;
@@ -68,8 +96,6 @@ describe('createDashboardServer', () => {
       };
       expect(body.ok).toBe(true);
       expect(body.value.status).toBe('ok');
-      // We passed `uiDir: null` to the constructor, so the
-      // health route reports the bundle as missing.
       expect(body.value.uiBundled).toBe(false);
     });
   });
@@ -77,7 +103,7 @@ describe('createDashboardServer', () => {
   describe('POST /api/commands/system.info', () => {
     it('round-trips through the registry', async () => {
       const res = await serverApp.fetch(
-        new Request('http://localhost/api/commands/system.info', {
+        authedRequest('http://localhost/api/commands/system.info', {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
@@ -99,8 +125,6 @@ describe('createDashboardServer', () => {
         };
       };
       expect(body.ok).toBe(true);
-      // The shape must match `system.info`'s output schema
-      // exactly — the dashboard server is a thin pass-through.
       expect(body.value.vectorEnabled).toBe(false);
       expect(body.value.counts).toEqual({
         active: 0,
@@ -112,24 +136,63 @@ describe('createDashboardServer', () => {
     });
   });
 
-  describe('CSRF guard on mutating requests', () => {
+  describe('Per-launch token (Authorization header)', () => {
+    it('rejects /api/* without an Authorization header', async () => {
+      const res = await serverApp.fetch(
+        authedRequest('http://localhost/api/health', { skipAuth: true }),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects /api/* with the wrong token', async () => {
+      const res = await serverApp.fetch(
+        authedRequest('http://localhost/api/health', {
+          skipAuth: true,
+          headers: { authorization: 'Bearer wrong-token' },
+        }),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it('accepts the legacy x-memento-token header', async () => {
+      const res = await serverApp.fetch(
+        authedRequest('http://localhost/api/health', {
+          skipAuth: true,
+          headers: { 'x-memento-token': TEST_TOKEN },
+        }),
+      );
+      expect(res.status).toBe(200);
+    });
+
+    it('compares tokens of differing length without timing leak (smoke test)', async () => {
+      // We cannot meaningfully assert timing here, but we can
+      // confirm a length-mismatched token is rejected (the
+      // `tokenEquals` helper short-circuits on length).
+      const res = await serverApp.fetch(
+        authedRequest('http://localhost/api/health', {
+          skipAuth: true,
+          headers: { authorization: 'Bearer short' },
+        }),
+      );
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('CSRF guard — exact-origin match on mutating requests', () => {
     it('rejects POST without an Origin header', async () => {
       const res = await serverApp.fetch(
-        new Request('http://localhost/api/commands/system.info', {
+        authedRequest('http://localhost/api/commands/system.info', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: '{}',
         }),
       );
       expect(res.status).toBe(403);
-      const body = (await res.json()) as { ok: boolean; error: { code: string } };
-      expect(body.ok).toBe(false);
-      expect(body.error.code).toBe('INVALID_INPUT');
     });
 
     it('rejects POST with a non-localhost Origin', async () => {
       const res = await serverApp.fetch(
-        new Request('http://localhost/api/commands/system.info', {
+        authedRequest('http://localhost/api/commands/system.info', {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
@@ -139,17 +202,15 @@ describe('createDashboardServer', () => {
         }),
       );
       expect(res.status).toBe(403);
-      const body = (await res.json()) as { ok: boolean; error: { code: string } };
-      expect(body.ok).toBe(false);
-      expect(body.error.code).toBe('INVALID_INPUT');
     });
 
-    it('accepts POST with a localhost Origin', async () => {
-      // Verifies the guard does not over-block — same shape as
-      // the round-trip test, just confirming Origin acceptance
-      // is not the failure mode.
+    it('rejects POST with a localhost Origin on a different port', async () => {
+      // The guard requires the EXACT bound port — a sibling
+      // localhost web server (e.g. a Vite dev server on 5173 or
+      // another local app) cannot forge requests against the
+      // dashboard.
       const res = await serverApp.fetch(
-        new Request('http://localhost/api/commands/system.info', {
+        authedRequest('http://localhost/api/commands/system.info', {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
@@ -158,14 +219,116 @@ describe('createDashboardServer', () => {
           body: '{}',
         }),
       );
+      expect(res.status).toBe(403);
+    });
+
+    it('accepts POST with the dashboard origin (127.0.0.1)', async () => {
+      const res = await serverApp.fetch(
+        authedRequest('http://localhost/api/commands/system.info', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            origin: ALLOWED_ORIGIN,
+          },
+          body: '{}',
+        }),
+      );
+      expect(res.status).toBe(200);
+    });
+
+    it('accepts POST with the dashboard origin (localhost)', async () => {
+      const res = await serverApp.fetch(
+        authedRequest('http://localhost/api/commands/system.info', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            origin: `http://localhost:${TEST_PORT}`,
+          },
+          body: '{}',
+        }),
+      );
       expect(res.status).toBe(200);
     });
   });
 
-  describe('error handling', () => {
-    it('returns NOT_FOUND for an unknown command', async () => {
+  describe('Host header allowlist (DNS rebinding defence)', () => {
+    it('rejects a request whose Host is an attacker-controlled domain', async () => {
       const res = await serverApp.fetch(
-        new Request('http://localhost/api/commands/does.not.exist', {
+        authedRequest('http://localhost/api/health', {
+          skipHost: true,
+          headers: { host: 'evil.example.com', authorization: AUTH },
+        }),
+      );
+      expect(res.status).toBe(403);
+    });
+
+    it('rejects a request whose Host has the wrong port', async () => {
+      const res = await serverApp.fetch(
+        authedRequest('http://localhost/api/health', {
+          skipHost: true,
+          headers: { host: '127.0.0.1:5173', authorization: AUTH },
+        }),
+      );
+      expect(res.status).toBe(403);
+    });
+
+    it('accepts the IPv6 loopback host shape', async () => {
+      const res = await serverApp.fetch(
+        authedRequest('http://localhost/api/health', {
+          skipHost: true,
+          headers: { host: `[::1]:${TEST_PORT}`, authorization: AUTH },
+        }),
+      );
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Dashboard surface filter', () => {
+    it('rejects a command that exists but is not on the dashboard surface', async () => {
+      // `memory.write` is mcp+cli-only; the dashboard's UI does
+      // not need it. Calling it via the dashboard API must fail
+      // with a clear message pointing at the CLI alternative.
+      const res = await serverApp.fetch(
+        authedRequest('http://localhost/api/commands/memory.write', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', origin: ALLOWED_ORIGIN },
+          body: '{}',
+        }),
+      );
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { ok: boolean; error: { code: string; message: string } };
+      expect(body.ok).toBe(false);
+      expect(body.error.code).toBe('INVALID_INPUT');
+      expect(body.error.message).toMatch(/not exposed on the dashboard surface/u);
+    });
+
+    it('lists only dashboard-surface commands on GET /api/commands', async () => {
+      const res = await serverApp.fetch(authedRequest('http://localhost/api/commands'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        ok: boolean;
+        value: ReadonlyArray<{ name: string; surfaces: readonly string[] }>;
+      };
+      expect(body.ok).toBe(true);
+      const names = new Set(body.value.map((c) => c.name));
+      // UI-used commands are present.
+      expect(names.has('system.info')).toBe(true);
+      expect(names.has('memory.list')).toBe(true);
+      expect(names.has('memory.read')).toBe(true);
+      expect(names.has('config.list')).toBe(true);
+      expect(names.has('conflict.list')).toBe(true);
+      // Non-dashboard commands are absent.
+      expect(names.has('memory.write')).toBe(false);
+      expect(names.has('memory.supersede')).toBe(false);
+      expect(names.has('memory.set_embedding')).toBe(false);
+      expect(names.has('compact.run')).toBe(false);
+    });
+  });
+
+  describe('error handling', () => {
+    it('returns NOT_FOUND for a genuinely unknown command', async () => {
+      const res = await serverApp.fetch(
+        authedRequest('http://localhost/api/commands/does.not.exist', {
           method: 'POST',
           headers: { 'content-type': 'application/json', origin: ALLOWED_ORIGIN },
           body: '{}',
@@ -179,7 +342,7 @@ describe('createDashboardServer', () => {
 
     it('returns INVALID_INPUT for malformed JSON', async () => {
       const res = await serverApp.fetch(
-        new Request('http://localhost/api/commands/system.info', {
+        authedRequest('http://localhost/api/commands/system.info', {
           method: 'POST',
           headers: { 'content-type': 'application/json', origin: ALLOWED_ORIGIN },
           body: '{not valid',
@@ -192,12 +355,8 @@ describe('createDashboardServer', () => {
     });
 
     it('treats an empty body as {} (zero-arg commands)', async () => {
-      // `system.info` accepts no input; the API client may send
-      // an empty body rather than a literal `{}`. The router
-      // must coerce that to an object so `executeCommand` does
-      // not get tripped up by the parse step.
       const res = await serverApp.fetch(
-        new Request('http://localhost/api/commands/system.info', {
+        authedRequest('http://localhost/api/commands/system.info', {
           method: 'POST',
           headers: { 'content-type': 'application/json', origin: ALLOWED_ORIGIN },
           body: '',
@@ -209,12 +368,8 @@ describe('createDashboardServer', () => {
     });
 
     it('maps INVALID_INPUT from the registry to HTTP 400', async () => {
-      // Trigger an INVALID_INPUT by passing a bad shape to a
-      // strict input schema. `memory.read` requires `id`; an
-      // empty object fails Zod's `min(1)` validation upstream
-      // and surfaces as INVALID_INPUT in the Result envelope.
       const res = await serverApp.fetch(
-        new Request('http://localhost/api/commands/memory.read', {
+        authedRequest('http://localhost/api/commands/memory.read', {
           method: 'POST',
           headers: { 'content-type': 'application/json', origin: ALLOWED_ORIGIN },
           body: '{}',
@@ -227,29 +382,9 @@ describe('createDashboardServer', () => {
     });
   });
 
-  describe('GET /api/commands listing', () => {
-    it('returns every registered command for the command palette', async () => {
-      const res = await serverApp.fetch(new Request('http://localhost/api/commands'));
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as {
-        ok: boolean;
-        value: ReadonlyArray<{ name: string; sideEffect: string }>;
-      };
-      expect(body.ok).toBe(true);
-      // The exact command set is pinned by the registry parity
-      // test in the CLI package; here we just assert the shape
-      // and that a few canonical commands are present.
-      const names = new Set(body.value.map((c) => c.name));
-      expect(names.has('system.info')).toBe(true);
-      expect(names.has('memory.list')).toBe(true);
-      expect(names.has('memory.write')).toBe(true);
-      expect(names.has('conflict.list')).toBe(true);
-    });
-  });
-
   describe('static handler when bundle is missing', () => {
     it('returns the friendly missing-bundle HTML on GET /', async () => {
-      const res = await serverApp.fetch(new Request('http://localhost/'));
+      const res = await serverApp.fetch(authedRequest('http://localhost/'));
       expect(res.status).toBe(503);
       const text = await res.text();
       expect(text).toContain('bundle not built');
@@ -258,15 +393,6 @@ describe('createDashboardServer', () => {
 });
 
 // Static handler against a real on-disk bundle directory.
-//
-// This is a regression suite for the bug that shipped in the
-// first cut of `createDashboardServer`: we used
-// `@hono/node-server`'s `serveStatic`, whose internal
-// `addCurrentDirPrefix` resolves files relative to
-// `process.cwd()` — so an absolute `root` argument silently
-// failed to serve any asset. Symptom: blank page on load
-// because `/assets/index-*.js` returned the SPA fallback HTML
-// instead of JS.
 describe('createDashboardServer static handler', () => {
   let app: Awaited<ReturnType<typeof createMementoApp>>;
   let serverApp: ReturnType<typeof createDashboardServer>;
@@ -288,6 +414,8 @@ describe('createDashboardServer static handler', () => {
     serverApp = createDashboardServer({
       registry: app.registry,
       ctx: { actor: { type: 'cli' } },
+      token: TEST_TOKEN,
+      port: TEST_PORT,
       uiDir: bundleDir,
     });
   });
@@ -298,7 +426,7 @@ describe('createDashboardServer static handler', () => {
   });
 
   it('serves index.html on GET /', async () => {
-    const res = await serverApp.fetch(new Request('http://localhost/'));
+    const res = await serverApp.fetch(authedRequest('http://localhost/'));
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
     const text = await res.text();
@@ -306,7 +434,7 @@ describe('createDashboardServer static handler', () => {
   });
 
   it('serves a hashed JS asset with the right MIME type', async () => {
-    const res = await serverApp.fetch(new Request('http://localhost/assets/index-deadbeef.js'));
+    const res = await serverApp.fetch(authedRequest('http://localhost/assets/index-deadbeef.js'));
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/javascript');
     const body = await res.text();
@@ -314,26 +442,32 @@ describe('createDashboardServer static handler', () => {
   });
 
   it('serves a hashed CSS asset with the right MIME type', async () => {
-    const res = await serverApp.fetch(new Request('http://localhost/assets/index-cafef00d.css'));
+    const res = await serverApp.fetch(authedRequest('http://localhost/assets/index-cafef00d.css'));
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/css');
   });
 
   it('falls back to index.html for unknown SPA routes', async () => {
-    const res = await serverApp.fetch(new Request('http://localhost/memory'));
+    const res = await serverApp.fetch(authedRequest('http://localhost/memory'));
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain('memento dashboard');
   });
 
   it('rejects path traversal attempts', async () => {
-    // The traversal guard maps escapes to the SPA fallback. The
-    // important property is that we never read a file outside
-    // the bundle directory: a probe for `../package.json` must
-    // not return JSON content, even though the file exists in
-    // the workspace.
-    const res = await serverApp.fetch(new Request('http://localhost/../package.json'));
+    const res = await serverApp.fetch(authedRequest('http://localhost/../package.json'));
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
+  });
+
+  it('emits secure response headers (CSP, nosniff, X-Frame-Options)', async () => {
+    const res = await serverApp.fetch(authedRequest('http://localhost/'));
+    // The exact CSP string is determined by Hono's secureHeaders;
+    // assert the headers we care about are present and have a
+    // sensible shape rather than pinning the entire string.
+    expect(res.headers.get('content-security-policy')).toMatch(/default-src 'self'/);
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    expect(res.headers.get('referrer-policy')).toMatch(/no-referrer/);
   });
 });

@@ -21,24 +21,52 @@
 // depend on it; the registry remains the only documented
 // programmatic surface.
 
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import type { CommandContext, CommandRegistry } from '@psraghuveer/memento-core';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
+import { secureHeaders } from 'hono/secure-headers';
 
 import { createCommandRouter } from './commands.js';
-import { sameOriginGuard } from './security.js';
+import { authGuard } from './security.js';
 import { resolveDashboardUiDir } from './static.js';
 
 export { resolveDashboardUiDir } from './static.js';
 export { httpStatusForError } from './commands.js';
+export { TOKEN_HEADER } from './security.js';
+
+/**
+ * Hard cap on the size of a single `/api/commands/*` request
+ * body. The largest legitimate body is a `memory.write` with
+ * content at the schema ceiling (1 MiB), summary, and tags —
+ * comfortably under 2 MiB. We pin the limit at 4 MiB to leave
+ * margin without allowing a runaway script to push the process
+ * into OOM territory via a single POST.
+ */
+const API_BODY_LIMIT_BYTES = 4 * 1024 * 1024;
 
 export interface CreateDashboardServerOptions {
   /** Active command registry (typically `app.registry` from `MementoApp`). */
   readonly registry: CommandRegistry;
   /** Actor stamped on every audit event the dashboard's commands emit. */
   readonly ctx: CommandContext;
+  /**
+   * Per-launch random token. Every `/api/*` request must carry it
+   * in `Authorization: Bearer <token>` (or `X-Memento-Token`).
+   * The launcher generates a fresh value on every `memento dashboard`
+   * invocation, embeds it in the URL fragment passed to `open()`,
+   * and the SPA reads + caches it in `sessionStorage`. Tests pass
+   * a known value.
+   */
+  readonly token: string;
+  /**
+   * Bound port. Used to build the exact-origin and Host
+   * allowlists. The launcher resolves this from the OS-assigned
+   * port (when `--port 0`) before invoking `createDashboardServer`.
+   */
+  readonly port: number;
   /**
    * Optional override for the UI bundle directory. Defaults to
    * the result of {@link resolveDashboardUiDir}. Tests override
@@ -52,12 +80,61 @@ export interface CreateDashboardServerOptions {
  * binds via `@hono/node-server`'s `serve()`.
  */
 export function createDashboardServer(options: CreateDashboardServerOptions): Hono {
-  const { registry, ctx } = options;
+  const { registry, ctx, token, port } = options;
   const uiDir = options.uiDir === undefined ? resolveDashboardUiDir() : options.uiDir;
 
   const app = new Hono();
 
-  app.use('*', sameOriginGuard());
+  // Order matters: secure headers first (cheap; runs even on
+  // rejected requests), then auth (rejects bad requests early
+  // before any handler runs), then routes.
+  app.use(
+    '*',
+    secureHeaders({
+      contentSecurityPolicy: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        // Tailwind injects runtime styles; self plus inline is
+        // the practical minimum for a Vite-built React UI.
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", 'data:'],
+        frameAncestors: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'none'"],
+      },
+      // Send no Referer on outbound nav so memory ids do not
+      // leak via clicks on rendered links.
+      referrerPolicy: 'no-referrer',
+      // Belt-and-braces clickjacking defence on top of CSP
+      // `frame-ancestors`.
+      xFrameOptions: 'DENY',
+      // Force MIME sniffers to honour our Content-Type.
+      xContentTypeOptions: 'nosniff',
+    }),
+  );
+  app.use('*', authGuard({ port, token }));
+
+  // Body cap on the registry endpoint. `bodyLimit` returns 413
+  // on overshoot, which is the right semantic.
+  app.use(
+    '/api/commands/*',
+    bodyLimit({
+      maxSize: API_BODY_LIMIT_BYTES,
+      onError: (c) =>
+        c.json(
+          {
+            ok: false,
+            error: {
+              code: 'INVALID_INPUT',
+              message: `Request body exceeds the dashboard cap (${API_BODY_LIMIT_BYTES} bytes).`,
+            },
+          },
+          413,
+        ),
+    }),
+  );
 
   app.get('/api/health', (c) =>
     c.json({ ok: true, value: { status: 'ok', uiBundled: uiDir !== null } }),
@@ -109,9 +186,9 @@ async function serveBundle(c: import('hono').Context, uiDir: string): Promise<Re
     return serveSpaFallback(uiDir);
   }
   const candidate = path.resolve(uiDir, requestPath);
-  // Containment guard: candidate must be `uiDir` itself or a
-  // descendant. `path.relative` returns a string starting with
-  // `..` when the candidate escapes the root.
+  // Lexical containment guard: candidate must be `uiDir` itself
+  // or a descendant. `path.relative` returns a string starting
+  // with `..` when the candidate escapes the root.
   const rel = path.relative(uiDir, candidate);
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
     return serveSpaFallback(uiDir);
@@ -119,6 +196,22 @@ async function serveBundle(c: import('hono').Context, uiDir: string): Promise<Re
   if (existsSync(candidate)) {
     const stats = statSync(candidate);
     if (stats.isFile()) {
+      // Realpath containment: a symlink inside `dist-ui` (rare,
+      // but possible if an admin or build step created one)
+      // could point outside the bundle. Resolve and re-check.
+      // `path.resolve` is purely lexical — it does not follow
+      // symlinks. A `realpath` failure (broken symlink, perms)
+      // falls through to the SPA fallback rather than 500-ing.
+      try {
+        const real = realpathSync(candidate);
+        const realRoot = realpathSync(uiDir);
+        const realRel = path.relative(realRoot, real);
+        if (realRel.startsWith('..') || path.isAbsolute(realRel)) {
+          return serveSpaFallback(uiDir);
+        }
+      } catch {
+        return serveSpaFallback(uiDir);
+      }
       return streamFile(c, candidate, stats.size);
     }
   }
@@ -186,7 +279,6 @@ function mimeTypeFor(filePath: string): string {
     case '.css':
       return 'text/css; charset=utf-8';
     case '.json':
-    case '.map':
       return 'application/json; charset=utf-8';
     case '.svg':
       return 'image/svg+xml';

@@ -712,11 +712,11 @@ describe('createMemoryRepository', () => {
       expect(report.rules[0]?.ruleId).toBe('test-secret');
     });
 
-    // Phase 3: secrets must be redacted regardless of which
-    // free-text field they arrive in. Before this change only
-    // `content` was scrubbed — an LLM auto-generating a summary
-    // from raw content trivially round-tripped the secret into
-    // the persisted summary, defeating the whole defence.
+    // Secrets must be redacted regardless of which free-text
+    // field they arrive in. Earlier the scrubber operated on
+    // `content` only — an LLM auto-generating a summary from
+    // raw content trivially round-tripped the secret into the
+    // persisted summary, defeating the whole defence.
     it('write() also scrubs the summary and aggregates matches into the report', async () => {
       const handle = await fixture();
       const repo = createMemoryRepository(handle.db, {

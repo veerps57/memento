@@ -23,7 +23,7 @@ describe('DEFAULT_SCRUBBER_RULES', () => {
     ['jwt', 'auth eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF6yHV rest'],
     [
       'jwt',
-      // Phase 3: tightened minimums admit a JWT with a tiny payload
+      // The tightened segment minimums admit a JWT with a tiny payload
       // (e.g. unsigned `{}` → base64url `e30`).
       'auth eyJhbGciOiJIUzI1NiJ9.e30.AbCdEfGh rest',
     ],

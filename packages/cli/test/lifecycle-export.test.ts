@@ -242,10 +242,10 @@ describe('runExport', () => {
     expect(withEmb.value.counts.embeddings).toBe(1);
   });
 
-  // Phase 4 hardening: refuse-to-clobber by default + restrictive
-  // file mode. Memory content is operator-private even after
-  // scrubbing; an inadvertent --out path that lands on an existing
-  // backup must not silently replace it.
+  // Refuse-to-clobber by default + restrictive file mode. Memory
+  // content is operator-private even after scrubbing; an
+  // inadvertent --out path that lands on an existing backup must
+  // not silently replace it.
   describe('overwrite protection', () => {
     it('returns INVALID_INPUT when the destination already exists and --overwrite is absent', async () => {
       const dbPath = await tmpDb();

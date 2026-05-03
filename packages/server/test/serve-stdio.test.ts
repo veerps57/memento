@@ -44,10 +44,10 @@ describe('connectUntilClose', () => {
 });
 
 describe('createBoundedStdin', () => {
-  // Phase 2 hardening: a peer that withholds the trailing
-  // newline cannot grow the read buffer past the cap. The
-  // wrapper destroys the stream with a typed error; the SDK
-  // sees that as a transport error and shuts down.
+  // A peer that withholds the trailing newline must not be
+  // able to grow the read buffer past the cap. The wrapper
+  // destroys the stream with a typed error; the SDK sees that
+  // as a transport error and shuts down.
   it('passes through traffic under the cap', async () => {
     const source = new PassThrough();
     const bounded = createBoundedStdin(source, 1024);

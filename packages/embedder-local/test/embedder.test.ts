@@ -125,9 +125,9 @@ describe('createLocalEmbedder', () => {
   });
 
   describe('maxInputBytes', () => {
-    // Phase 2 hardening: a peer cannot OOM the embedder by
-    // submitting megabyte-long content. Inputs over the cap are
-    // truncated UTF-8-safely before reaching the model.
+    // A peer cannot OOM the embedder by submitting megabyte-long
+    // content. Inputs over the cap are truncated UTF-8-safely
+    // before reaching the model.
     it('truncates oversize text before passing it to the model', async () => {
       let received: string | undefined;
       const captureEmbed: EmbedFn = async (text) => {

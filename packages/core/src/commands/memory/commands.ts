@@ -58,6 +58,15 @@ import {
 import { enforceSafetyCaps, rationaleFromKind } from './safety-caps.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
+// Dashboard opt-in. The dashboard's UI today consumes
+// `memory.read`, `memory.list`, `memory.events`, `memory.confirm`,
+// `memory.update`, and `memory.forget`. Bulk variants
+// (`write_many`, `forget_many`, `archive_many`, `confirm_many`),
+// data-mutating writes (`write`, `supersede`), and admin
+// operations (`set_embedding`, `archive`, `restore`) stay
+// mcp+cli-only — adding them to the dashboard surface is an
+// explicit decision per command.
+const SURFACES_DASHBOARD = ['mcp', 'cli', 'dashboard'] as const;
 
 const MemoryOutputSchema = MemorySchema;
 const MemoryNullableOutputSchema = MemorySchema.nullable();
@@ -370,7 +379,7 @@ export function createMemoryCommands(
   const readCommand: Command<typeof MemoryReadInputSchema, typeof MemoryNullableOutputSchema> = {
     name: 'memory.read',
     sideEffect: 'read',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: MemoryReadInputSchema,
     outputSchema: MemoryNullableOutputSchema,
     metadata: {
@@ -391,7 +400,7 @@ export function createMemoryCommands(
   const listCommand: Command<typeof MemoryListInputSchema, typeof MemoryListOutputSchema> = {
     name: 'memory.list',
     sideEffect: 'read',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: MemoryListInputSchema,
     outputSchema: MemoryListOutputSchema,
     metadata: {
@@ -499,7 +508,7 @@ export function createMemoryCommands(
   const confirmCommand: Command<typeof MemoryIdInputSchema, typeof MemoryOutputSchema> = {
     name: 'memory.confirm',
     sideEffect: 'write',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: MemoryIdInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
@@ -550,7 +559,7 @@ export function createMemoryCommands(
   const updateCommand: Command<typeof MemoryUpdateInputSchema, typeof MemoryOutputSchema> = {
     name: 'memory.update',
     sideEffect: 'write',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: MemoryUpdateInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
@@ -578,7 +587,7 @@ export function createMemoryCommands(
   const forgetCommand: Command<typeof MemoryForgetInputSchema, typeof MemoryOutputSchema> = {
     name: 'memory.forget',
     sideEffect: 'destructive',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: MemoryForgetInputSchema,
     outputSchema: MemoryOutputSchema,
     metadata: {
@@ -825,7 +834,7 @@ export function createMemoryCommands(
           return {
             name: 'memory.events',
             sideEffect: 'read',
-            surfaces: SURFACES,
+            surfaces: SURFACES_DASHBOARD,
             inputSchema: MemoryEventsInputSchema,
             outputSchema: MemoryEventListOutputSchema,
             metadata: {

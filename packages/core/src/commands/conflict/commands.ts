@@ -22,6 +22,11 @@ import {
 } from './inputs.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
+// Dashboard exposure is the explicit opt-in. The dashboard's
+// conflict view powers `list` (table) and `resolve` (inline
+// action); other conflict commands stay mcp+cli-only until the UI
+// needs them.
+const SURFACES_DASHBOARD = ['mcp', 'cli', 'dashboard'] as const;
 
 const ConflictOutputSchema = ConflictSchema;
 const ConflictNullableOutputSchema = ConflictSchema.nullable();
@@ -69,7 +74,7 @@ export function createConflictCommands(deps: CreateConflictCommandsDeps): readon
   const list: Command<typeof ConflictListInputSchema, typeof ConflictListOutputSchema> = {
     name: 'conflict.list',
     sideEffect: 'read',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: ConflictListInputSchema,
     outputSchema: ConflictListOutputSchema,
     metadata: {
@@ -103,7 +108,7 @@ export function createConflictCommands(deps: CreateConflictCommandsDeps): readon
   const resolve: Command<typeof ConflictResolveInputSchema, typeof ConflictOutputSchema> = {
     name: 'conflict.resolve',
     sideEffect: 'write',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: ConflictResolveInputSchema,
     outputSchema: ConflictOutputSchema,
     metadata: {

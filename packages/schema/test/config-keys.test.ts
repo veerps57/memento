@@ -110,8 +110,8 @@ describe('CONFIG_KEYS registry', () => {
     // first-run scrubbing behaviour matches the documented
     // baseline regardless of which side reads the config.
     //
-    // Phase 1 hardening: both keys are pinned at server start
-    // (`mutable: false`). A prompt-injected assistant calling
+    // Both keys are pinned at server start (`mutable: false`).
+    // A prompt-injected assistant calling
     // `config.set scrubber.enabled false` before writing a
     // secret would otherwise be a one-shot bypass of the only
     // defence against accidentally persisting credentials.

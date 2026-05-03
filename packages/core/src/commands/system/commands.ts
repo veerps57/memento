@@ -31,6 +31,10 @@ import {
 } from './inputs.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
+// Dashboard opt-in: the overview view uses `system.info` and the
+// scope picker uses `system.list_scopes`. `system.list_tags` is
+// not yet UI-wired.
+const SURFACES_DASHBOARD = ['mcp', 'cli', 'dashboard'] as const;
 
 /**
  * Output schema for `system.info`. Designed to be safe to grow
@@ -163,7 +167,7 @@ export function createSystemCommands(deps: CreateSystemCommandsDeps): readonly A
   const info: Command<typeof SystemInfoInputSchema, typeof SystemInfoOutputSchema> = {
     name: 'system.info',
     sideEffect: 'read',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: SystemInfoInputSchema,
     outputSchema: SystemInfoOutputSchema,
     metadata: {
@@ -210,7 +214,7 @@ export function createSystemCommands(deps: CreateSystemCommandsDeps): readonly A
   > = {
     name: 'system.list_scopes',
     sideEffect: 'read',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: SystemListScopesInputSchema,
     outputSchema: SystemListScopesOutputSchema,
     metadata: {

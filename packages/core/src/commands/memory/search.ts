@@ -39,7 +39,9 @@ import type { Command } from '../types.js';
 import { computeEmbeddingStatus, projectMemoryView } from './commands.js';
 import { MemorySearchInputSchema } from './search-input.js';
 
-const SURFACES = ['mcp', 'cli'] as const;
+// `memory.search` is the dashboard's primary read surface — every
+// search bar maps to it. Dashboard opt-in.
+const SURFACES = ['mcp', 'cli', 'dashboard'] as const;
 
 /**
  * Output schema. Score and breakdown components are unbounded

@@ -357,7 +357,7 @@ describe('importSnapshot — validation', () => {
 });
 
 describe('importSnapshot — re-stamp policy (ADR-0019)', () => {
-  // Phase 4 hardening: imports never trust the artefact's audit
+  // Per ADR-0019: imports never trust the artefact's audit
   // claims. OwnerRef is rewritten, content is re-scrubbed, and
   // (under default settings) the per-memory event chain is
   // collapsed into one synthetic `memory.imported` event.

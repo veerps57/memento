@@ -51,12 +51,17 @@ import type { z } from 'zod';
 export type CommandSideEffect = 'read' | 'write' | 'destructive' | 'admin';
 
 /**
- * Surface allow-list. v1 has exactly two: the MCP server and the
- * CLI. The contract test asserts both adapters expose every
- * command whose `surfaces` includes them, and refuses commands
- * registered for an unknown surface.
+ * Surface allow-list. The MCP server, the CLI, and the
+ * dashboard's HTTP `/api/commands` endpoint each consume a
+ * subset of the registry. Adapters filter by `surfaces` on the
+ * way out: the dashboard rejects any command that does not
+ * include `'dashboard'` with a clear `INVALID_INPUT` pointing
+ * the caller at the CLI alternative. New commands are
+ * mcp+cli-only by default; opting them onto the dashboard is an
+ * explicit decision with a one-line review surface in the
+ * registration site.
  */
-export type CommandSurface = 'mcp' | 'cli';
+export type CommandSurface = 'mcp' | 'cli' | 'dashboard';
 
 /**
  * The execution context handed to every command handler.

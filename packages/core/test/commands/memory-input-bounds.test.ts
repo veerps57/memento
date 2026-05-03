@@ -1,5 +1,4 @@
-// Phase 1 hardening: structural ceilings on `memory.write` wire
-// inputs.
+// Structural ceilings on `memory.write` wire inputs.
 //
 // These bounds (`content` ≤ 1 MiB, `summary` ≤ 64 KiB, `tags` ≤
 // 1024 entries) are the *hard* limits — operator-tunable caps
