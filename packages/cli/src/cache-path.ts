@@ -5,7 +5,8 @@
 // is a hostile location:
 //
 //   - It is wiped on `pnpm install` / `npm ci`, so every fresh
-//     install re-downloads the model (~30 MB or more).
+//     install re-downloads the model (`bge-base-en-v1.5`,
+//     ~110 MB).
 //   - Permissions are inherited from the package install (often
 //     world-readable on shared hosts).
 //   - A colluding dep with write access to `node_modules` could

@@ -272,10 +272,13 @@ export const CONFIG_KEYS = {
 
   // — Retrieval —
   // Pipeline shape per `docs/architecture/retrieval.md`. FTS5 is
-  // always available; vector search is opt-in. The ranker is a
-  // configurable linear combination — every weight is a key here
-  // so operators can tune recall vs. precision without code
-  // changes (principle 1: configurable defaults).
+  // always available; vector search is on by default
+  // (`retrieval.vector.enabled` defaults to `true`) and the local
+  // embedder ships as a regular dependency of the CLI, so a fresh
+  // install gets paraphrase matching with no extra steps. The
+  // ranker is a configurable linear combination — every weight is
+  // a key here so operators can tune recall vs. precision without
+  // code changes (principle 1: configurable defaults).
   'retrieval.fts.tokenizer': defineKey({
     schema: z.enum(['unicode61', 'porter']),
     default: 'unicode61',

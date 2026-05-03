@@ -30,7 +30,9 @@ const app = await createMementoApp({
     // Optional. Defaults shown.
     // model: 'bge-base-en-v1.5',
     // dimension: 768,
-    // cacheDir: undefined, // honours transformers.js default
+    // cacheDir: '/path/to/cache', // when undefined, the CLI resolves to $XDG_CACHE_HOME/memento/models
+    // maxInputBytes: 32_768,      // UTF-8-safe truncation before tokenisation
+    // timeoutMs: 10_000,          // wallclock cap on a single embed call
   }),
 });
 ```
@@ -39,14 +41,16 @@ The factory returns an `EmbeddingProvider` whose `model` and `dimension` are sur
 
 ## Defaults
 
-The defaults below come from the canonical config registry — `embedder.local.model` and `embedder.local.dimension` in [`@psraghuveer/memento-schema/config-keys`](../schema/src/config-keys.ts). Both keys are immutable at runtime: changing them mid-session would silently mix incompatible vector spaces. Operators flip them at startup and run `embedding rebuild` to migrate stored vectors (ADR 0006, Rule 14).
+The defaults below come from the canonical config registry in [`@psraghuveer/memento-schema/config-keys`](../schema/src/config-keys.ts). Every `embedder.local.*` key is immutable at runtime: changing the model or dimension mid-session would silently mix incompatible vector spaces, and the input cap / timeout / cache directory shape resource accounting and disk layout that should not flip under a running process. Operators flip them at startup and run `embedding rebuild` to migrate stored vectors (ADR 0006, Rule 14).
 
-| Option      | Default                 | Notes                                                                                                       |
-| :---------- | :---------------------- | :---------------------------------------------------------------------------------------------------------- |
-| `model`     | `bge-base-en-v1.5`      | Resolved as `Xenova/<model>` on Hugging Face. Pin a different `Xenova/*` model to swap embedders.           |
-| `dimension` | `768`                   | Validated against every produced vector. Mismatch ⇒ throw. Must match the chosen `model`.                   |
-| `cacheDir`  | _(runtime default)_     | Forwarded to `transformers.env.cacheDir` when set. Environmental, not a config key.                         |
-| `loader`    | `createDefaultLoader()` | DI hook. Tests inject a fake to keep the suite hermetic.                                                    |
+| Option          | Config key                      | Default                                            | Notes                                                                                                                                                                                                       |
+| :-------------- | :------------------------------ | :------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`         | `embedder.local.model`          | `bge-base-en-v1.5`                                 | Resolved as `Xenova/<model>` on Hugging Face. Pin a different `Xenova/*` model to swap embedders.                                                                                                            |
+| `dimension`     | `embedder.local.dimension`      | `768`                                              | Validated against every produced vector. Mismatch ⇒ throw. Must match the chosen `model`.                                                                                                                    |
+| `maxInputBytes` | `embedder.local.maxInputBytes`  | `32_768`                                           | UTF-8-safe truncation cap. Inputs above this are truncated before tokenisation; the model's context window is bounded anyway, and this caps the worst-case attention-buffer allocation.                       |
+| `timeoutMs`     | `embedder.local.timeoutMs`      | `10_000`                                           | Wallclock cap on a single `embed` call. Times out via `Promise.race`; auto-embed swallows the rejection and falls back to "memory written without a vector" (recoverable via `embedding rebuild`).            |
+| `cacheDir`      | `embedder.local.cacheDir`       | `null` → `$XDG_CACHE_HOME/memento/models`          | The CLI resolves the `null` default to a per-user XDG path so the model cache is persistent and owner-private, instead of landing inside `node_modules/.../@huggingface/transformers/.cache/`.               |
+| `loader`        | _(no config key — DI only)_     | `createDefaultLoader()`                            | DI hook. Tests inject a fake to keep the suite hermetic.                                                                                                                                                    |
 
 ## Behaviour
 
