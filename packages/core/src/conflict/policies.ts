@@ -101,11 +101,18 @@ const factPolicy: ConflictPolicy = (next, candidate, config) => {
 // detectable key never conflict — Memento prefers silence to
 // guessing.
 
-// Anchored greedy split on the first `:` or `=`. The captured groups are
-// trimmed in `parseKeyValue`, so we do not need ambiguous `\s*` runs in the
-// pattern itself — those caused polynomial backtracking on whitespace-heavy
-// inputs (CodeQL js/polynomial-redos).
-const PREFERENCE_KV_REGEX = /^\s*([^:=]{1,80})[:=](.*)$/;
+// Anchored greedy split on the first `:` or `=` of the first line.
+// AGENTS.md documents the canonical preference / decision shape as
+// `topic: value\n\nfree prose ...` — the topic line is first, prose
+// follows. We anchor the match to the start of the FIRST LINE only:
+// `[^:=\n]{1,80}` for the key (excluding newlines so the key cannot
+// span lines), `[^\n]*` for the value (excluding newlines so prose
+// after the topic line is ignored). No trailing `$` anchor — the
+// engine should stop at end-of-line, not end-of-string. The captured
+// groups are trimmed in `parseKeyValue`, so we do not need ambiguous
+// `\s*` runs in the pattern itself — those caused polynomial
+// backtracking on whitespace-heavy inputs (CodeQL js/polynomial-redos).
+const PREFERENCE_KV_REGEX = /^\s*([^:=\n]{1,80})[:=]([^\n]*)/;
 
 const preferencePolicy: ConflictPolicy = (next, candidate) => {
   const a = parseKeyValue(next.content);

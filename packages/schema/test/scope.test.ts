@@ -79,6 +79,19 @@ describe('ScopeSchema', () => {
   it('rejects unknown scope types', () => {
     expect(() => ScopeSchema.parse({ type: 'team' } as unknown)).toThrow();
   });
+
+  // a session id that fails the ULID regex
+  // used to surface as a bare "Invalid". The error must now carry
+  // enough context for an AI assistant to fix its input shape on the
+  // first try.
+  it('rejects malformed session ids with a helpful, ULID-formatted error', () => {
+    const result = ScopeSchema.safeParse({ type: 'session', id: 'not-a-ulid' });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const messages = result.error.issues.map((i) => i.message).join(' | ');
+    expect(messages).toMatch(/26-character/iu);
+    expect(messages).toMatch(/Crockford|ULID/iu);
+  });
 });
 
 describe('SCOPE_TYPES', () => {

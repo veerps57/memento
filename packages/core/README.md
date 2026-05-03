@@ -175,6 +175,8 @@ const { scanned, opened } = await detectConflicts(
 
 `MemoryRepository.setEmbedding(id, input, ctx)` is the single write surface for embeddings. It validates through `EmbeddingSchema` (catches dimension mismatch before opening a transaction) and emits a `reembedded` event in the same transaction as the row update. Allowed only on `active` memories.
 
+The `memory.set_embedding` command on top of this repo method adds a configured-embedder check: when the host has wired an `EmbeddingProvider`, callers whose `(model, dimension)` disagree with the configured one are rejected with `CONFIG_ERROR` so the vector store stays consistent with the search-time invariant. Hosts that don't wire a provider keep the legacy "set raw vector for testing" affordance — useful for offline test fixtures that pre-seed embeddings.
+
 ```ts
 import { reembedAll } from "@psraghuveer/memento-core";
 

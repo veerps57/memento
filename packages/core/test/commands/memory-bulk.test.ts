@@ -326,6 +326,113 @@ describe('memory.forget_many', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.kind.type).toBe('preference');
   });
+
+  // bulk-forget by tag.
+  it('narrows by `tags` filter (AND semantics) and only forgets the matched rows', async () => {
+    const { byName } = await fixture();
+    // Seed: 2 with tag-a only, 2 with tag-b only, 2 with both.
+    for (let i = 0; i < 2; i += 1) {
+      await executeCommand(
+        get(byName, 'memory.write'),
+        { ...baseWrite, content: `a-${i}`, tags: ['tag-a'] },
+        ctx,
+      );
+    }
+    for (let i = 0; i < 2; i += 1) {
+      await executeCommand(
+        get(byName, 'memory.write'),
+        { ...baseWrite, content: `b-${i}`, tags: ['tag-b'] },
+        ctx,
+      );
+    }
+    for (let i = 0; i < 2; i += 1) {
+      await executeCommand(
+        get(byName, 'memory.write'),
+        { ...baseWrite, content: `ab-${i}`, tags: ['tag-a', 'tag-b'] },
+        ctx,
+      );
+    }
+
+    // forget_many({tags: ['tag-a']}) → should match the 2 with tag-a only PLUS the 2 with both = 4.
+    const result = await executeCommand(
+      get(byName, 'memory.forget_many'),
+      { filter: { tags: ['tag-a'] }, dryRun: false, confirm: true },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { matched: number; applied: number };
+    expect(value.matched).toBe(4);
+    expect(value.applied).toBe(4);
+
+    // The 2 tag-b-only rows are still active.
+    const list = await executeCommand(get(byName, 'memory.list'), { status: 'active' }, ctx);
+    expect(list.ok).toBe(true);
+    if (!list.ok) return;
+    const rows = list.value as { tags: string[] }[];
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.tags).toEqual(['tag-b']);
+    }
+  });
+
+  it('AND-combines tags + kind filters', async () => {
+    const { byName } = await fixture();
+    await executeCommand(
+      get(byName, 'memory.write'),
+      { ...baseWrite, content: 'fact-a', tags: ['target'] },
+      ctx,
+    );
+    await executeCommand(
+      get(byName, 'memory.write'),
+      { ...baseWrite, content: 'fact-b', tags: ['target'], kind: { type: 'preference' } },
+      ctx,
+    );
+    const result = await executeCommand(
+      get(byName, 'memory.forget_many'),
+      { filter: { tags: ['target'], kind: 'fact' }, dryRun: false, confirm: true },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { matched: number; applied: number };
+    expect(value.matched).toBe(1);
+    expect(value.applied).toBe(1);
+  });
+
+  // `reason` is truly optional (used to be
+  // schema-required even on dry-run).
+  it('accepts dryRun=true without a `reason` field at all', async () => {
+    const { byName } = await fixture();
+    await seedMemories(byName, 2);
+    const result = await executeCommand(
+      get(byName, 'memory.forget_many'),
+      { filter: { kind: 'fact' }, dryRun: true, confirm: true },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { dryRun: boolean; matched: number; applied: number };
+    expect(value.dryRun).toBe(true);
+    expect(value.matched).toBe(2);
+    expect(value.applied).toBe(0);
+  });
+
+  it('accepts apply path without a `reason` field — events record reason: null', async () => {
+    const { byName, eventRepo } = await fixture();
+    const ids = await seedMemories(byName, 1);
+    const result = await executeCommand(
+      get(byName, 'memory.forget_many'),
+      { filter: { kind: 'fact' }, dryRun: false, confirm: true },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    const events = await eventRepo.listForMemory(ids[0] as never, {
+      types: ['forgotten'],
+    });
+    expect(events).toHaveLength(1);
+    expect((events[0]?.payload as { reason: unknown }).reason).toBeNull();
+  });
 });
 
 describe('memory.archive_many', () => {

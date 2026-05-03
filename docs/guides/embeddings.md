@@ -18,6 +18,22 @@ On first use, the embedding model (`bge-base-en-v1.5`, ~110 MB ONNX) is download
 
 New memories are automatically embedded on write when `embedding.autoEmbed` is `true` (the default). The embedding runs fire-and-forget after the write commits — it does not block the write response. If the embedder is not yet initialised (first write after install), the embedding is skipped for that write and materialised on the next `embedding.rebuild` or the next write after the model has been downloaded.
 
+## Latency expectations
+
+Vector search is dominated by **query embedding** wall-clock — the time to embed the user's query string before any vector comparison happens. On the default `bge-base-en-v1.5` model, expect roughly **200–500 ms per query on a modern CPU** (Apple Silicon laptops sit at the low end of that range; older x86 servers at the higher end). The vector scan over stored memories is comparatively cheap once the query embedding is in hand — even 20k 768-dim vectors compare in tens of milliseconds.
+
+If query latency matters more than recall on paraphrase, the smaller `bge-small-en-v1.5` (384d) cuts query-embed time by roughly a third at a modest recall cost:
+
+```bash
+memento config set embedder.local.model bge-small-en-v1.5
+memento config set embedder.local.dimension 384
+memento embedding rebuild --confirm   # re-embed existing memories under the new model
+```
+
+Query embeddings are not cached today — every search call pays the full embedding cost. If your workload runs the same query string repeatedly within a session, consider opening a design proposal to add a small LRU cache.
+
+For pure-FTS workloads where vector latency is unacceptable, see "Disabling vector retrieval" below.
+
 ## Disabling vector retrieval
 
 If you prefer pure-FTS behavior (smaller install footprint, no model download):

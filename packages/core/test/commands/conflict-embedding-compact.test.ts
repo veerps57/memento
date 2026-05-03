@@ -437,6 +437,52 @@ describe('createCompactCommands', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('INVALID_INPUT');
   });
+
+  // drain mode loops compact() until a
+  // pass archives nothing. The default mode is now `drain`.
+  it('reports a `batches` count in every response', async () => {
+    const { byName } = await fixture();
+    await writeMemory(byName);
+    const result = await executeCommand(get(byName, 'compact.run'), { confirm: true }, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { batches: number };
+    expect(value.batches).toBeGreaterThanOrEqual(1);
+  });
+
+  it('mode: "batch" performs exactly one pass (legacy single-batch behaviour)', async () => {
+    const { byName } = await fixture();
+    await writeMemory(byName);
+    const result = await executeCommand(
+      get(byName, 'compact.run'),
+      { mode: 'batch', confirm: true },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { batches: number };
+    expect(value.batches).toBe(1);
+  });
+
+  it('mode: "drain" stops when an iteration archives nothing (no infinite loop)', async () => {
+    // Fresh corpus: nothing has decayed past the archive threshold,
+    // so the very first pass returns archived=0 and drain exits.
+    const { byName } = await fixture();
+    for (let i = 0; i < 5; i += 1) {
+      await writeMemory(byName, { content: `note-${i}` });
+    }
+    const result = await executeCommand(
+      get(byName, 'compact.run'),
+      { mode: 'drain', confirm: true },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { batches: number; archived: number };
+    expect(value.archived).toBe(0);
+    // First (and only) pass exited drain — far below maxBatches.
+    expect(value.batches).toBe(1);
+  });
 });
 
 describe('createEmbeddingCommands — runRepo catch branch', () => {

@@ -385,7 +385,7 @@ export const CONFIG_KEYS = {
     default: 500,
     mutable: true,
     description:
-      'Maximum FTS5 candidates fetched per query before ranking. Keeps the ranker fast at the cost of recall on very-frequent terms.',
+      'Maximum FTS5 candidates fetched per query before ranking. Keeps the ranker fast at the cost of recall on very-frequent terms. Common-word queries (`the`, `is`, `and`, etc.) match many memories at low BM25 — the cap keeps p95 latency flat. Lower it (e.g. 200) for faster common-word queries; raise it (e.g. 1000+) for richer recall on broad searches at the cost of more ranker work per call.',
   }),
   'retrieval.candidate.vectorLimit': defineKey({
     // Cosine candidates arrive pre-ordered by similarity, so a
@@ -682,6 +682,20 @@ export const CONFIG_KEYS = {
     default: 100,
     mutable: true,
     description: 'Hard upper bound on `memory.context` result count.',
+  }),
+  'context.candidateLimit': defineKey({
+    schema: PositiveInt,
+    default: 500,
+    mutable: true,
+    description:
+      'Maximum candidate memories the `memory.context` ranker considers per call before applying the weighted score. Pinned memories are always added regardless of this cap. Lower values keep p50 latency flat as the corpus grows; raise it to broaden the candidate pool at the cost of more ranker work.',
+  }),
+  'compact.run.maxBatches': defineKey({
+    schema: PositiveInt,
+    default: 100,
+    mutable: true,
+    description:
+      'Safety cap on the number of batches `compact.run` will process in `mode: "drain"`. Drain stops when an iteration archives nothing OR this cap is hit, whichever happens first. Raise it for very large corpora; lower it to bound the operation in shared environments.',
   }),
   'context.includeKinds': defineKey({
     schema: z.array(z.enum(['fact', 'preference', 'decision', 'todo', 'snippet'])),

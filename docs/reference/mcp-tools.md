@@ -16,7 +16,9 @@ Total: 32 tools.
 
 Registry name: `compact.run` — CLI: `memento compact run`
 
-Run a single compaction pass. Archives active/forgotten memories whose effective confidence has fallen below the decay threshold and have not been confirmed within the archive window. Idempotent.
+Run a compaction pass to archive cold memories whose effective confidence has fallen below the decay threshold and have not been confirmed within the archive window. Idempotent.
+
+Defaults to `mode: "drain"` — loops until a pass archives nothing or `compact.run.maxBatches` is reached. Pass `mode: "batch"` to perform exactly one pass (the legacy single-batch behaviour).
 
 - **Side-effect:** `admin` — Operational / introspection; not part of the data plane.
 
@@ -186,9 +188,9 @@ Read the audit log: events for one memory (ascending) when id is given, otherwis
 
 Registry name: `memory.extract` — CLI: `memento memory extract`
 
-Batch-extract candidate memories from a conversation. The server handles dedup against existing memories, scrubbing, and writing. The assistant's job is reduced to dumping "what seemed worth remembering."
+Batch-extract candidate memories from a conversation. The server handles dedup, scrubbing, and writing. The assistant's job is reduced to dumping "what seemed worth remembering."
 
-The server deduplicates automatically — when in doubt, include the candidate.
+Dedup runs at two scopes: (1) **in-batch** — byte-identical candidates within the same call collapse to a single memory (kind-aware fingerprint); (2) **cross-batch** — embeddings are compared against existing active memories via the configured similarity thresholds (≥`extraction.dedup.identicalThreshold` skips, between that and `extraction.dedup.threshold` supersedes, below writes new). When in doubt, include the candidate.
 
 The response carries a `mode` field. When `mode: "sync"`, the `written`, `skipped`, and `superseded` arrays are authoritative and you can report them directly. When `mode: "async"` (the default per `extraction.processing` config), those arrays are intentionally empty — the server returned a receipt and is processing in background. The accompanying `hint` field explains what to expect; do not retry. Writes land as memories within ~1–5 seconds and can be confirmed with `list_memories` or `search_memory` if needed.
 
@@ -254,7 +256,7 @@ Fetch a single memory by id, or null if absent. By default the embedding vector 
 
 Registry name: `memory.restore` — CLI: `memento memory restore`
 
-Move a forgotten or archived memory back to active.
+Move a forgotten or archived memory back to active. Treated as an implicit confirm: `lastConfirmedAt` is bumped to now so the restored memory is not immediately re-eligible for compaction.
 
 Example:
 
@@ -305,6 +307,8 @@ Example:
 Registry name: `memory.update` — CLI: `memento memory update`
 
 Update non-content fields (tags / kind / pinned / sensitive) of an active memory. Does NOT change content — use memory.supersede for that.
+
+`kind` patches: same-type edits (e.g. updating a snippet's `language` in place, updating a decision's `rationale`) succeed. Cross-type kind changes (snippet → fact, decision → preference, etc.) are rejected with INVALID_INPUT — route them through memory.supersede so kind-specific metadata stays in the audit chain.
 
 Example:
 

@@ -96,7 +96,7 @@ export const MemoryWriteInputSchema = z
       .max(128)
       .optional()
       .describe(
-        'Optional idempotency token. If a memory with the same (scope, clientToken) already exists and is active, the existing id is returned without creating a duplicate. Programmatic surface (scripts, migrations, retry-safe pipelines) — AI assistants writing one-off statements from chat typically omit this.',
+        'Optional idempotency token. If a memory with the same (scope, clientToken) already exists and is active, the existing id is returned without creating a duplicate AND its `lastConfirmedAt` is bumped — a duplicate write is treated as an implicit confirm, just like calling `memory.confirm`. Programmatic surface (scripts, migrations, retry-safe pipelines) — AI assistants writing one-off statements from chat typically omit this.',
       ),
     sensitive: z
       .boolean()
@@ -368,6 +368,13 @@ export const MemoryBulkFilterSchema = z
       .boolean()
       .optional()
       .describe('Narrow to pinned (true) or unpinned (false) memories.'),
+    tags: z
+      .array(z.string())
+      .min(1)
+      .optional()
+      .describe(
+        'Narrow to memories carrying ALL of these tags (AND semantics). Tags are normalised to lowercase before comparison.',
+      ),
     createdAtLte: TimestampSchema.optional().describe(
       'Only include memories created at or before this timestamp. ISO-8601 UTC.',
     ),
@@ -381,10 +388,11 @@ export const MemoryBulkFilterSchema = z
       f.scope !== undefined ||
       f.kind !== undefined ||
       f.pinned !== undefined ||
+      (f.tags !== undefined && f.tags.length > 0) ||
       f.createdAtLte !== undefined,
     {
       message:
-        'bulk-destructive filter must narrow by at least one of scope, kind, pinned, createdAtLte',
+        'bulk-destructive filter must narrow by at least one of scope, kind, pinned, tags, createdAtLte',
     },
   );
 
@@ -407,7 +415,10 @@ export const MemoryForgetManyInputSchema = z
       .string()
       .max(512)
       .nullable()
-      .describe('Reason for forgetting, applied to each affected memory. Pass null if no reason.'),
+      .optional()
+      .describe(
+        'Reason for forgetting, applied to each affected memory. Optional — omit or pass null when no reason is needed (e.g. dry-run rehearsal, routine cleanup).',
+      ),
     dryRun: z
       .boolean()
       .default(true)

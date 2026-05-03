@@ -401,20 +401,47 @@ export function createMemoryRepository(
     rationale: string | null;
     report: ScrubReport | null;
   } {
+    // Apply Unicode
+    // canonicalization to every persisted free-text input BEFORE
+    // the scrubber rules run. This turns three previously-silent
+    // problems into deterministic behaviour:
+    //
+    //   1. NFC normalization makes `café` (NFC) and `café` (NFD)
+    //      indistinguishable on FTS lookup.
+    //   2. Stripping zero-width chars (`​`/`‌`/`‍`/`﻿`)
+    //      prevents stored-vs-displayed divergence.
+    //   3. Stripping non-printable control chars (NUL, etc.,
+    //      excluding `\t`/`\n`/`\r`) keeps the FTS5 unicode61
+    //      tokenizer from indexing values that no human will type
+    //      in a query.
+    //
+    // The bidirectional override (U+202E) is *rejected* outright —
+    // it can flip the visual reading order of stored content,
+    // which is a security pitfall for AI agents that re-render
+    // memories as instructions. We surface it as an error so the
+    // caller knows their input was problematic instead of silently
+    // sanitising it away.
+    const normalized = {
+      content: normalizeForStorage(parts.content, 'content'),
+      summary: parts.summary !== null ? normalizeForStorage(parts.summary, 'summary') : null,
+      rationale:
+        parts.rationale !== null ? normalizeForStorage(parts.rationale, 'kind.rationale') : null,
+    };
+
     if (!scrubberActive || scrubberRules === undefined) {
       return {
-        content: parts.content,
-        summary: parts.summary,
-        rationale: parts.rationale,
+        content: normalized.content,
+        summary: normalized.summary,
+        rationale: normalized.rationale,
         report: null,
       };
     }
     const opts = scrubberBudgetMs !== undefined ? { engineBudgetMs: scrubberBudgetMs } : {};
-    const contentResult = applyRules(parts.content, scrubberRules, opts);
+    const contentResult = applyRules(normalized.content, scrubberRules, opts);
     const summaryResult =
-      parts.summary !== null ? applyRules(parts.summary, scrubberRules, opts) : null;
+      normalized.summary !== null ? applyRules(normalized.summary, scrubberRules, opts) : null;
     const rationaleResult =
-      parts.rationale !== null ? applyRules(parts.rationale, scrubberRules, opts) : null;
+      normalized.rationale !== null ? applyRules(normalized.rationale, scrubberRules, opts) : null;
 
     // Merge per-rule match counts. Severity is constant per
     // rule id (the schema enforces id uniqueness across the
@@ -440,8 +467,8 @@ export function createMemoryRepository(
 
     return {
       content: contentResult.scrubbed,
-      summary: summaryResult !== null ? summaryResult.scrubbed : parts.summary,
-      rationale: rationaleResult !== null ? rationaleResult.scrubbed : parts.rationale,
+      summary: summaryResult !== null ? summaryResult.scrubbed : normalized.summary,
+      rationale: rationaleResult !== null ? rationaleResult.scrubbed : normalized.rationale,
       report: {
         rules: Array.from(ruleCounts, ([ruleId, v]) => ({
           ruleId,
@@ -937,6 +964,16 @@ export function createMemoryRepository(
         updateRow.sensitive = patch.sensitive ? 1 : 0;
         eventPayload.sensitive = patch.sensitive;
       }
+      // Cross-type kind changes used to silently drop kind-specific
+      // metadata (e.g. snippet → fact loses `language`,
+      // decision → preference loses `rationale`) and
+      // shifted the memory between decay classes. Same-type kind
+      // edits (e.g. updating a snippet's `language` in place,
+      // updating a decision's `rationale`) stay legal — that's
+      // the lossless case. Cross-type changes route through
+      // `supersede` so the original kind / metadata stays in the
+      // audit history.
+      const newKindType = patch.kind?.type;
       return runLifecycle({
         id,
         now,
@@ -947,6 +984,17 @@ export function createMemoryRepository(
         eventType: 'updated',
         payload: eventPayload,
         update: () => updateRow,
+        ...(newKindType !== undefined
+          ? {
+              validateRow: (row) => {
+                if (newKindType !== row.kind_type) {
+                  throw new Error(
+                    `update: cannot change memory kind via memory.update — \`${row.kind_type}\` → \`${newKindType}\` would lose kind-specific metadata (language, rationale, due) and shift the memory between decay classes. Use memory.supersede to record the new kind as a fresh memory while preserving the audit chain.`,
+                  );
+                }
+              },
+            }
+          : {}),
       });
     },
 
@@ -1191,6 +1239,13 @@ export function createMemoryRepository(
     eventType: MemoryEvent['type'];
     payload: unknown;
     update: () => Partial<MemoriesTable>;
+    /**
+     * Optional pre-update row predicate. Runs after the existence
+     * + status checks but before the column update. Throw to abort.
+     * Used by `update` to enforce the same-kind invariant without
+     * round-tripping the row through the caller.
+     */
+    validateRow?: (row: MemoriesTable) => void;
   }): Promise<Memory> {
     return await db.transaction().execute(async (trx) => {
       const row = await trx
@@ -1205,6 +1260,9 @@ export function createMemoryRepository(
         throw new Error(
           `${args.op}: memory ${String(args.id)} status=${row.status} not in [${args.allowedStatuses.join(',')}]`,
         );
+      }
+      if (args.validateRow !== undefined) {
+        args.validateRow(row);
       }
 
       const event = MemoryEventSchema.parse({
@@ -1251,6 +1309,49 @@ export function createMemoryRepository(
 
 function defaultClock(): Timestamp {
   return new Date().toISOString() as unknown as Timestamp;
+}
+
+// Zero-width / control-character canonicalisation regexes.
+//
+// We deliberately match the very codepoints that Biome's
+// `noControlCharactersInRegex` and `noMisleadingCharacterClass`
+// rules try to keep OUT of regex literals — that is the WHOLE
+// POINT of these patterns: strip control chars and invisibly-
+// rendered zero-width chars from user-supplied content before
+// it lands in the FTS index. The lint suppressions below are
+// surgical (one rule, one line each) and explicit about why.
+//
+// Zero-width chars: U+200B ZWSP, U+200C ZWNJ, U+200D ZWJ,
+// U+FEFF BOM. Stripped on write so FTS tokenization and visual
+// presentation agree.
+// biome-ignore lint/suspicious/noMisleadingCharacterClass: deliberate — see comment above
+const ZERO_WIDTH_REGEX = /[\u200B\u200C\u200D\uFEFF]/gu;
+// Non-printable C0 control characters except U+0009 (tab),
+// U+000A (newline), and U+000D (carriage return), which we keep
+// for legitimate prose / code formatting.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: deliberate — see comment above
+const CONTROL_CHARS_REGEX = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/gu;
+// Bidirectional override (U+202E): invisible direction-flip char
+// that is a known prompt-injection vector for AI assistants.
+const BIDI_OVERRIDE = '\u202E';
+
+/**
+ * Canonicalise a free-text field before storage. NFC-normalises
+ * (so `café` / `café` round-trip as one form), strips zero-width
+ * chars and non-tab/newline control characters, and rejects the
+ * bidi override character. Throws for callers to surface as
+ * `INVALID_INPUT`.
+ */
+function normalizeForStorage(input: string, fieldName: string): string {
+  if (input.includes(BIDI_OVERRIDE)) {
+    throw new Error(
+      `${fieldName} contains the U+202E bidirectional override character — refused. This codepoint flips the visual reading direction and is a known injection vector. Strip it from the input and try again.`,
+    );
+  }
+  return input
+    .normalize('NFC')
+    .replaceAll(ZERO_WIDTH_REGEX, '')
+    .replaceAll(CONTROL_CHARS_REGEX, '');
 }
 
 function clampLimit(raw: number | undefined): number {

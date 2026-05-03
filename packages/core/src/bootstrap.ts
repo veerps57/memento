@@ -217,7 +217,18 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
         }
       },
     },
-    { eventRepository, configStore },
+    {
+      eventRepository,
+      configStore,
+      ...(embeddingProvider !== undefined
+        ? {
+            configuredEmbedder: {
+              model: embeddingProvider.model,
+              dimension: embeddingProvider.dimension,
+            },
+          }
+        : {}),
+    },
   );
   const searchCommand = createMemorySearchCommand({
     db: db.db,
@@ -272,7 +283,7 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     conflictRepository,
     memoryRepository,
   });
-  const compactCommands = createCompactCommands({ memoryRepository });
+  const compactCommands = createCompactCommands({ memoryRepository, configStore });
   const configCommands = createConfigCommands({
     configRepository,
     configStore,

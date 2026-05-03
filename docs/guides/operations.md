@@ -113,6 +113,17 @@ memento status
 
 If `doctor` or `status` flags anything unexpected, the snapshot you took in step one is your rollback. Migrations are append-only (Rule 12), so a newer binary can always read an older database — but a database written by a newer binary may rely on schema features the older binary lacks, which is why the rollback path is "restore the snapshot," not "downgrade the package."
 
+If you want a quantitative before/after — useful when an upgrade touches retrieval or storage — capture a stress-test baseline on each side of the upgrade and diff the two markdown reports. From a checkout of the source repo:
+
+```bash
+node scripts/stress-test.mjs --mode=standard   # before upgrade
+# ... upgrade ...
+node scripts/stress-test.mjs --mode=standard   # after upgrade
+diff ./memento-stress-<before>.md ./memento-stress-<after>.md
+```
+
+The runner uses a fresh, throwaway database under `/tmp/`, so it never touches the live store. See [`docs/guides/stress-test.md`](stress-test.md) for the full guide.
+
 ## Uninstall
 
 `memento uninstall` prints \(does not perform\) the steps to remove every artefact Memento creates: the database file plus each known MCP-client config entry. It is intentionally print-only so you can review and execute the steps yourself.

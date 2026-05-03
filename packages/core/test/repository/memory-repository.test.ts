@@ -479,6 +479,68 @@ describe('createMemoryRepository', () => {
         /status=archived/,
       );
     });
+
+    it('rejects cross-type kind changes (snippet → fact loses metadata)', async () => {
+      // Silently dropping a snippet's `language` field on a kind
+      // change is an audit-history bug. Cross-kind updates must
+      // route through `supersede`.
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const created = await repo.write(
+        { ...baseInput, kind: { type: 'snippet', language: 'typescript' } },
+        { actor },
+      );
+      await expect(repo.update(created.id, { kind: { type: 'fact' } }, { actor })).rejects.toThrow(
+        /cannot change memory kind/,
+      );
+    });
+
+    it('rejects cross-type kind changes (decision → preference)', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const created = await repo.write(
+        { ...baseInput, kind: { type: 'decision', rationale: 'team consensus' } },
+        { actor },
+      );
+      await expect(
+        repo.update(created.id, { kind: { type: 'preference' } }, { actor }),
+      ).rejects.toThrow(/cannot change memory kind/);
+    });
+
+    // write-path Unicode
+    // canonicalization runs through every memory.update test below.
+    // The repo update path doesn't touch content; the normaliser
+    // applies on write/supersede only. Coverage for those lives in
+    // the dedicated "Unicode hardening" describe below.
+    it('allows same-type kind updates (snippet stays snippet, language changes)', async () => {
+      // The intent of `update.kind` is to refine kind-specific
+      // metadata in place — e.g. switch a snippet from `js` to `ts`.
+      // Same-type edits are lossless and stay legal.
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const created = await repo.write(
+        { ...baseInput, kind: { type: 'snippet', language: 'js' } },
+        { actor },
+      );
+      const updated = await repo.update(
+        created.id,
+        { kind: { type: 'snippet', language: 'typescript' } },
+        { actor },
+      );
+      expect(updated.kind).toEqual({ type: 'snippet', language: 'typescript' });
+    });
   });
 
   describe('forget / restore', () => {
@@ -795,6 +857,92 @@ describe('createMemoryRepository', () => {
       expect(current.summary).not.toContain('INSUMMARY');
       if (current.kind.type === 'decision') {
         expect(current.kind.rationale).not.toContain('NEWPRIVK');
+      }
+    });
+  });
+
+  // The write path normalises
+  // every persisted free-text field: NFC, zero-width strip, control-
+  // char strip, bidi-override reject.
+  describe('Unicode hardening on write', () => {
+    it('NFC-normalises content so NFD input is stored as the canonical NFC form', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      // U+0065 LATIN SMALL LETTER E + U+0301 COMBINING ACUTE ACCENT
+      // (NFD). After normalisation we expect the precomposed
+      // U+00E9 (NFC) byte-sequence.
+      const nfd: string = 'café';
+      const nfc: string = 'café';
+      // Sanity — the two strings differ pre-normalisation. Annotated as
+      // plain `string` (not their literal types) so the compiler does not
+      // strength-check the equality and demote the runtime assertion.
+      expect(nfd === nfc).toBe(false);
+      const m = await repo.write({ ...baseInput, content: nfd }, { actor });
+      expect(m.content).toBe(nfc);
+    });
+
+    it('strips zero-width characters from content', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const polluted = 'pa​ss‌wo‍rd﻿leak';
+      const m = await repo.write({ ...baseInput, content: polluted }, { actor });
+      expect(m.content).toBe('passwordleak');
+    });
+
+    it('strips non-printable control characters but keeps tab/newline/CR', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      // NUL + a few C0 controls + tab + newline + CR + visible.
+      const polluted = 'before\x00\x01\x02\tinner\nnext\rrest';
+      const m = await repo.write({ ...baseInput, content: polluted }, { actor });
+      expect(m.content).toBe('before\tinner\nnext\rrest');
+    });
+
+    it('rejects content containing the U+202E bidi override character', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const polluted = 'normal text ‮ reversed evil';
+      await expect(repo.write({ ...baseInput, content: polluted }, { actor })).rejects.toThrow(
+        /U\+202E|bidirectional override/,
+      );
+    });
+
+    it('applies the same canonicalisation to summary and decision rationale', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const m = await repo.write(
+        {
+          ...baseInput,
+          kind: { type: 'decision', rationale: 'rationale​zero-width' },
+          content: 'café', // NFD café
+          summary: 'pa​ss',
+        },
+        { actor },
+      );
+      expect(m.content).toBe('café');
+      expect(m.summary).toBe('pass');
+      if (m.kind.type === 'decision') {
+        expect(m.kind.rationale).toBe('rationalezero-width');
       }
     });
   });

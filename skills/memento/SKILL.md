@@ -26,7 +26,7 @@ The Memento MCP server exposes these tools (the `verb_noun` form is what shows u
 - **`extract_memory`** — batch-write candidate memories from a conversation; the server dedups against existing memories.
 - **`confirm_memory`** — re-affirm a memory you actually used. Resets its decay.
 - **`supersede_memory`** — replace a memory's content with a new one and link the two.
-- `update_memory` — change tags, kind, or pinned only (not content).
+- `update_memory` — change tags, kind (same-type only), pinned, or sensitive (not content; not cross-type kind changes).
 - `forget_memory` / `archive_memory` — destructive; require `confirm: true`. `restore_memory` reverses either.
 - `list_memories` / `list_memory_events` — current state and audit log.
 - `info_system` / `list_scopes_system` / `list_tags_system` — discover what the store contains.
@@ -116,7 +116,7 @@ For a `repo` scope, never invent the remote. Either ask the user, read it from t
 
 If the user changes their mind about something durable ("actually, switched from pnpm to bun"), call `supersede_memory` with the old memory's id and a new memory describing the current state. Both rows are preserved and linked; the audit log retains the history of what the user used to believe.
 
-`update_memory` does **not** let you change content — its schema rejects content edits and points you at supersede in the error message. `update_memory` mutates only `tags`, `kind`, `pinned`, `sensitive`. This restriction is intentional: history is the whole point of having an audit log.
+`update_memory` does **not** let you change content — its schema rejects content edits and points you at supersede in the error message. `update_memory` mutates only `tags`, `kind`, `pinned`, `sensitive`. Same-type `kind` edits (a snippet's `language`, a decision's `rationale`) are allowed; cross-type kind changes (snippet → fact, decision → preference) are rejected with `INVALID_INPUT` and route through `supersede_memory` so kind-specific metadata stays in the audit chain. This restriction is intentional: history is the whole point of having an audit log.
 
 ## Forgetting and archiving
 

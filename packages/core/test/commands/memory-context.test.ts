@@ -473,4 +473,83 @@ describe('memory.context', () => {
     // First scope in the list gets the highest boost.
     expect(result.value.results[0]!.memory.content).toBe('Repo fact');
   });
+
+  // candidate-set cap.
+  it('caps the candidate fetch at context.candidateLimit so ranker work is bounded', async () => {
+    // With candidateLimit set to 5 we expect the ranker to consider
+    // at most 5 of the 30 active memories (plus any pinned) — even
+    // though the request asks for more.
+    const { repo, command } = await fixture({
+      'context.candidateLimit': 5,
+      'context.defaultLimit': 30,
+      'context.maxLimit': 50,
+    });
+    for (let i = 0; i < 30; i += 1) {
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: `note-${i}`,
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+    }
+    const result = await executeCommand(command, {}, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The ranker only saw 5 candidates → result count is at most 5,
+    // even though defaultLimit (30) is much larger.
+    expect(result.value.results.length).toBeLessThanOrEqual(5);
+  });
+
+  it('always includes pinned memories in the candidate set even past the cap', async () => {
+    // Even with candidateLimit=1, a pinned memory created BEFORE the
+    // newer recency-ordered candidate must still be ranked. This
+    // protects the "pinned items always surface" UX.
+    const { repo, command } = await fixture({
+      'context.candidateLimit': 1,
+      'context.defaultLimit': 5,
+    });
+    // Pinned + older.
+    const pinned = await repo.write(
+      {
+        scope: { type: 'global' },
+        owner: { type: 'local', id: 'self' },
+        kind: { type: 'fact' },
+        tags: [],
+        pinned: true,
+        content: 'pinned-old',
+        summary: null,
+        storedConfidence: 1,
+      },
+      { actor },
+    );
+    // Newer non-pinned rows that would otherwise consume the entire
+    // candidateLimit by themselves.
+    for (let i = 0; i < 10; i += 1) {
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: `noise-${i}`,
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+    }
+    const result = await executeCommand(command, {}, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const ids = result.value.results.map((r) => r.memory.id as unknown as string);
+    expect(ids).toContain(pinned.id as unknown as string);
+  });
 });

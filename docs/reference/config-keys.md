@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 78 keys.
+Total: 80 keys.
 
 ## `decay.*`
 
@@ -50,6 +50,7 @@ Total: 78 keys.
 | Key | Default | Mutable | Description |
 | --- | --- | --- | --- |
 | `compact.run.defaultBatchSize` | `1000` | yes | Default batch size for `compact.run` when no batchSize is supplied. |
+| `compact.run.maxBatches` | `100` | yes | Safety cap on the number of batches `compact.run` will process in `mode: "drain"`. Drain stops when an iteration archives nothing OR this cap is hit, whichever happens first. Raise it for very large corpora; lower it to bound the operation in shared environments. |
 
 ## `memory.*`
 
@@ -95,7 +96,7 @@ Total: 78 keys.
 | `retrieval.scopeBoost` | `0.1` | yes | Per-level boost applied to scope-specificity. The most-specific scope in the resolved layer set scores N × scopeBoost; the least-specific scores 0. |
 | `retrieval.search.defaultLimit` | `20` | yes | Default result count for `memory.search` when no limit is supplied. |
 | `retrieval.search.maxLimit` | `200` | yes | Hard upper bound on `memory.search` result count. |
-| `retrieval.candidate.ftsLimit` | `500` | yes | Maximum FTS5 candidates fetched per query before ranking. Keeps the ranker fast at the cost of recall on very-frequent terms. |
+| `retrieval.candidate.ftsLimit` | `500` | yes | Maximum FTS5 candidates fetched per query before ranking. Keeps the ranker fast at the cost of recall on very-frequent terms. Common-word queries (`the`, `is`, `and`, etc.) match many memories at low BM25 — the cap keeps p95 latency flat. Lower it (e.g. 200) for faster common-word queries; raise it (e.g. 1000+) for richer recall on broad searches at the cost of more ranker work per call. |
 | `retrieval.candidate.vectorLimit` | `200` | yes | Maximum vector candidates fetched per query before ranking. Only consulted when `retrieval.vector.enabled` is true. |
 
 ## `embedder.*`
@@ -157,6 +158,7 @@ Total: 78 keys.
 | --- | --- | --- | --- |
 | `context.defaultLimit` | `20` | yes | Default number of memories returned by `memory.context` when no limit is supplied. |
 | `context.maxLimit` | `100` | yes | Hard upper bound on `memory.context` result count. |
+| `context.candidateLimit` | `500` | yes | Maximum candidate memories the `memory.context` ranker considers per call before applying the weighted score. Pinned memories are always added regardless of this cap. Lower values keep p50 latency flat as the corpus grows; raise it to broaden the candidate pool at the cost of more ranker work. |
 | `context.includeKinds` | `["fact","preference","decision"]` | yes | Which memory kinds `memory.context` includes by default. Todos and snippets are often transient. |
 | `context.ranker.weights.confidence` | `1` | yes | Context ranker weight on effective confidence. |
 | `context.ranker.weights.recency` | `1.5` | yes | Context ranker weight on recency (higher than search — context favours fresh). |

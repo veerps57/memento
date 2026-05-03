@@ -228,6 +228,73 @@ describe('memory.extract', () => {
     expect(result.value.written[0]!.content).toBe('New fact');
   });
 
+  it('deduplicates byte-identical candidates within the same batch', async () => {
+    // Round-2 finding C2: previously this wrote 3 separate memories.
+    // The in-batch fingerprint set ensures byte-identical content
+    // collapses to one row regardless of vector-search timing.
+    const { command } = await fixture();
+    const phrase = 'Identical-content extraction batch probe.';
+    const result = await executeCommand(
+      command,
+      {
+        candidates: [
+          { kind: 'fact', content: phrase },
+          { kind: 'fact', content: phrase },
+          { kind: 'fact', content: phrase },
+        ],
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.written.length).toBe(1);
+    expect(result.value.skipped.length).toBe(2);
+    for (const s of result.value.skipped) {
+      expect(s.reason).toBe('duplicate');
+      expect(s.existingId).toBe(result.value.written[0]!.id);
+    }
+  });
+
+  it('keeps in-batch dedup kind-aware (same content, different kinds → both written)', async () => {
+    // The fingerprint includes the kind, so the same prose recorded
+    // as both a `fact` and a `preference` is two memories, not one.
+    const { command } = await fixture();
+    const phrase = 'Same prose as both fact and preference.';
+    const result = await executeCommand(
+      command,
+      {
+        candidates: [
+          { kind: 'fact', content: phrase },
+          { kind: 'preference', content: phrase },
+        ],
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.written.length).toBe(2);
+    expect(result.value.skipped.length).toBe(0);
+  });
+
+  it('treats trivially-different content (case / trailing whitespace) as in-batch duplicates', async () => {
+    const { command } = await fixture();
+    const result = await executeCommand(
+      command,
+      {
+        candidates: [
+          { kind: 'fact', content: 'Same payload, byte-different' },
+          { kind: 'fact', content: 'same payload, byte-different   ' },
+          { kind: 'fact', content: 'SAME PAYLOAD, BYTE-DIFFERENT' },
+        ],
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.written.length).toBe(1);
+    expect(result.value.skipped.length).toBe(2);
+  });
+
   it('handles decision kind with rationale', async () => {
     const { repo, command } = await fixture();
     const result = await executeCommand(

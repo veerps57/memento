@@ -34,4 +34,3 @@ The short, link-rich index lives at https://runmemento.com/llms.txt.
 
 const body = `${readme}\n\n---\n\n${architecture}\n`;
 writeFileSync(resolve(distDir, 'llms-full.txt'), header + body, 'utf8');
-console.log('[landing] wrote dist/llms-full.txt');

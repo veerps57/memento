@@ -24,7 +24,16 @@ export const MemorySearchInputSchema = z
     text: z
       .string()
       .min(1)
-      .describe('Free-text search query. Searches memory content and summaries.'),
+      // A whitespace-only query passes `min(1)` but the FTS
+      // sanitiser drops every token, so the search returns
+      // vector-only results without any signal that the FTS arm
+      // contributed nothing. Reject after-trim instead.
+      .refine((s) => s.trim().length > 0, {
+        message: 'must contain at least one non-whitespace character',
+      })
+      .describe(
+        'Free-text search query. Searches memory content and summaries. Must contain at least one non-whitespace character — empty / whitespace-only queries are rejected. Treated as a term bag — FTS5 syntax (AND / OR / NOT / NEAR / phrase / prefix) is NOT parsed; tokens are stripped of operators and ranked via BM25 + vector similarity.',
+      ),
     scopes: z
       .array(ScopeSchema)
       .optional()

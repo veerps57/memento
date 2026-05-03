@@ -38,30 +38,38 @@ const POSIX_ABSOLUTE_PATTERN = /^\//;
 const WINDOWS_ABSOLUTE_PATTERN = /^[A-Za-z]:[\\/]/;
 const REPO_REMOTE_PATTERN = /^[a-z0-9.-]+\/[a-z0-9._-]+\/[a-z0-9._-]+$/;
 
+// All four ULID-shaped fields share the same regex; the `message`
+// option attaches a uniformly helpful error so a bad input shows
+// callers the expected format instead of a bare "Invalid".
+// (Round-2 finding M2: `scope.id: Invalid` left no clue about the
+// 26-char Crockford-base32 requirement.)
+const ULID_ERROR_MESSAGE =
+  'must be a 26-character Crockford-base32 ULID (e.g. "01HYXZ1A2B3C4D5E6F7G8H9J0K")';
+
 export const MemoryIdSchema = z
   .string()
-  .regex(ULID_PATTERN)
+  .regex(ULID_PATTERN, { message: ULID_ERROR_MESSAGE })
   .describe('A 26-character ULID string (Crockford base32). Example: "01HYXZ1A2B3C4D5E6F7G8H9J0K".')
   .brand<'MemoryId'>();
 export type MemoryId = z.infer<typeof MemoryIdSchema>;
 
 export const EventIdSchema = z
   .string()
-  .regex(ULID_PATTERN)
+  .regex(ULID_PATTERN, { message: ULID_ERROR_MESSAGE })
   .describe('A 26-character ULID string identifying an event.')
   .brand<'EventId'>();
 export type EventId = z.infer<typeof EventIdSchema>;
 
 export const SessionIdSchema = z
   .string()
-  .regex(ULID_PATTERN)
+  .regex(ULID_PATTERN, { message: ULID_ERROR_MESSAGE })
   .describe('A 26-character ULID string identifying a session.')
   .brand<'SessionId'>();
 export type SessionId = z.infer<typeof SessionIdSchema>;
 
 export const ConflictIdSchema = z
   .string()
-  .regex(ULID_PATTERN)
+  .regex(ULID_PATTERN, { message: ULID_ERROR_MESSAGE })
   .describe('A 26-character ULID string identifying a conflict.')
   .brand<'ConflictId'>();
 export type ConflictId = z.infer<typeof ConflictIdSchema>;
