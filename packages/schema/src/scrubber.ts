@@ -178,7 +178,14 @@ export const DEFAULT_SCRUBBER_RULES: ScrubberRuleSet = ScrubberRuleSetSchema.par
   {
     id: 'email',
     description: 'Email address',
-    pattern: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}',
+    // Domain split into non-overlapping label classes. The earlier
+    // form `[A-Za-z0-9.-]+\\.[A-Za-z]{2,}` admits `.` inside the
+    // greedy class *and* in the fixed `\\.` boundary; on adversarial
+    // input like `a.a.a.a.a@a.a.a.a.a` the engine backtracks
+    // quadratically. Splitting into `[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*`
+    // keeps `.` out of the greedy class so each label is bounded
+    // and the overall scan is linear.
+    pattern: '[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}',
     placeholder: '<email-redacted>',
     severity: 'medium',
   },

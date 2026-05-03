@@ -75,8 +75,14 @@ export interface LifecycleDeps {
    * the function returned `undefined` — which is fine for tests
    * that do not flip `retrieval.vector.enabled`. Production
    * (`run.ts`) always supplies the real implementation.
+   *
+   * `options` carries the resolved `embedder.local.*` config so
+   * the embedder factory inherits the operator's caps without
+   * the CLI having to import the config registry.
    */
-  readonly resolveEmbedder?: () => Promise<EmbeddingProvider | undefined>;
+  readonly resolveEmbedder?: (
+    options: ResolveEmbedderOptions,
+  ) => Promise<EmbeddingProvider | undefined>;
   /**
    * Spawn the dashboard server, bind it to the requested
    * host:port, open the browser if requested, and block until
@@ -144,6 +150,17 @@ export interface MigrateStoreOptions {
 }
 
 /**
+ * Options forwarded from `openAppForSurface` to
+ * {@link LifecycleDeps.resolveEmbedder}. Sourced from the
+ * config store so the embedder honours operator-tuned caps.
+ */
+export interface ResolveEmbedderOptions {
+  readonly maxInputBytes?: number;
+  readonly timeoutMs?: number;
+  readonly cacheDir?: string;
+}
+
+/**
  * Options accepted by {@link LifecycleDeps.serveStdio}.
  *
  * Mirrors `BuildMementoServerOptions` from `@psraghuveer/memento-server`
@@ -158,6 +175,13 @@ export interface ServeStdioOptions {
     readonly name: string;
     readonly version: string;
   };
+  /**
+   * Hard upper bound on a single JSON-RPC message read from
+   * stdin, in bytes. Sourced from `server.maxMessageBytes` in
+   * the config registry. Forwarded to the underlying transport
+   * which destroys the stream on overshoot.
+   */
+  readonly maxMessageBytes?: number;
 }
 
 /**

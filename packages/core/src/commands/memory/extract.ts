@@ -34,6 +34,7 @@ import type { MemoryRepository } from '../../repository/memory-repository.js';
 import { ulid } from '../../repository/ulid.js';
 import type { MementoSchema } from '../../storage/schema.js';
 import type { Command, CommandContext } from '../types.js';
+import { enforceSafetyCaps } from './safety-caps.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
 
@@ -179,6 +180,24 @@ export function createMemoryExtractCommand(
           message: `memory.extract: batch size ${input.candidates.length} exceeds extraction.maxCandidatesPerCall (${maxCandidates})`,
           details: { limit: maxCandidates, received: input.candidates.length },
         });
+      }
+
+      // Per-candidate content/summary/tag/rationale caps.
+      for (let i = 0; i < input.candidates.length; i += 1) {
+        const candidate = input.candidates[i];
+        if (candidate === undefined) continue;
+        const cap = enforceSafetyCaps(
+          'memory.extract',
+          {
+            content: candidate.content,
+            summary: candidate.summary ?? null,
+            tags: candidate.tags ?? [],
+            rationale: candidate.rationale ?? null,
+          },
+          cfg,
+          i,
+        );
+        if (!cap.ok) return cap;
       }
 
       const processingMode = cfg.get('extraction.processing');

@@ -81,6 +81,9 @@ async function defaultServeStdio(options: ServeStdioOptions): Promise<void> {
     registry: options.registry,
     ctx: options.ctx,
     info: options.info,
+    ...(options.maxMessageBytes !== undefined
+      ? { transport: { maxMessageBytes: options.maxMessageBytes } }
+      : {}),
   });
 }
 
@@ -95,11 +98,21 @@ async function defaultServeStdio(options: ServeStdioOptions): Promise<void> {
  * error propagate — `openAppForSurface` wraps it in a
  * CONFIG_ERROR with a reinstall hint.
  */
-async function defaultResolveEmbedder(): Promise<EmbeddingProvider | undefined> {
+async function defaultResolveEmbedder(
+  options: import('./lifecycle/types.js').ResolveEmbedderOptions,
+): Promise<EmbeddingProvider | undefined> {
   const mod = (await import('@psraghuveer/memento-embedder-local')) as {
-    readonly createLocalEmbedder: () => EmbeddingProvider;
+    readonly createLocalEmbedder: (opts?: {
+      readonly maxInputBytes?: number;
+      readonly timeoutMs?: number;
+      readonly cacheDir?: string;
+    }) => EmbeddingProvider;
   };
-  return mod.createLocalEmbedder();
+  return mod.createLocalEmbedder({
+    ...(options.maxInputBytes !== undefined ? { maxInputBytes: options.maxInputBytes } : {}),
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    ...(options.cacheDir !== undefined ? { cacheDir: options.cacheDir } : {}),
+  });
 }
 
 /**

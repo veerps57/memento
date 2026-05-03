@@ -112,9 +112,21 @@ export async function openAppForSurface(
     });
   }
 
+  // Forward operator-tunable embedder caps so the local embedder
+  // honours `embedder.local.maxInputBytes` / `timeoutMs` / `cacheDir`
+  // without having to reach into the registry itself.
+  const embedderOptions: import('./types.js').ResolveEmbedderOptions = {
+    maxInputBytes: probe.configStore.get('embedder.local.maxInputBytes'),
+    timeoutMs: probe.configStore.get('embedder.local.timeoutMs'),
+  };
+  const cacheDir = probe.configStore.get('embedder.local.cacheDir');
+  if (cacheDir !== null) {
+    (embedderOptions as { cacheDir?: string }).cacheDir = cacheDir;
+  }
+
   let embeddingProvider: Awaited<ReturnType<NonNullable<LifecycleDeps['resolveEmbedder']>>>;
   try {
-    embeddingProvider = await resolver();
+    embeddingProvider = await resolver(embedderOptions);
   } catch (cause) {
     return err({
       code: 'CONFIG_ERROR',

@@ -345,8 +345,16 @@ export interface RepositoryDeps {
    * attached to the corresponding `created` event regardless of
    * whether any rule matched, so audit consumers can distinguish
    * "scrubber ran and was a no-op" from "scrubber did not run".
+   *
+   * `engineBudgetMs` caps each rule's wallclock runtime — see
+   * `applyRules` for the model. Hosts wire this from the
+   * `scrubber.engineBudgetMs` config key.
    */
-  scrubber?: { rules: ScrubberRuleSet; enabled?: boolean };
+  scrubber?: {
+    rules: ScrubberRuleSet;
+    enabled?: boolean;
+    engineBudgetMs?: number;
+  };
 }
 
 const DEFAULT_LIMIT = CONFIG_KEYS['memory.list.defaultLimit'].default;
@@ -361,6 +369,7 @@ export function createMemoryRepository(
   const eventIdFactory = deps.eventIdFactory ?? (() => ulid());
   const scrubberActive = deps.scrubber !== undefined && deps.scrubber.enabled !== false;
   const scrubberRules = deps.scrubber?.rules;
+  const scrubberBudgetMs = deps.scrubber?.engineBudgetMs;
 
   function scrub(content: string): {
     content: string;
@@ -369,7 +378,11 @@ export function createMemoryRepository(
     if (!scrubberActive || scrubberRules === undefined) {
       return { content, report: null };
     }
-    const { scrubbed, report } = applyRules(content, scrubberRules);
+    const { scrubbed, report } = applyRules(
+      content,
+      scrubberRules,
+      scrubberBudgetMs !== undefined ? { engineBudgetMs: scrubberBudgetMs } : {},
+    );
     return { content: scrubbed, report };
   }
 
