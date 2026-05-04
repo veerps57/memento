@@ -1,5 +1,16 @@
 # @psraghuveer/memento
 
+## 0.5.3
+
+### Patch Changes
+
+- Updated dependencies [5479c6a]
+  - @psraghuveer/memento-core@0.8.0
+  - @psraghuveer/memento-schema@0.7.0
+  - @psraghuveer/memento-dashboard@0.3.0
+  - @psraghuveer/memento-embedder-local@0.4.2
+  - @psraghuveer/memento-server@0.3.2
+
 ## 0.5.2
 
 ### Patch Changes
