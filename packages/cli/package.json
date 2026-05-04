@@ -52,6 +52,7 @@
     "build": "node ./scripts/copy-skills.mjs && tsup",
     "clean": "rm -rf dist skills .turbo *.tsbuildinfo",
     "test": "vitest run",
-    "postinstall": "node ./scripts/postinstall.mjs"
+    "postinstall": "node ./scripts/postinstall.mjs",
+    "prepack": "node ./scripts/copy-skills.mjs"
   }
 }

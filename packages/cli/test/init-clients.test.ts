@@ -65,21 +65,27 @@ describe('renderClientSnippets', () => {
     expect(vscode.configPath).toContain('.vscode/mcp.json');
   });
 
-  it('marks Anthropic-product clients as skill-capable and third-party clients as not', () => {
+  it('marks every registered client as skill-capable today', () => {
     // Pinning the exact mapping is intentional. The init renderer
     // gates the optional "install the skill" section on this
-    // boolean; an accidental flip on Cursor / VS Code / OpenCode
+    // boolean; an accidental flip on a non-supporting client
     // would mislead users into installing into a directory their
     // client does not read.
+    //
+    // Every client in the registry today loads Anthropic-format
+    // skills from `~/.claude/skills/<name>/SKILL.md` (some also
+    // accept a client-specific path). When a client we add lacks
+    // skill support, flip its entry to `false` here; do not
+    // maintain external enumerations.
     const byClient = Object.fromEntries(
       renderClientSnippets(DB).map((s) => [s.id, s.supportsSkills]),
     );
     expect(byClient).toEqual({
       'claude-code': true,
       'claude-desktop': true,
-      cursor: false,
-      vscode: false,
-      opencode: false,
+      cursor: true,
+      vscode: true,
+      opencode: true,
     });
   });
 

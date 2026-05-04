@@ -46,6 +46,12 @@ export function renderInitText(snapshot: InitSnapshot, options: InitRenderOption
   // run during onboarding.
   lines.push(renderBanner(version, { color: options.color }).replace(/\n$/u, ''));
   lines.push(`${green('✓', options)} memento ${version}`);
+
+  // ── Step 1 ── DB initialised + pre-flight checks. Numbered so
+  // the walkthrough mirrors README / landing / mcp-client-setup
+  // verbatim — one onboarding mental model across surfaces.
+  lines.push('');
+  lines.push(bold('Step 1 — Initialize Memento', options));
   if (memoryWarning) {
     lines.push(
       `${yellow('!', options)} database is :memory: — every spawn will start with an empty store.`,
@@ -77,14 +83,16 @@ export function renderInitText(snapshot: InitSnapshot, options: InitRenderOption
     lines.push(`${mark} ${check.message}`);
   }
 
+  // ── Step 2 ── MCP-client wiring.
   lines.push('');
+  lines.push(bold('Step 2 — Connect your AI client', options));
   if (clients.length === 0) {
     lines.push(
       `${yellow('!', options)} no clients selected; pass --client <id[,id…]> or omit --client to see all.`,
     );
     lines.push('');
   } else {
-    lines.push('Add memento to your AI assistant. Pick the client you use:');
+    lines.push('Pick the client you use, paste the snippet, and restart the client:');
     lines.push('');
     for (const client of clients) {
       const header = `── ${client.displayName} ──`;
@@ -106,14 +114,20 @@ export function renderInitText(snapshot: InitSnapshot, options: InitRenderOption
       `${dim('Note:', options)} merge into any existing entries — do not replace the whole`,
     );
     lines.push('      `mcpServers` / `servers` / `mcp` block if your config already has one.');
+    lines.push(`${dim('Then:', options)} restart your AI client so it loads the new MCP server.`);
     lines.push('');
   }
 
-  // Skill section — only when the rendered client set has at
-  // least one Anthropic-skill-capable client. Suppressed for
-  // pure third-party setups (Cursor / VS Code Agent / OpenCode).
+  // ── Step 3 ── Teach the assistant when to use Memento. Always
+  // rendered: skill branch when the rendered client set includes
+  // at least one Anthropic-skill-capable client; persona branch
+  // for pure third-party setups (Cursor / VS Code Agent / OpenCode).
+  lines.push(bold('Step 3 — Teach your assistant when to use Memento', options));
+  lines.push('');
   if (skill.capableClients.length > 0) {
     lines.push(...renderSkillSection(skill, options));
+  } else {
+    lines.push(...renderPersonaOnlySection(options));
   }
 
   lines.push(`${dim('Tip:', options)} clients with `);
@@ -134,15 +148,19 @@ export function renderInitText(snapshot: InitSnapshot, options: InitRenderOption
   );
   lines.push('           config file. Pasting is a manual step.');
   lines.push('');
-  lines.push(`Verify with: ${bold('memento doctor', options)}`);
   lines.push(
-    `             ${bold('memento ping', options)}      \u2014 round-trip an MCP tools/list`,
+    `Verify with: ${bold('memento doctor --mcp', options)} \u2014 scans known client configs`,
+  );
+  lines.push(
+    `             ${bold('memento ping', options)}        \u2014 round-trip an MCP tools/list`,
   );
   lines.push('');
   lines.push(
-    `Next:        ${bold('memento status', options)}    \u2014 what's in your store (counts, last event, db size)`,
+    `Next:        ${bold('memento status', options)}      \u2014 what's in your store (counts, last event, db size)`,
   );
-  lines.push(`             ${bold('memento dashboard', options)} \u2014 browse it in the browser`);
+  lines.push(
+    `             ${bold('memento dashboard', options)}   \u2014 browse it in the browser`,
+  );
   lines.push('');
   return `${lines.join('\n')}`;
 }
@@ -189,13 +207,13 @@ function indent(lines: readonly string[], prefix: string): string[] {
  */
 function renderSkillSection(skill: SkillInstallInfo, options: InitRenderOptions): string[] {
   const lines: string[] = [];
-  const header = '── Memento skill (optional, for Claude Code / Claude Desktop / Cowork) ──';
+  const header = '── Memento skill (optional, for clients that load Anthropic-format skills) ──';
   lines.push(bold(header, options));
   lines.push('');
-  lines.push('Anthropic-skill-capable clients can auto-load Memento usage rules — when to');
-  lines.push('write, recall, confirm, supersede, forget, and extract memories — without any');
-  lines.push('persona-file edits. The bundle ships with this package; install it once and');
-  lines.push("the assistant behaves as if you'd hand-written the persona snippet.");
+  lines.push('Skill-capable clients auto-load Memento usage rules — when to write, recall,');
+  lines.push('confirm, supersede, forget, and extract memories — without any persona-file');
+  lines.push("edits. The bundle ships with this package; install it into your client's skills");
+  lines.push("directory and the assistant behaves as if you'd hand-written the persona snippet.");
   lines.push('');
 
   if (skill.source !== null) {
@@ -206,6 +224,12 @@ function renderSkillSection(skill: SkillInstallInfo, options: InitRenderOptions)
     lines.push(`  cp -R "${skill.source}" ${target}/`);
     lines.push('');
     lines.push('Restart your client; the skill auto-loads on intent match.');
+    lines.push('');
+    lines.push(
+      `${dim('Different skills directory?', options)} most clients read from \`~/.claude/skills/\`,`,
+    );
+    lines.push("  but a few use a client-specific path. If yours doesn't pick up the skill, check");
+    lines.push("  the client's skill docs and re-run the `cp -R` against that directory.");
   } else {
     // Source not bundled — happens in dev environments where
     // the build's `copy-skills` step has not run. Don't fabricate
@@ -222,10 +246,30 @@ function renderSkillSection(skill: SkillInstallInfo, options: InitRenderOptions)
     );
   }
   lines.push('');
+  lines.push(`${dim('No skill support?', options)} paste the persona snippet from docs/guides/`);
+  lines.push('  teach-your-assistant.md into the client persona file instead.');
+  lines.push('');
+  return lines;
+}
+
+/**
+ * Render the "persona-only" variant of step 3.
+ *
+ * Used when the rendered client set has no client carrying
+ * `supportsSkills: true` — keeps step 3 present so the user
+ * sees that wiring on its own isn't enough. Generic phrasing on
+ * purpose: we don't enumerate which clients lack skill support,
+ * since that drifts as the ecosystem moves and is the user's
+ * concern, not ours.
+ */
+function renderPersonaOnlySection(options: InitRenderOptions): string[] {
+  const lines: string[] = [];
+  lines.push('Memento exposes the MCP tools; your assistant still needs a persona that tells it');
+  lines.push('*when* to write, recall, supersede, and confirm memories. The selected clients');
+  lines.push("don't load Anthropic-format skills, so paste the persona snippet from");
   lines.push(
-    `${dim('Other clients (Cursor, VS Code Agent, OpenCode):', options)} skills are an Anthropic-`,
+    `${dim('docs/guides/teach-your-assistant.md', options)} into your client's persona file.`,
   );
-  lines.push('  product feature. Use the persona snippet in docs/guides/teach-your-assistant.md.');
   lines.push('');
   return lines;
 }

@@ -18,6 +18,7 @@ import { importCommand } from './import.js';
 import { initCommand } from './init.js';
 import { pingCommand } from './ping.js';
 import { serveCommand } from './serve.js';
+import { skillPathCommand } from './skill-path.js';
 import { statusCommand } from './status.js';
 import { storeMigrateCommand } from './store-migrate.js';
 import type { LifecycleCommand } from './types.js';
@@ -38,6 +39,7 @@ export const LIFECYCLE_COMMANDS: Record<LifecycleName, LifecycleCommand> = {
   completions: completionsCommand,
   explain: explainCommand,
   dashboard: dashboardCommand,
+  'skill-path': skillPathCommand,
 };
 
 export type {
@@ -116,4 +118,9 @@ export {
   runDashboard,
   type DashboardSnapshot,
 } from './dashboard.js';
+export {
+  skillPathCommand,
+  runSkillPath,
+  type SkillPathSnapshot,
+} from './skill-path.js';
 export { openAppForSurface, type OpenAppOptions } from './open-app.js';

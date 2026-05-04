@@ -34,6 +34,7 @@ const TOP_LEVEL = [
   'backup',
   'completions',
   'explain',
+  'skill-path',
   'memory',
   'config',
   'conflict',

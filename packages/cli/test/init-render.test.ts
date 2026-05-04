@@ -112,9 +112,32 @@ describe('renderInitText', () => {
     expect(out).toContain('claude mcp add');
   });
 
-  it('suggests memento doctor for verification', () => {
+  it('suggests memento doctor --mcp for verification', () => {
+    // Doctor's `--mcp` mode is the variant that actually proves
+    // the client-config paste worked (it scans known files and
+    // flags shape mismatches), so it's what we recommend in the
+    // walkthrough's footer.
     const out = renderInitText(SNAPSHOT(), { color: false });
-    expect(out).toContain('memento doctor');
+    expect(out).toContain('memento doctor --mcp');
+  });
+
+  it('frames the walkthrough as three numbered steps', () => {
+    // The renderer mirrors the README / landing / mcp-client-setup
+    // three-step quickstart so users see the same mental model
+    // across surfaces. Pinned here so the next refactor can't
+    // silently drop the framing.
+    const out = renderInitText(SNAPSHOT(), { color: false });
+    expect(out).toContain('Step 1');
+    expect(out).toContain('Step 2');
+    expect(out).toContain('Step 3');
+  });
+
+  it('tells the user to restart the client after pasting', () => {
+    // Without this nudge first-time users paste, ask a question,
+    // get nothing, and give up — the MCP server only loads on
+    // client restart.
+    const out = renderInitText(SNAPSHOT(), { color: false });
+    expect(out.toLowerCase()).toContain('restart your ai client');
   });
 
   it('shows the version', () => {
@@ -134,7 +157,12 @@ describe('renderInitText', () => {
       expect(out).toMatch(/~[\\/]\.claude[\\/]skills/);
     });
 
-    it('is suppressed when no rendered client supports skills', () => {
+    it('falls back to the persona-only variant of step 3 when no client supports skills', () => {
+      // Step 3 ("teach your assistant") is *always* present so the
+      // user knows the wiring on its own isn't enough. When no
+      // rendered client supports skills, the section omits the
+      // "Memento skill" install block and points exclusively at
+      // the persona snippet instead.
       const out = renderInitText(
         SNAPSHOT({
           skill: {
@@ -145,7 +173,10 @@ describe('renderInitText', () => {
         }),
         { color: false },
       );
-      expect(out).not.toContain('Memento skill');
+      expect(out).toContain('Step 3');
+      expect(out).toContain('teach-your-assistant.md');
+      // No skill install command in this branch.
+      expect(out).not.toContain('cp -R');
     });
 
     it('falls back to a docs pointer when source is not bundled', () => {
@@ -166,9 +197,15 @@ describe('renderInitText', () => {
       expect(out).toContain('not staged');
     });
 
-    it('mentions the third-party fallback for non-Anthropic clients', () => {
+    it('mentions the generic persona fallback for clients without skill support', () => {
+      // The renderer must point users at the persona snippet for
+      // clients that don't load skills, but the copy is generic
+      // on purpose — we don't enumerate which clients fall in
+      // that bucket because the list drifts and is the user's
+      // concern, not ours.
       const out = renderInitText(SNAPSHOT(), { color: false });
       expect(out).toContain('teach-your-assistant.md');
+      expect(out.toLowerCase()).toContain('persona snippet');
     });
 
     it('renders the absolute path when suggestedTarget lives outside $HOME', () => {

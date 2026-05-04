@@ -104,22 +104,25 @@ describe('runInit', () => {
     expect(result.value.skill.source).toMatch(/skills[\\/]memento$/);
   });
 
-  it('reports an empty capable client set when filtered to non-skill-capable clients', async () => {
-    // When the user runs `memento init --client cursor`, the
-    // skill section MUST be suppressed — Cursor does not load
-    // Anthropic skills. The renderer keys off `capableClients`
-    // being empty, so the snapshot field is the gate.
+  it('exposes every rendered client in `capableClients` when all support skills', async () => {
+    // The default filter renders every client in the registry,
+    // and today every one of them is `supportsSkills: true`. The
+    // capable list MUST therefore equal the rendered set in
+    // order — pinning that contract guards against an accidental
+    // `supportsSkills: false` regression that would silently
+    // demote a client to the persona-only fallback.
     const result = await runInit(
       {
         createApp: createAppNoVector,
         migrateStore: rejectMigrateStore,
         serveStdio: rejectServeStdio,
       },
-      { env: cliEnv(), subargs: ['--client', 'cursor,vscode,opencode'], io: NULL_IO },
+      { env: cliEnv(), subargs: [], io: NULL_IO },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.skill.capableClients).toEqual([]);
+    const renderedIds = result.value.clients.map((c) => c.id);
+    expect(result.value.skill.capableClients).toEqual(renderedIds);
   });
 
   it("preserves ':memory:' verbatim in the snapshot", async () => {
