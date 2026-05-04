@@ -210,6 +210,19 @@ export interface MemoryCommandDeps {
    * compatible.
    */
   readonly configStore?: ConfigStore;
+  /**
+   * Optional configured embedder model + dimension. When supplied,
+   * `memory.set_embedding` rejects callers whose `model` /
+   * `dimension` do not match the host's configured embedder, so the
+   * vector store stays consistent with the search-time invariant
+   * checked by `searchMemories`. When omitted (no embedder wired
+   * by the host), `memory.set_embedding` accepts any well-formed
+   * vector — preserves the "set raw vector for testing" affordance.
+   */
+  readonly configuredEmbedder?: {
+    readonly model: string;
+    readonly dimension: number;
+  };
 }
 
 /**
@@ -564,7 +577,7 @@ export function createMemoryCommands(
     outputSchema: MemoryOutputSchema,
     metadata: {
       description:
-        'Update non-content fields (tags / kind / pinned / sensitive) of an active memory. Does NOT change content — use memory.supersede for that.\n\nExample:\n\n```json\n{"id":"01HYXZ...","patch":{"tags":["updated-tag"],"pinned":true}}\n```',
+        'Update non-content fields (tags / kind / pinned / sensitive) of an active memory. Does NOT change content — use memory.supersede for that.\n\n`kind` patches: same-type edits (e.g. updating a snippet\'s `language` in place, updating a decision\'s `rationale`) succeed. Cross-type kind changes (snippet → fact, decision → preference, etc.) are rejected with INVALID_INPUT — route them through memory.supersede so kind-specific metadata stays in the audit chain.\n\nExample:\n\n```json\n{"id":"01HYXZ...","patch":{"tags":["updated-tag"],"pinned":true}}\n```',
     },
     handler: async (input, ctx) => {
       const result = await runRepo<Memory>('memory.update', () =>
@@ -611,7 +624,7 @@ export function createMemoryCommands(
     outputSchema: MemoryOutputSchema,
     metadata: {
       description:
-        'Move a forgotten or archived memory back to active.\n\nExample:\n\n```json\n{"id":"01HYXZ..."}\n```',
+        'Move a forgotten or archived memory back to active. Treated as an implicit confirm: `lastConfirmedAt` is bumped to now so the restored memory is not immediately re-eligible for compaction.\n\nExample:\n\n```json\n{"id":"01HYXZ..."}\n```',
     },
     handler: async (input, ctx) => {
       const result = await runRepo<Memory>('memory.restore', () =>
@@ -664,6 +677,7 @@ export function createMemoryCommands(
           ...(input.filter.scope !== undefined ? { scope: input.filter.scope } : {}),
           ...(input.filter.kind !== undefined ? { kind: input.filter.kind } : {}),
           ...(input.filter.pinned !== undefined ? { pinned: input.filter.pinned } : {}),
+          ...(input.filter.tags !== undefined ? { tags: input.filter.tags } : {}),
           ...(input.filter.createdAtLte !== undefined
             ? { createdAtLte: input.filter.createdAtLte }
             : {}),
@@ -694,8 +708,10 @@ export function createMemoryCommands(
         });
       }
       const repoCtx = ctxToRepoCtx(ctx);
+      // `reason` is optional — default to null when omitted.
+      const reason = input.reason ?? null;
       const batchResult = await runRepo<{ applied: number }>('memory.forget_many', () =>
-        repo.forgetBatch(ids, input.reason, repoCtx),
+        repo.forgetBatch(ids, reason, repoCtx),
       );
       if (!batchResult.ok) {
         return batchResult;
@@ -736,6 +752,7 @@ export function createMemoryCommands(
         ...(input.filter.scope !== undefined ? { scope: input.filter.scope } : {}),
         ...(input.filter.kind !== undefined ? { kind: input.filter.kind } : {}),
         ...(input.filter.pinned !== undefined ? { pinned: input.filter.pinned } : {}),
+        ...(input.filter.tags !== undefined ? { tags: input.filter.tags } : {}),
         ...(input.filter.createdAtLte !== undefined
           ? { createdAtLte: input.filter.createdAtLte }
           : {}),
@@ -804,6 +821,26 @@ export function createMemoryCommands(
       mcp: { idempotentHint: true },
     },
     handler: async (input, ctx) => {
+      // When the host has wired an embedder, reject vectors whose
+      // model+dimension disagree with the configured one. Without
+      // this guard, callers can poison the
+      // vector store with mismatched dimensions; the search path
+      // then crashes with a CONFIG_ERROR at every query until
+      // `embedding rebuild` is run. The error message points at the
+      // recovery command for symmetry with that path.
+      const configured = deps?.configuredEmbedder;
+      if (configured !== undefined) {
+        if (input.model !== configured.model || input.dimension !== configured.dimension) {
+          return err<MementoError>({
+            code: 'CONFIG_ERROR',
+            message: `memory.set_embedding: caller supplied model='${input.model}' dimension=${input.dimension} but the configured embedder is model='${configured.model}' dimension=${configured.dimension}; supply matching values, or run \`memento embedding rebuild\` to migrate stored vectors after a model change.`,
+            details: {
+              caller: { model: input.model, dimension: input.dimension },
+              configured,
+            },
+          });
+        }
+      }
       const result = await runRepo<Memory>('memory.set_embedding', () =>
         repo.setEmbedding(
           input.id,

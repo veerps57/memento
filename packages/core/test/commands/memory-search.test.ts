@@ -145,6 +145,19 @@ describe('memory.search command', () => {
     expect(result.error.code).toBe('INVALID_INPUT');
   });
 
+  // pure-whitespace queries used to pass
+  // `min(1)` but produce no FTS tokens, returning vector-only
+  // results with no signal. They must now reject with a clear
+  // message so the caller knows to supply real content.
+  it('rejects whitespace-only text with INVALID_INPUT', async () => {
+    const { command } = await fixture();
+    const result = await executeCommand(command, { text: '   \t \n ' }, ctx);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INVALID_INPUT');
+    expect(result.error.message).toMatch(/non-whitespace/iu);
+  });
+
   it('forwards scope filter to the engine', async () => {
     const { repo, command } = await fixture();
     await repo.write({ ...baseInput, content: 'kafka here' }, { actor });

@@ -156,7 +156,7 @@ export function createMemoryExtractCommand(
     outputSchema: MemoryExtractOutputSchema,
     metadata: {
       description:
-        'Batch-extract candidate memories from a conversation. The server handles dedup against existing memories, scrubbing, and writing. The assistant\'s job is reduced to dumping "what seemed worth remembering."\n\nThe server deduplicates automatically — when in doubt, include the candidate.\n\nThe response carries a `mode` field. When `mode: "sync"`, the `written`, `skipped`, and `superseded` arrays are authoritative and you can report them directly. When `mode: "async"` (the default per `extraction.processing` config), those arrays are intentionally empty — the server returned a receipt and is processing in background. The accompanying `hint` field explains what to expect; do not retry. Writes land as memories within ~1–5 seconds and can be confirmed with `list_memories` or `search_memory` if needed.\n\nExample:\n\n```json\n{"candidates":[{"kind":"preference","content":"User prefers dark mode in all editors"},{"kind":"fact","content":"The production database is PostgreSQL 15"}]}\n```',
+        'Batch-extract candidate memories from a conversation. The server handles dedup, scrubbing, and writing. The assistant\'s job is reduced to dumping "what seemed worth remembering."\n\nDedup runs at two scopes: (1) **in-batch** — byte-identical candidates within the same call collapse to a single memory (kind-aware fingerprint); (2) **cross-batch** — embeddings are compared against existing active memories via the configured similarity thresholds (≥`extraction.dedup.identicalThreshold` skips, between that and `extraction.dedup.threshold` supersedes, below writes new). When in doubt, include the candidate.\n\nThe response carries a `mode` field. When `mode: "sync"`, the `written`, `skipped`, and `superseded` arrays are authoritative and you can report them directly. When `mode: "async"` (the default per `extraction.processing` config), those arrays are intentionally empty — the server returned a receipt and is processing in background. The accompanying `hint` field explains what to expect; do not retry. Writes land as memories within ~1–5 seconds and can be confirmed with `list_memories` or `search_memory` if needed.\n\nExample:\n\n```json\n{"candidates":[{"kind":"preference","content":"User prefers dark mode in all editors"},{"kind":"fact","content":"The production database is PostgreSQL 15"}]}\n```',
       mcpName: 'extract_memory',
     },
     handler: async (input, ctx) => {
@@ -265,9 +265,28 @@ export function createMemoryExtractCommand(
         }
       }
 
+      // In-batch fingerprint set. `checkDedup` runs vector search
+      // against the DB, but the auto-embed hook is fire-and-forget,
+      // so earlier candidates in this batch may not have their
+      // embeddings persisted yet when the next candidate's dedup
+      // check runs. The map below catches byte-identical (post-
+      // `buildContent`) candidates within the same call and skips
+      // duplicates without round-tripping through vector search.
+      const seenInBatch = new Map<string, MemoryId>();
+
       for (let i = 0; i < input.candidates.length; i += 1) {
         const candidate = input.candidates[i];
         if (candidate === undefined) continue;
+        const fingerprint = batchFingerprint(candidate, candidateContents[i] ?? '');
+        const priorInBatch = seenInBatch.get(fingerprint);
+        if (priorInBatch !== undefined) {
+          skipped.push({
+            content: candidate.content,
+            reason: 'duplicate',
+            existingId: priorInBatch,
+          });
+          continue;
+        }
         try {
           const vec = precomputedVectors?.get(i);
           const result = await processCandidate(candidate, {
@@ -285,6 +304,7 @@ export function createMemoryExtractCommand(
           switch (result.outcome) {
             case 'written':
               written.push({ id: result.id, content: candidate.content });
+              seenInBatch.set(fingerprint, result.id);
               break;
             case 'superseded':
               superseded.push({
@@ -292,6 +312,7 @@ export function createMemoryExtractCommand(
                 content: candidate.content,
                 previousId: result.previousId,
               });
+              seenInBatch.set(fingerprint, result.id);
               break;
             case 'skipped':
               skipped.push({
@@ -299,6 +320,9 @@ export function createMemoryExtractCommand(
                 reason: result.reason,
                 existingId: result.existingId,
               });
+              if (result.existingId !== null) {
+                seenInBatch.set(fingerprint, result.existingId);
+              }
               break;
           }
         } catch (_caught) {
@@ -513,7 +537,7 @@ async function checkDedup(
 
   // If no embedding provider, fall back to exact content match.
   if (deps.embeddingProvider === undefined) {
-    return checkExactContentDedup(content, deps);
+    return checkExactContentDedup(content, kind, deps);
   }
 
   try {
@@ -571,17 +595,20 @@ async function checkDedup(
     return { action: 'write' };
   } catch {
     // Embedding failed — fall back to exact match.
-    return checkExactContentDedup(content, deps);
+    return checkExactContentDedup(content, kind, deps);
   }
 }
 
 async function checkExactContentDedup(
   content: string,
+  kind: MemoryKindType,
   deps: CreateMemoryExtractCommandDeps,
 ): Promise<DedupResult> {
-  // Simple exact content match as fallback.
-  // Search via the FTS engine for the full content string.
-  // If the store has an identical content row, skip.
+  // Simple exact-content match as fallback when no embedding
+  // provider is wired. Returns skip only when the matching memory
+  // is also the same kind — the extract handler treats the same
+  // prose recorded as both a `fact` and a `decision` as two
+  // distinct memories (mirrors the kind check in `checkDedup`).
   try {
     const { searchFts } = await import('../../retrieval/fts.js');
     const hits = await searchFts(deps.db, {
@@ -594,10 +621,10 @@ async function checkExactContentDedup(
       return { action: 'write' };
     }
 
-    // Hydrate and check for exact content match.
+    // Hydrate and check for exact content + same kind match.
     for (const hit of hits) {
       const existing = await deps.memoryRepository.read(hit.id);
-      if (existing !== null && existing.content === content) {
+      if (existing !== null && existing.content === content && existing.kind.type === kind) {
         return { action: 'skip', existingId: hit.id };
       }
     }
@@ -651,12 +678,18 @@ async function processInBackground(
     }
   }
 
+  // Same in-batch fingerprint guard as the sync path. See the comment
+  // there for the auto-embed-hook timing rationale.
+  const seenInBatch = new Map<string, MemoryId>();
+
   for (let i = 0; i < candidates.length; i += 1) {
     const candidate = candidates[i];
     if (candidate === undefined) continue;
+    const fingerprint = batchFingerprint(candidate, candidateContents[i] ?? '');
+    if (seenInBatch.has(fingerprint)) continue;
     try {
       const vec = precomputedVectors?.get(i);
-      await processCandidate(candidate, {
+      const result = await processCandidate(candidate, {
         scope,
         autoTag,
         defaultConfidence,
@@ -667,10 +700,29 @@ async function processInBackground(
         ctx,
         ...(vec !== undefined ? { precomputedVector: vec } : {}),
       });
+      if (result.outcome === 'written' || result.outcome === 'superseded') {
+        seenInBatch.set(fingerprint, result.id);
+      } else if (result.outcome === 'skipped' && result.existingId !== null) {
+        seenInBatch.set(fingerprint, result.existingId);
+      }
     } catch {
       // Swallow — partial failure is acceptable in background mode.
     }
   }
+}
+
+/**
+ * Compute the in-batch dedup fingerprint for a candidate. Same
+ * `(kind, normalized-content)` keying covers the byte-identical case
+ * (the original stress finding) and trivial whitespace / case noise.
+ * The kind is part of the key so the same prose recorded as both a
+ * `fact` and a `decision` is two memories, not one.
+ */
+function batchFingerprint(
+  candidate: z.infer<typeof ExtractionCandidateSchema>,
+  builtContent: string,
+): string {
+  return `${candidate.kind}|${builtContent.normalize('NFC').trim().toLowerCase()}`;
 }
 
 export { MemoryExtractOutputSchema };

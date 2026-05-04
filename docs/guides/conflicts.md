@@ -1,6 +1,6 @@
 # Conflicts
 
-Memento records a **conflict** when a new write would contradict an existing active memory in the same scope (or a broader scope, depending on `conflict.detectionMode`). Conflicts do not block the write — both rows stay active, and Memento surfaces a row in the `conflicts` table so a human (or a sufficiently careful agent) can decide which one wins.
+Memento records a **conflict** when a new write would contradict an existing active memory in the same scope (or a broader scope, depending on `conflict.scopeStrategy`). Conflicts do not block the write — both rows stay active, and Memento surfaces a row in the `conflicts` table so a human (or a sufficiently careful agent) can decide which one wins.
 
 This guide covers how to inspect conflicts, how to resolve them, and which knobs control detection.
 
@@ -64,7 +64,7 @@ The full input schemas are in [`docs/reference/mcp-tools.md`](../reference/mcp-t
 
 ## Re-scan after the fact
 
-If you change `conflict.detectionMode` or import a batch of memories from another machine, you can re-run the detector across the live store:
+If you change `conflict.scopeStrategy` or import a batch of memories from another machine, you can re-run the detector across the live store:
 
 ```bash
 memento conflict scan
@@ -76,8 +76,10 @@ memento conflict scan
 
 The relevant config keys (full list in [`docs/reference/config-keys.md`](../reference/config-keys.md)):
 
-- `conflict.detectionMode` — `same-scope`, `same-or-broader`, or `off`. Controls which memory pairs the detector compares. Default: `same-or-broader`.
-- `conflict.minConfidenceForDetection` — memories below this confidence are not considered worth comparing. Default: `0.4`.
+- `conflict.enabled` — master switch (default `true`). When `false` the post-write hook is skipped entirely.
+- `conflict.scopeStrategy` — `'same'` (default) or `'effective'`. Controls which candidate set the post-write hook compares the new memory against: `same` checks only the new memory's own scope; `effective` widens to the layered effective scope set.
+- `conflict.timeoutMs` — per-write detection budget. Hook runs that exceed this are dropped with a `conflict.timeout` warning; recovery is via `conflict.scan`.
+- `conflict.fact.overlapThreshold` — minimum shared-token count for the fact policy's "stance flip" heuristic to fire (default 3).
 
 Conflicts are deliberately not auto-resolved. The detector finds them; the resolver runs only when invoked.
 
@@ -85,8 +87,8 @@ Conflicts are deliberately not auto-resolved. The detector finds them; the resol
 
 If `conflict list` is producing more rows than you want to triage, the right knobs in order of preference are:
 
-1. Tighten `conflict.minConfidenceForDetection` so weakly-asserted memories don't fight each other.
-2. Narrow `conflict.detectionMode` to `same-scope` if cross-scope contradictions are mostly false positives in your usage.
+1. Narrow `conflict.scopeStrategy` to `'same'` (the default) if cross-scope contradictions are mostly false positives in your usage.
+2. Raise `conflict.fact.overlapThreshold` so fact-policy comparisons require more shared vocabulary before flipping into "conflict" mode.
 3. Resolve in bulk with `conflict.resolve` and the `coexist` policy for batches that are genuinely non-contradictory.
 
-Turning detection off entirely (`conflict.detectionMode = off`) is supported but not recommended; it loses the audit trail that makes Memento useful for "why did I change my mind about X" questions.
+Turning detection off entirely (`conflict.enabled = false`) is supported but not recommended; it loses the audit trail that makes Memento useful for "why did I change my mind about X" questions.

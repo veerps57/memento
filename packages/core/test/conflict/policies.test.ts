@@ -151,6 +151,48 @@ describe('preference policy', () => {
     });
     expect(runPolicy(a, b)).toEqual({ conflict: false });
   });
+
+  it('flags the canonical `topic: value\\n\\nfree prose` shape', () => {
+    // AGENTS.md documents this as the recommended content shape for
+    // preference / decision kinds. The topic-line parser must look at
+    // the first line only — prose after the blank line should not
+    // break the key/value extraction.
+    const a = memory({
+      id: 'M1',
+      content: 'package-manager: pnpm\n\nThe user prefers pnpm for all Node projects.',
+      kind: { type: 'preference' },
+    });
+    const b = memory({
+      id: 'M2',
+      content: 'package-manager: yarn\n\nThe user prefers yarn for all Node projects.',
+      kind: { type: 'preference' },
+    });
+    const result = runPolicy(a, b);
+    expect(result.conflict).toBe(true);
+    if (result.conflict) {
+      expect(result.evidence).toMatchObject({
+        kind: 'preference',
+        key: 'package-manager',
+      });
+    }
+  });
+
+  it('does not let prose lines after the topic line introduce a false positive', () => {
+    // The two memories agree on the topic line; the second one happens
+    // to mention `pnpm: yarn` mid-prose. The parser must read only the
+    // first line, so this stays silent.
+    const a = memory({
+      id: 'M1',
+      content: 'editor: vscode\n\nThe user prefers VS Code.',
+      kind: { type: 'preference' },
+    });
+    const b = memory({
+      id: 'M2',
+      content: 'editor: vscode\n\nA random pnpm: yarn aside in the prose.',
+      kind: { type: 'preference' },
+    });
+    expect(runPolicy(a, b)).toEqual({ conflict: false });
+  });
 });
 
 describe('decision policy', () => {
@@ -187,6 +229,27 @@ describe('decision policy', () => {
       kind: { type: 'decision', rationale: 'familiar' },
     });
     expect(runPolicy(a, b)).toEqual({ conflict: false });
+  });
+
+  it('flags the canonical `topic: value\\n\\nrationale prose` shape', () => {
+    const a = memory({
+      id: 'M1',
+      content: 'database-engine: postgres\n\nWe chose PostgreSQL for primary storage.',
+      kind: { type: 'decision', rationale: 'Strong ecosystem, ACID, JSONB.' },
+    });
+    const b = memory({
+      id: 'M2',
+      content: 'database-engine: mysql\n\nWe chose MySQL for primary storage.',
+      kind: { type: 'decision', rationale: 'Familiarity with team, simpler ops.' },
+    });
+    const result = runPolicy(a, b);
+    expect(result.conflict).toBe(true);
+    if (result.conflict) {
+      expect(result.evidence).toMatchObject({
+        kind: 'decision',
+        context: 'database-engine',
+      });
+    }
   });
 });
 

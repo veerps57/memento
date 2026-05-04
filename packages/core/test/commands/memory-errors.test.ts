@@ -10,7 +10,11 @@ import { repoErrorToMementoError } from '../../src/commands/errors.js';
 
 describe('repoErrorToMementoError', () => {
   // ── ZodError → INVALID_INPUT ──────────────────────────────
-  it('maps ZodError to INVALID_INPUT with issues in details', () => {
+  // The message now routes through the shared `formatZodIssues`
+  // helper so callers get
+  // `Invalid input for command '<op>':\n  - <field.path>: <detail>`
+  // instead of the old terse `<op>: input failed schema validation`.
+  it('maps ZodError to INVALID_INPUT with issue details in the message', () => {
     const zodErr = new ZodError([
       {
         code: 'invalid_type',
@@ -23,7 +27,7 @@ describe('repoErrorToMementoError', () => {
     const result = repoErrorToMementoError(zodErr, 'setEmbedding');
     expect(result.code).toBe('INVALID_INPUT');
     expect(result.message).toContain('setEmbedding');
-    expect(result.message).toContain('schema validation');
+    expect(result.message).toContain('embedding: Expected array, received string');
     expect((result as { details?: unknown }).details).toHaveProperty('issues');
   });
 

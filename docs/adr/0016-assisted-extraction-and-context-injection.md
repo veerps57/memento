@@ -15,7 +15,7 @@ The result: stores stay empty or under-populated, and even when they have good c
 
 Ship two new commands together:
 
-1. **`memory.extract`** — a batch extraction command. The assistant dumps candidate memories in one call. The server handles embedding-based dedup (two-tier threshold: ≥0.95 = duplicate/skip, 0.85–0.95 = supersede, <0.85 = write new), scrubbing, and writing. Extracted memories are tagged `source:extracted` and start at confidence 0.8 (lower than manual writes at 1.0, so they decay faster and are pruned by `compact` if never confirmed).
+1. **`memory.extract`** — a batch extraction command. The assistant dumps candidate memories in one call. The server handles dedup at two scopes: (a) **in-batch** — byte-identical candidates within the same call collapse to a single memory via a kind-aware fingerprint, so vector-search timing on auto-embed cannot lead to duplicate writes within one batch; (b) **cross-batch** — embedding similarity against existing active memories (two-tier threshold: ≥0.95 = duplicate/skip, 0.85–0.95 = supersede, <0.85 = write new). The server also scrubs and writes. Extracted memories are tagged `source:extracted` and start at confidence 0.8 (lower than manual writes at 1.0, so they decay faster and are pruned by `compact` if never confirmed).
 
 2. **`memory.context`** — a query-less ranked retrieval command. Returns the most relevant memories without requiring a text query. Ranks by confidence, recency, scope specificity, pinned status, and confirmation frequency. Exposed additionally as an MCP resource (`memento://context`) and an MCP prompt (`session-context`) for progressive enhancement.
 

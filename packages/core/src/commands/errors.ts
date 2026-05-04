@@ -33,6 +33,7 @@
 
 import type { MementoError } from '@psraghuveer/memento-schema';
 import { ZodError } from 'zod';
+import { formatZodIssues } from './zod-format.js';
 
 /**
  * Replace absolute filesystem paths in a message with a
@@ -66,9 +67,12 @@ export function redactPaths(message: string): string {
  */
 export function repoErrorToMementoError(error: unknown, op: string): MementoError {
   if (error instanceof ZodError) {
+    // Route through the shared formatter so callers always get
+    // `INVALID_INPUT: <op>:\n  - field.path: detail`, never the
+    // terse `input failed schema validation` fallback.
     return {
       code: 'INVALID_INPUT',
-      message: `${op}: input failed schema validation`,
+      message: `Invalid input for command '${op}':\n${formatZodIssues(error.issues)}`,
       details: { issues: error.issues },
     };
   }
@@ -101,6 +105,17 @@ export function repoErrorToMementoError(error: unknown, op: string): MementoErro
   }
   // "update: patch must change at least one field"
   if (/\bpatch must change\b/.test(msg)) {
+    return { code: 'INVALID_INPUT', message: msg };
+  }
+  // "update: cannot change memory kind via memory.update — ..."
+  // (surfaced as INVALID_INPUT so callers know to use
+  // memory.supersede instead.)
+  if (/\bcannot change memory kind\b/.test(msg)) {
+    return { code: 'INVALID_INPUT', message: msg };
+  }
+  // bidirectional override character refused by the
+  // write-path normaliser. Surface the helpful message verbatim.
+  if (/U\+202E\b|bidirectional override/.test(msg)) {
     return { code: 'INVALID_INPUT', message: msg };
   }
   // Pipeline-typed retrieval misconfiguration:

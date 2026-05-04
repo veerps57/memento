@@ -131,15 +131,18 @@ export function createMemoryContextCommand(
         const kinds: readonly MemoryKindType[] =
           input.kinds ?? (cfg.get('context.includeKinds') as MemoryKindType[]);
 
-        // Fetch active memories matching the kind filter.
-        // We fetch more than `limit` to have enough candidates
-        // for ranking after tag filtering.
-        const fetchLimit = Math.min(limit * 5, cfg.get('context.maxLimit') * 2);
+        // Cap the candidate fetch with `context.candidateLimit` so
+        // the ranker's input size is independent of corpus size.
+        // Combined with the
+        // `(status, last_confirmed_at desc)` index from migration
+        // 0007, this turns the previously-linear fetch into an
+        // O(log n) + O(candidateLimit) operation.
+        const candidateLimit = cfg.get('context.candidateLimit');
         const memories = await deps.memoryRepository.list({
           status: 'active',
           ...(kinds.length > 0 ? { kind: kinds[0] } : {}),
           ...(input.scope !== undefined ? { scope: input.scope } : {}),
-          limit: fetchLimit,
+          limit: candidateLimit,
         });
 
         // If kinds has more than one entry, we need multiple fetches
@@ -150,7 +153,7 @@ export function createMemoryContextCommand(
           const allMemories = await deps.memoryRepository.list({
             status: 'active',
             ...(input.scope !== undefined ? { scope: input.scope } : {}),
-            limit: fetchLimit,
+            limit: candidateLimit,
           });
           candidates = allMemories.filter((m) => kinds.includes(m.kind.type as MemoryKindType));
         } else if (kinds.length === 1) {
@@ -159,8 +162,31 @@ export function createMemoryContextCommand(
           candidates = await deps.memoryRepository.list({
             status: 'active',
             ...(input.scope !== undefined ? { scope: input.scope } : {}),
-            limit: fetchLimit,
+            limit: candidateLimit,
           });
+        }
+
+        // Pinned-supplement: pinned memories always rank highly via
+        // the ranker, but the recency-ordered candidate fetch above
+        // can miss old pinned rows. Pull them in unconditionally;
+        // the pinned set is small and bounded by
+        // `safety.pinned` policy in practice. De-dupe by id.
+        const pinned = await deps.memoryRepository.list({
+          status: 'active',
+          pinned: true,
+          ...(input.scope !== undefined ? { scope: input.scope } : {}),
+          limit: candidateLimit,
+        });
+        if (pinned.length > 0) {
+          const seen = new Set(candidates.map((m) => m.id as unknown as string));
+          for (const p of pinned) {
+            if (kinds.length === 0 || kinds.includes(p.kind.type as MemoryKindType)) {
+              if (!seen.has(p.id as unknown as string)) {
+                candidates.push(p);
+                seen.add(p.id as unknown as string);
+              }
+            }
+          }
         }
 
         // Post-fetch tag filter (AND logic).

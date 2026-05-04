@@ -161,6 +161,34 @@ export const DEFAULT_SCRUBBER_RULES: ScrubberRuleSet = ScrubberRuleSetSchema.par
     severity: 'high',
   },
   {
+    id: 'stripe-key',
+    description: 'Stripe live/test API key (sk_live_, pk_live_, rk_live_, sk_test_, ...)',
+    pattern: '\\b(sk|pk|rk)_(live|test)_[A-Za-z0-9]{24,}',
+    placeholder: '<redacted:{{rule.id}}>',
+    severity: 'high',
+  },
+  {
+    id: 'google-api-key',
+    description: 'Google API key (AIzaSy...)',
+    pattern: '\\bAIza[A-Za-z0-9_-]{35}\\b',
+    placeholder: '<redacted:{{rule.id}}>',
+    severity: 'high',
+  },
+  {
+    id: 'sendgrid-key',
+    description: 'SendGrid API key (SG.*.*)',
+    pattern: '\\bSG\\.[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{43}\\b',
+    placeholder: '<redacted:{{rule.id}}>',
+    severity: 'high',
+  },
+  {
+    id: 'discord-token',
+    description: 'Discord bot/user token (3 base64-shaped segments separated by dots)',
+    pattern: '\\b[MN][A-Za-z\\d]{23,25}\\.[\\w-]{6}\\.[\\w-]{27,}',
+    placeholder: '<redacted:{{rule.id}}>',
+    severity: 'high',
+  },
+  {
     id: 'jwt',
     description: 'JWT-shaped token (header.payload.signature, base64url)',
     // Real-world JWT shapes: the header is base64url of an
@@ -206,10 +234,94 @@ export const DEFAULT_SCRUBBER_RULES: ScrubberRuleSet = ScrubberRuleSetSchema.par
     severity: 'high',
   },
   {
-    id: 'secret-assignment',
-    description: 'Conventional secret-bearing variable assignment (PASSWORD=..., SECRET=..., etc.)',
-    pattern: '\\b(PASSWORD|SECRET|API[_-]?KEY|TOKEN)\\s*[:=]\\s*\\S+',
+    id: 'basic-auth',
+    description: 'HTTP Authorization: Basic / Digest header',
+    // Mirrors `bearer-token` but matches the Basic and Digest
+    // schemes. The character class is wide enough to cover
+    // base64 (Basic) and the comma-separated key="value" syntax
+    // of Digest, while the `{8,}` floor avoids matching short
+    // human-readable strings.
+    pattern: '\\bAuthorization:\\s*(Basic|Digest)\\s+[A-Za-z0-9+/=._~"-]{8,}',
     flags: 'i',
+    placeholder: '<redacted:{{rule.id}}>',
+    severity: 'high',
+  },
+  {
+    id: 'db-credential',
+    description:
+      'Inline credentials in a DB-style URL (postgres://, mysql://, mongodb://, redis://, amqp://)',
+    // Match `<scheme>://<user>:<password>@`, including the trailing
+    // `@`. The placeholder ends with a literal `@` so the host
+    // portion of the URL survives the redaction. Bounded character
+    // classes (no `.+`) keep the pattern linear-time.
+    //
+    // ORDER MATTERS: this rule MUST run before `email`. The email
+    // pattern would otherwise match `password@host` style suffixes
+    // and rewrite them to `<email-redacted>`, which is mislabeled
+    // and eats the host. The "first match wins" rule in the engine
+    // ensures `db-credential` claims the span first.
+    pattern:
+      '\\b(?:postgres|postgresql|mysql|mariadb|mongodb(?:\\+srv)?|redis|rediss|amqp|amqps)://[^/\\s:@]+:[^@\\s]+@',
+    placeholder: '<redacted:{{rule.id}}>@',
+    severity: 'high',
+  },
+  {
+    id: 'secret-assignment',
+    description:
+      'Conventional secret-bearing variable assignment (PASSWORD=..., secret_token=..., aws_session_token=..., apiToken=..., etc.)',
+    // Pattern walk-through:
+    //
+    //   - `[A-Za-z0-9_]*` — optional identifier prefix. Lets the
+    //     keyword sit at the END of a compound name like
+    //     `secret_token`, `aws_session_token`, `apiToken`. Greedy
+    //     so the engine first tries the longest prefix, but it
+    //     backtracks until the keyword + assignment-operator
+    //     constraint is satisfied.
+    //   - `(?:PASSWORD|PASSWD|PWD|SECRET|TOKEN|API[_-]?KEY|APIKEY|KEY)`
+    //     — the keyword set. Case-insensitive flag means `Token`,
+    //     `password`, `Secret`, etc. all match. Combined with the
+    //     identifier prefix above, compound names like
+    //     `secret_token` and camelCase forms like `apiToken` both
+    //     resolve to a keyword match at the suffix.
+    //   - `\s*[:=]\s*` — the assignment operator. Forces the
+    //     keyword to be IMMEDIATELY followed by `=` or `:` (after
+    //     optional whitespace), which is what prevents bogus
+    //     matches inside identifiers like `mytokenfile=foo`.
+    //   - Value alternatives, tried left-to-right:
+    //       1. `"[^"\n]+"` — double-quoted single-line string
+    //          (handles values that begin with `"`).
+    //       2. `'[^'\n]+'` — single-quoted single-line string.
+    //       3. `[^\s,;&'"\]\)\}]+` — bare value, stopping at
+    //          whitespace, commas, semicolons, ampersands, quotes,
+    //          or brackets. The `&` terminator is what keeps URL
+    //          redaction (`?secret=foo&user=42`) from eating the
+    //          trailing `&user=42`.
+    pattern:
+      '[A-Za-z0-9_]*(?:PASSWORD|PASSWD|PWD|SECRET|TOKEN|API[_-]?KEY|APIKEY|KEY)\\s*[:=]\\s*(?:"[^"\\n]+"|\'[^\'\\n]+\'|[^\\s,;&\'"\\]\\)\\}]+)',
+    flags: 'i',
+    placeholder: '<redacted:{{rule.id}}>',
+    severity: 'high',
+  },
+  {
+    id: 'credit-card',
+    description:
+      'Credit card number (Visa / Mastercard / Discover 4-4-4-4 or AmEx 4-6-5, optional dashes/spaces)',
+    // Two alternatives. Format-only check — no Luhn validation in
+    // the regex. The engine is intentionally biased toward false
+    // positives; a redacted CC is recoverable, a leaked one isn't.
+    //
+    //   - 4-4-4-4 (16 digits): Visa starts with 4, Mastercard with
+    //     51-55, Discover with 6011 or 65xx.
+    //   - 4-6-5 (15 digits): AmEx starts with 34 or 37.
+    pattern:
+      '\\b(?:(?:4\\d{3}|5[1-5]\\d{2}|6(?:011|5\\d{2}))[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}|3[47]\\d{2}[\\s-]?\\d{6}[\\s-]?\\d{5})\\b',
+    placeholder: '<redacted:{{rule.id}}>',
+    severity: 'high',
+  },
+  {
+    id: 'ssn',
+    description: 'US Social Security number (NNN-NN-NNNN)',
+    pattern: '\\b\\d{3}-\\d{2}-\\d{4}\\b',
     placeholder: '<redacted:{{rule.id}}>',
     severity: 'high',
   },
