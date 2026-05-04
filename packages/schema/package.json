@@ -1,6 +1,6 @@
 {
   "name": "@psraghuveer/memento-schema",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Zod schemas and TypeScript types shared across all Memento packages. The single source of truth for data shapes and config keys.",
   "keywords": ["memento", "memory", "ai", "assistant", "mcp", "local-first", "sqlite"],
   "license": "Apache-2.0",

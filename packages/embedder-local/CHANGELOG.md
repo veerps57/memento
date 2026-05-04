@@ -1,5 +1,13 @@
 # @psraghuveer/memento-embedder-local
 
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [1dc5f71]
+  - @psraghuveer/memento-core@0.7.0
+  - @psraghuveer/memento-schema@0.6.0
+
 ## 0.4.0
 
 ### Minor Changes
@@ -41,7 +49,7 @@
   2. **Origin guard now exact-port-matched** (was: prefix-match against any localhost). A sibling localhost web server (Vite dev server, another local app) can no longer forge requests against the dashboard.
   3. **Host-header allowlist** for DNS-rebinding defence: only `127.0.0.1:<port>`, `localhost:<port>`, `[::1]:<port>` accepted.
 
-  Plus: a new `'dashboard'` value on `CommandSurface`. Only commands the UI uses today are opted in (read paths + `memory.confirm`/`update`/`forget`, `config.*`, `conflict.list`/`resolve`); everything else (writes, supersede, set_embedding, archive variants, restore, _\_many, conflict.scan, embedding.rebuild, compact.run, memory.context, memory.extract, system.list_tags) returns `INVALID_INPUT` from the dashboard pointing at the CLI. Hono `secureHeaders` (CSP, X-Frame-Options DENY, nosniff, no-referrer); 4 MiB body limit on `/api/commands/_`; static handler now does realpath-based containment; sourcemaps no longer ship in production builds.
+  Plus: a new `'dashboard'` value on `CommandSurface`. Only commands the UI uses today are opted in (read paths + `memory.confirm`/`update`/`forget`, `config.*`, `conflict.list`/`resolve`); everything else (writes, supersede, set*embedding, archive variants, restore, *\_many, conflict.scan, embedding.rebuild, compact.run, memory.context, memory.extract, system.list*tags) returns `INVALID_INPUT` from the dashboard pointing at the CLI. Hono `secureHeaders` (CSP, X-Frame-Options DENY, nosniff, no-referrer); 4 MiB body limit on `/api/commands/*`; static handler now does realpath-based containment; sourcemaps no longer ship in production builds.
 
   **Storage and file hygiene** (`@psraghuveer/memento-core`, `@psraghuveer/memento`)
 
