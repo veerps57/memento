@@ -327,7 +327,7 @@ describe('runCli: memento context', () => {
     // with `/skills/memento`. A single trailing newline only.
     expect(stdout.endsWith('\n')).toBe(true);
     expect(stdout.split('\n').filter((l) => l.length > 0)).toHaveLength(1);
-    expect(stdout.trimEnd().endsWith('/skills/memento')).toBe(true);
+    expect(stdout.trimEnd()).toMatch(/[\\/]skills[\\/]memento$/);
   });
 
   it('skill-path in JSON mode returns the structured envelope', async () => {
@@ -342,8 +342,8 @@ describe('runCli: memento context', () => {
       value?: { source: string; suggestedTarget: string };
     };
     expect(parsed.ok).toBe(true);
-    expect(parsed.value?.source).toMatch(/skills\/memento$/);
-    expect(parsed.value?.suggestedTarget).toMatch(/\.claude\/skills$/);
+    expect(parsed.value?.source).toMatch(/skills[\\/]memento$/);
+    expect(parsed.value?.suggestedTarget).toMatch(/\.claude[\\/]skills$/);
   });
 
   it('reports STORAGE_ERROR with exit 8 when the DB cannot be opened', async () => {
