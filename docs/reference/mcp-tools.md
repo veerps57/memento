@@ -356,7 +356,7 @@ Programmatic / operator surface — AI assistants typically do NOT reach for thi
 
 Registry name: `system.info` — CLI: `memento system info`
 
-Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, per-status memory counts, and `user.preferredName` (the name an assistant should use when authoring memory content; falls back to "The user" when null). Read-only; safe to call freely — call once at session start to learn the user's name and the store's capabilities.
+Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, per-status memory counts, open-conflict count, runtime info (Node version, modules ABI, native-binding state), scrubber state (write-path redaction master switch), and `user.preferredName` (the name an assistant should use when authoring memory content; falls back to "The user" when null). Read-only; safe to call freely — call once at session start to learn the user's name and the store's capabilities.
 
 Tip: call system.list_scopes to discover valid scopes for memory.write.
 

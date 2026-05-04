@@ -67,6 +67,9 @@ interface SystemInfo {
   vectorEnabled: boolean;
   embedder: { configured: boolean; model: string; dimension: number };
   counts: { active: number; archived: number; forgotten: number; superseded: number };
+  openConflicts: number;
+  runtime: { node: string; modulesAbi: string; nativeBinding: 'ok' };
+  scrubber: { enabled: boolean };
   user: { preferredName: string | null };
 }
 
@@ -175,6 +178,117 @@ describe('system.info', () => {
       forgotten: 0,
       superseded: 0,
     });
+  });
+
+  it('reports zero open conflicts on a freshly seeded store', async () => {
+    const app = await newApp({ dbPath: ':memory:' });
+    const out = await info(app);
+    expect(out.openConflicts).toBe(0);
+  });
+
+  it('counts unresolved conflicts and decrements after resolve', async () => {
+    // Two contradictory `package-manager` preferences in the same
+    // scope must surface a conflict (the post-write hook OR a
+    // forced scan opens it; we don't care which). Resolving it
+    // must decrement `openConflicts`. This pins the dashboard
+    // overview tile's contract: post-resolve refresh sees a
+    // monotonically smaller number, not the same `1000+` page-cap
+    // residue the old `conflict.list`-based count produced.
+    const app = await newApp({ dbPath: ':memory:' });
+    const writeCmd = app.registry.get('memory.write');
+    if (!writeCmd) throw new Error('memory.write missing');
+    await executeCommand(
+      writeCmd,
+      {
+        ...baseWrite,
+        scope: { type: 'global' as const },
+        kind: { type: 'preference' as const },
+        tags: ['topic:package-manager'],
+        content: 'package-manager: pnpm\n\nPrefer pnpm for Node projects.',
+      },
+      ctx,
+    );
+    await executeCommand(
+      writeCmd,
+      {
+        ...baseWrite,
+        scope: { type: 'global' as const },
+        kind: { type: 'preference' as const },
+        tags: ['topic:package-manager'],
+        content: 'package-manager: npm\n\nPrefer npm for Node projects.',
+      },
+      ctx,
+    );
+
+    // Force a 24h scan in case the async post-write hook hasn't
+    // landed yet under test timing. With the dedup fix, the
+    // scan no-ops if the hook already opened the conflict —
+    // either way, reading `system.info` after this point yields
+    // the deterministic open count.
+    const scan = app.registry.get('conflict.scan');
+    if (!scan) throw new Error('conflict.scan missing');
+    const scanResult = await executeCommand(
+      scan,
+      { mode: 'since', since: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
+      ctx,
+    );
+    if (!scanResult.ok) throw new Error(`scan failed: ${scanResult.error.code}`);
+
+    const before = await info(app);
+    expect(before.openConflicts).toBeGreaterThan(0);
+
+    // Pick whichever open conflict the run produced.
+    const list = app.registry.get('conflict.list');
+    if (!list) throw new Error('conflict.list missing');
+    const listResult = await executeCommand(list, { open: true, limit: 10 }, ctx);
+    if (!listResult.ok) throw new Error(`list failed: ${listResult.error.code}`);
+    const rows = listResult.value as ReadonlyArray<{ id: string }>;
+    const conflictId = rows[0]?.id;
+    if (conflictId === undefined) throw new Error('expected at least one open conflict');
+
+    // Resolve and re-probe.
+    const resolve = app.registry.get('conflict.resolve');
+    if (!resolve) throw new Error('conflict.resolve missing');
+    const resolveResult = await executeCommand(
+      resolve,
+      { id: conflictId, resolution: 'ignore' as const },
+      ctx,
+    );
+    if (!resolveResult.ok) throw new Error(`resolve failed: ${resolveResult.error.code}`);
+
+    const after = await info(app);
+    expect(after.openConflicts).toBe(before.openConflicts - 1);
+  });
+
+  it('exposes runtime info matching the host process', async () => {
+    // Pin the runtime block: the dashboard's /system probes the
+    // exact same fields, so a silent rename of `node` /
+    // `modulesAbi` would break the UI. `nativeBinding` is always
+    // `'ok'` because reaching the handler means better-sqlite3
+    // is loaded.
+    const app = await newApp({ dbPath: ':memory:' });
+    const out = await info(app);
+    expect(out.runtime).toEqual({
+      node: process.versions.node,
+      modulesAbi: process.versions.modules,
+      nativeBinding: 'ok',
+    });
+  });
+
+  it('reports scrubber state so the dashboard /system probe can render it', async () => {
+    // The scrubber master switch (`scrubber.enabled`) is pinned
+    // at server start. Lifting the resolved value into
+    // `system.info` lets the dashboard show a "safety net
+    // active?" indicator without a separate config.get call.
+    // Default is `true`; the override path is exercised below.
+    const onByDefault = await newApp({ dbPath: ':memory:' });
+    expect((await info(onByDefault)).scrubber).toEqual({ enabled: true });
+
+    const turnedOff = await newApp({
+      dbPath: ':memory:',
+      configOverrides: { 'scrubber.enabled': false },
+    });
+    expect((await info(turnedOff)).scrubber).toEqual({ enabled: false });
   });
 });
 

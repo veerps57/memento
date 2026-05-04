@@ -52,7 +52,7 @@ The two prior posture documents are updated:
 
 ### Risks
 
-- **Scope creep.** The dashboard's job is transparency and curation, not "every feature you can imagine on top of Memento." The user-stories list in the design proposal pins the v1 surface; anything beyond it goes through the same ADR / proposal cycle as the rest of the project.
+- **Scope creep.** The dashboard's job is transparency and curation, not "every feature you can imagine on top of Memento." The user-stories listed earlier in this ADR pin the v1 surface; anything beyond it goes through the same ADR / proposal cycle as the rest of the project.
 - **UI as a backdoor for surface changes.** The temptation to add "just one server-side endpoint that doesn't fit a registered command" will exist. The mitigation: the dashboard's `/api/*` routes are reviewed by the same lens as registry commands, and any new functionality goes through the registry first (then surfaces in the dashboard as a thin client of the new command).
 - **Drift between dashboard and CLI behaviour.** Both wrap the same registry, but the dashboard introduces new code paths (HTTP serialization, browser-side cache invalidation) that could mask bugs the CLI does not see. Mitigation: the dashboard's server tests reuse the in-memory `MementoApp` pattern from `packages/cli/test/`, exercising every route through the same code path as a registry call.
 

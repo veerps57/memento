@@ -1,4 +1,4 @@
-// `/config` — config browser + inline editor (D20 + D22).
+// `/config` — config browser + inline editor.
 //
 // `config.list` returns every key with its resolved value and
 // provenance. We group by dotted prefix (`retrieval.*`,
@@ -19,13 +19,16 @@
 //
 // `config.list` does not carry the `mutable` flag on the wire
 // (the schema does not expose it; ADR-0018 forbids new fields
-// without a separate ADR). We rely on a client-side allow-list
-// of known immutable keys plus the server's `IMMUTABLE` error
-// code as the canonical fallback. If a future migration adds an
-// immutable key the dashboard does not yet know about, the
-// editor renders, the user attempts a write, and the engine's
-// `IMMUTABLE` response surfaces inline as a friendly read-only
-// lock.
+// without a separate ADR). We instead consume the
+// `IMMUTABLE_CONFIG_KEY_NAMES` constant exported from the schema
+// package — derived from the same `CONFIG_KEYS` registry that
+// drives engine-side validation, so the two cannot drift.
+//
+// The server's `IMMUTABLE` error code remains the canonical
+// fallback for the impossible case where the import is somehow
+// stale (a transitive npm-cache mismatch, etc.) — the editor
+// would render, the user clicks save, and the inline error
+// surfaces.
 //
 // Validation surfaces engine-side. Per-key Zod schemas live in
 // `@psraghuveer/memento-schema/config-keys.ts`; `config.set`
@@ -33,6 +36,7 @@
 // message on failure. The editor renders that message inline
 // without re-implementing the schema in the browser.
 
+import { IMMUTABLE_CONFIG_KEY_NAMES } from '@psraghuveer/memento-schema';
 import { useMemo, useState } from 'react';
 
 import {
@@ -46,18 +50,11 @@ import { cn } from '../lib/cn.js';
 import { relativeTime } from '../lib/format.js';
 
 /**
- * Keys flagged `mutable: false` in
- * `@psraghuveer/memento-schema/config-keys.ts`. Kept in sync
- * by hand; CI-side could pin via a snapshot test if drift
- * becomes a real risk. Today the list is short and stable.
+ * Set of immutable keys, derived from the schema package. Update
+ * propagates automatically when a future migration flips a key's
+ * `mutable` flag.
  */
-const IMMUTABLE_KEYS: ReadonlySet<string> = new Set([
-  'storage.busyTimeoutMs',
-  'retrieval.fts.tokenizer',
-  'retrieval.vector.backend',
-  'embedder.local.model',
-  'embedder.local.dimension',
-]);
+const IMMUTABLE_KEYS: ReadonlySet<string> = new Set(IMMUTABLE_CONFIG_KEY_NAMES);
 
 export function ConfigPage(): JSX.Element {
   const [filter, setFilter] = useState('');
@@ -205,7 +202,7 @@ function ConfigDetail({
  * inline.
  */
 function ConfigEditor({ entry }: { readonly entry: ConfigEntry }): JSX.Element {
-  const inferred = inferEditorType(entry.value);
+  const inferred = inferEditorType(entry.value, entry.key);
   const [draft, setDraft] = useState<string>(initialDraft(entry.value, inferred));
   const [draftBool, setDraftBool] = useState<boolean>(
     typeof entry.value === 'boolean' ? entry.value : false,
@@ -214,7 +211,7 @@ function ConfigEditor({ entry }: { readonly entry: ConfigEntry }): JSX.Element {
   const unset = useUnsetConfig();
 
   const save = (): void => {
-    const parsed = parseDraft(inferred, draft, draftBool);
+    const parsed = parseDraft(inferred, draft, draftBool, entry.key);
     if (!parsed.ok) {
       // Local syntactic failure (e.g. malformed JSON). The
       // engine-side per-key Zod validator runs after this.
@@ -289,7 +286,7 @@ function ConfigEditor({ entry }: { readonly entry: ConfigEntry }): JSX.Element {
         >
           {set.isPending ? 'saving…' : 'save'}
         </button>
-        {entry.source === 'runtime' ? (
+        {isRuntimeOverride(entry.source) ? (
           <button
             type="button"
             onClick={reset}
@@ -319,11 +316,58 @@ function ConfigEditor({ entry }: { readonly entry: ConfigEntry }): JSX.Element {
 
 type EditorType = 'boolean' | 'number' | 'string' | 'json';
 
-function inferEditorType(value: unknown): EditorType {
+/**
+ * The wire `source` enumerates the layer that supplied the
+ * effective value. Only `cli` and `mcp` represent runtime
+ * mutations through `config.set` — those are the layers `reset`
+ * (i.e. `config.unset`) can clear. Anything else (`default`,
+ * `user-file`, `workspace-file`, `env`) was supplied at startup
+ * and isn't reset-able from the dashboard.
+ *
+ * The previous predicate compared against the literal `'runtime'`,
+ * which is not a member of the schema's `ConfigSource` enum, so
+ * the Reset button never rendered. See ADR-0018 § "config edit
+ * surface".
+ */
+function isRuntimeOverride(source: ConfigEntry['source']): boolean {
+  return source === 'cli' || source === 'mcp';
+}
+
+function inferEditorType(value: unknown, key: string): EditorType {
   if (typeof value === 'boolean') return 'boolean';
   if (typeof value === 'number') return 'number';
   if (typeof value === 'string') return 'string';
+  // `null` is the default for several string-or-null keys
+  // (notably `user.preferredName`, `export.defaultPath`, and the
+  // immutable `embedder.local.cacheDir`). Without this branch
+  // `typeof null === 'object'` falls through to the JSON editor,
+  // forcing the user to type `"Raghu"` (with quotes) for a name
+  // — and a bare `Raghu` then fails JSON.parse with a confusing
+  // "Unexpected token R" error. Treat `null` as a string editor
+  // by default; the engine's per-key Zod schema rejects values
+  // that don't fit the shape.
+  if (value === null && isStringOrNullKey(key)) return 'string';
   return 'json';
+}
+
+/**
+ * Hand-curated list of keys whose schema is `string-or-null`.
+ * Kept short and pinned to known nullable string keys; if a new
+ * key is added with the same shape the dashboard's editor will
+ * fall through to JSON until this set is updated. The
+ * IMMUTABLE_CONFIG_KEY_NAMES drift test in the schema package
+ * doesn't cover this — adding a structural test for it would
+ * require exposing the schema shape on the wire (forbidden by
+ * ADR-0018), so the trade-off is conscious.
+ */
+const STRING_OR_NULL_KEYS: ReadonlySet<string> = new Set([
+  'user.preferredName',
+  'export.defaultPath',
+  'embedder.local.cacheDir',
+]);
+
+function isStringOrNullKey(key: string): boolean {
+  return STRING_OR_NULL_KEYS.has(key);
 }
 
 function initialDraft(value: unknown, type: EditorType): string {
@@ -341,14 +385,22 @@ type ParseResult =
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly message: string };
 
-function parseDraft(type: EditorType, draft: string, draftBool: boolean): ParseResult {
+function parseDraft(type: EditorType, draft: string, draftBool: boolean, key: string): ParseResult {
   if (type === 'boolean') return { ok: true, value: draftBool };
   if (type === 'number') {
     const n = Number(draft);
     if (!Number.isFinite(n)) return { ok: false, message: 'not a finite number' };
     return { ok: true, value: n };
   }
-  if (type === 'string') return { ok: true, value: draft };
+  if (type === 'string') {
+    // For nullable string keys, an empty draft means "clear the
+    // value back to null". Without this branch the empty string
+    // would round-trip to the engine and fail `z.string().min(1)`
+    // — the user would have to use the reset button instead,
+    // which feels heavyweight for editing a single name.
+    if (draft === '' && isStringOrNullKey(key)) return { ok: true, value: null };
+    return { ok: true, value: draft };
+  }
   try {
     return { ok: true, value: JSON.parse(draft) as unknown };
   } catch (cause) {
@@ -408,7 +460,12 @@ function SourcePill({
   readonly source: ConfigEntry['source'];
   readonly mutable: boolean;
 }): JSX.Element {
-  const tone = source === 'runtime' ? 'border-accent/40 text-accent' : 'border-border text-muted';
+  // Runtime overrides (cli / mcp) get the accent tone — same
+  // signal the editor's reset-button visibility uses, so the row
+  // header tells the same story as the expanded body.
+  const tone = isRuntimeOverride(source)
+    ? 'border-accent/40 text-accent'
+    : 'border-border text-muted';
   const label = mutable ? source : `${source} · immutable`;
   return (
     <span

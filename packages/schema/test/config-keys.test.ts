@@ -5,6 +5,7 @@ import {
   CONFIG_KEY_NAMES,
   type ConfigKey,
   type ConfigValueOf,
+  IMMUTABLE_CONFIG_KEY_NAMES,
 } from '../src/config-keys.js';
 
 describe('CONFIG_KEYS registry', () => {
@@ -37,6 +38,18 @@ describe('CONFIG_KEYS registry', () => {
 
   it('storage.busyTimeoutMs is immutable', () => {
     expect(CONFIG_KEYS['storage.busyTimeoutMs'].mutable).toBe(false);
+  });
+
+  it('IMMUTABLE_CONFIG_KEY_NAMES exactly matches every key flagged mutable: false', () => {
+    // Pinned because the dashboard's editor uses this list to
+    // gate the inline editor (read-only vs editable). Drift
+    // between the schema's `mutable: false` and the exported
+    // constant would let the editor render for an immutable key
+    // and surface IMMUTABLE on save instead of locking the row.
+    const derivedFromRegistry = CONFIG_KEY_NAMES.filter(
+      (name) => CONFIG_KEYS[name].mutable === false,
+    );
+    expect([...IMMUTABLE_CONFIG_KEY_NAMES].sort()).toEqual([...derivedFromRegistry].sort());
   });
 
   it('exposes the runtime knobs the conflict-detection hook depends on', () => {

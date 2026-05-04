@@ -7,6 +7,7 @@
 
 import {
   type UseMutationResult,
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -47,6 +48,10 @@ export function useConflictList(filter: ConflictListFilter = {}) {
           limit: filter.limit ?? 200,
         }),
       ),
+    // Same load-more reasoning as `useMemoryList`: keep old rows
+    // visible while the next page fetches so the browser doesn't
+    // lose its scroll anchor.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -62,6 +67,12 @@ export function useResolveConflict(): UseMutationResult<ConflictRow, Error, Reso
       unwrap(await callCommand<ConflictRow>('conflict.resolve', args)) as ConflictRow,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['conflict.list'] });
+      // Resolution mutates the underlying memory (supersede) AND
+      // changes the open-conflict count surfaced by the overview
+      // tile (`system.info`) and audit feed.
+      void qc.invalidateQueries({ queryKey: ['memory.list'] });
+      void qc.invalidateQueries({ queryKey: ['memory.events'] });
+      void qc.invalidateQueries({ queryKey: ['system.info'] });
     },
   });
 }
@@ -88,6 +99,9 @@ export function useScanConflicts(): UseMutationResult<
       ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['conflict.list'] });
+      // A scan can open new conflicts; the overview tile counts
+      // them via `system.info`.
+      void qc.invalidateQueries({ queryKey: ['system.info'] });
     },
   });
 }

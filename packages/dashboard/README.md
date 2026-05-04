@@ -2,7 +2,7 @@
 
 Local-first web dashboard for [Memento](https://github.com/veerps57/memento). Browse memories, audit history, triage conflicts, tune config — in your browser, against your local SQLite store. Mobile-responsive.
 
-> **Status:** v0 (under active development). See [ADR-0018](../../docs/adr/0018-dashboard-package.md) for the architectural decision and scope. The user-stories driving the v1 surface are tracked in the design proposal that accompanied this package.
+> **Status:** v0 (under active development). See [ADR-0018](../../docs/adr/0018-dashboard-package.md) for the architectural decision, scope, and the user-stories driving the v1 surface.
 
 ## Usage
 
@@ -16,18 +16,19 @@ This opens a localhost server (random port, `127.0.0.1` only), launches your def
 
 ## What the dashboard does (v0)
 
-- **Overview** (`~/overview`) — at-a-glance store status: memory counts by kind and status, scope distribution, recent activity, conflict pressure, vector retrieval state.
-- **Memory browse** (`~/memory`) — search box wired to `memory.search` (FTS + vector when enabled), filter chips for status / kind / pinned, decay-aware effective-confidence meter on every row, click-through to detail.
+- **Overview** (`~/overview`) — at-a-glance store status: total active count, last-write timestamp, vector-retrieval state, open-conflict pressure (rendered as `1,000+` when the fetched page hits the engine's `conflict.list.maxLimit` cap), a per-status breakdown sourced from `system.info.counts` (no sample-of-1000 caveat), and the top 10 scopes with a trailing reconciliation row when more scopes exist so the list visibly sums to the active total.
+- **Memory browse** (`~/memory`) — search box wired to `memory.search` (FTS + vector when enabled), multi-select filter chips for status and kind plus a pinned-only toggle, decay-aware effective-confidence meter on every row, click-through to detail. Multi-select narrowing falls back to client-side filtering when the engine's `memory.list` index can serve only a single status / kind. A `load next 200` button pages the engine response up to the `memory.list.maxLimit` ceiling (1000 by default).
 - **Memory detail** (`~/memory/$id`) — full content with sensitive-reveal toggle, supersession chain (up / down navigation), audit timeline (`memory.events` for that id with type-pill colour coding and per-event payload summaries), provenance (created, last confirmed, stored vs. effective confidence), pin / confirm / forget actions.
-- **Conflict triage** (`~/conflicts`) — pending conflicts as side-by-side memory cards with the four `conflict.resolve` actions (accept-new, accept-existing, supersede, ignore), evidence detail toggle, "re-scan last 24h" button.
-- **Audit feed** (`~/audit`) — global activity feed via the id-less mode of `memory.events`, with type filters and deep links to memory detail.
-- **Config browse + inline editor** (`~/config`) — every registered config key grouped by dotted prefix with current value, source layer, and per-key history. Mutable keys edit inline via typed editors (boolean → checkbox, number → number input, string → text input, otherwise → JSON textarea); save calls `config.set` with engine-side per-key Zod validation surfacing inline. Reset (when source is `runtime`) calls `config.unset`.
+- **Conflict triage** (`~/conflicts`) — pending conflicts as side-by-side memory cards with the four `conflict.resolve` actions (accept-new, accept-existing, supersede, ignore), evidence detail toggle, "re-scan last 24h" button (driving `conflict.scan` over the dashboard surface), and the same `load next 200` pagination as the memory list.
+- **Audit feed** (`~/audit`) — global activity feed via the id-less mode of `memory.events`, with type filters (default neutral; only `forgotten` / `archived` rows render in the warn tone — every other lifecycle event is the neutral foreground colour) and the same `load next 200` pagination.
+- **Config browse + inline editor** (`~/config`) — every registered config key grouped by dotted prefix with current value, source layer, and per-key history. Mutable keys edit inline via typed editors (boolean → checkbox, number → number input, string → text input, `null` on a known string-or-null key → text input, anything else → JSON textarea); save calls `config.set` with engine-side per-key Zod validation surfacing inline. Reset is shown when the effective source is a runtime override (`cli` / `mcp`) and calls `config.unset`. Immutability is gated by the schema-derived `IMMUTABLE_CONFIG_KEY_NAMES` constant — drift from the schema's `mutable: false` flag is prevented by a structural test in the schema package.
 - **System & health** (`~/system`) — doctor-style probes (database, vector retrieval, embedder, schema version, last write, version) plus a status-count tile row.
 - **Cmd-K command palette** — global ⌘K / Ctrl-K overlay with three modes: live `memory.search` as you type, `>` prefix for page navigation, `:` prefix for direct memory open by ULID.
+- **Session-expired handling** — when the launch token is missing or rejected by the server, every route renders a single uniform "Session expired" panel (with a one-click retry) instead of each page surfacing its own raw 401 message. Token-missing detection lives in the API client; the panel mounts via a TanStack-Query cache subscriber in the app shell.
 
 ## What the dashboard deliberately does NOT do
 
-See the "What the dashboard deliberately should NOT do" section of the design proposal. Short version: no hard-delete, no conflict auto-resolution, no editing of immutable fields, no raw SQL surface, no auth, no telemetry, no remote-MCP-server config. It's a transparent viewer + careful curator, not an agent.
+See [ADR-0018](../../docs/adr/0018-dashboard-package.md) for the canonical out-of-scope list. Short version: no hard-delete, no conflict auto-resolution, no editing of immutable fields, no raw SQL surface, no remote-MCP-server config, no telemetry. It's a transparent viewer + careful curator, not an agent.
 
 ## Architecture
 

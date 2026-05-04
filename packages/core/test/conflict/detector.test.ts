@@ -133,6 +133,71 @@ describe('detectConflicts', () => {
     expect(opened.conflictingMemoryId).not.toBe(a.id);
   });
 
+  it('does not re-open conflicts for pairs that already have an open row', async () => {
+    // Re-running the detector over the same memory must NOT
+    // create a duplicate row for a pair that already has an
+    // open conflict. Without this dedup, every press of the
+    // dashboard's "re-scan (24h)" button (and every redundant
+    // post-write hook fire) inserted a fresh row for the same
+    // logical pair, observable as a monotonically growing
+    // open-conflict count in the overview tile.
+    const { memoryRepo, conflictRepo } = await fixture();
+    await memoryRepo.write(baseInput, { actor });
+    const b = await memoryRepo.write({ ...baseInput, content: 'tabs: no' }, { actor });
+
+    const first = await detectConflicts(
+      b,
+      { memoryRepository: memoryRepo, conflictRepository: conflictRepo },
+      { actor },
+    );
+    expect(first.opened).toHaveLength(1);
+
+    const second = await detectConflicts(
+      b,
+      { memoryRepository: memoryRepo, conflictRepository: conflictRepo },
+      { actor },
+    );
+    expect(second.opened).toEqual([]);
+
+    // The candidate still gets counted in `scanned`; only the
+    // insert is suppressed. Two memories in the bucket → 2.
+    expect(second.scanned).toBe(2);
+
+    // And only one row exists in the table.
+    const all = await conflictRepo.list({ open: true });
+    expect(all).toHaveLength(1);
+  });
+
+  it('treats reverse-direction pairs as the same logical conflict', async () => {
+    // The detector inserts in `(newMemoryId, conflictingMemoryId)`
+    // direction relative to whichever memory is being scanned.
+    // Scanning A→found B opens (A, B). Subsequently scanning B
+    // would otherwise insert (B, A) — same logical pair, two
+    // rows. Dedup must check both directions.
+    const { memoryRepo, conflictRepo } = await fixture();
+    const a = await memoryRepo.write(baseInput, { actor });
+    const b = await memoryRepo.write({ ...baseInput, content: 'tabs: no' }, { actor });
+
+    const fromB = await detectConflicts(
+      b,
+      { memoryRepository: memoryRepo, conflictRepository: conflictRepo },
+      { actor },
+    );
+    expect(fromB.opened).toHaveLength(1);
+    expect(fromB.opened[0]?.newMemoryId).toBe(b.id);
+    expect(fromB.opened[0]?.conflictingMemoryId).toBe(a.id);
+
+    const fromA = await detectConflicts(
+      a,
+      { memoryRepository: memoryRepo, conflictRepository: conflictRepo },
+      { actor },
+    );
+    expect(fromA.opened).toEqual([]);
+
+    const all = await conflictRepo.list({ open: true });
+    expect(all).toHaveLength(1);
+  });
+
   it('does not open a conflict when next supersedes candidate', async () => {
     const { memoryRepo, conflictRepo } = await fixture();
     const a = await memoryRepo.write(baseInput, { actor });

@@ -1,4 +1,4 @@
-// `/conflicts` — open conflict triage (D14 + D15 + D16).
+// `/conflicts` — open conflict triage.
 //
 // Layout
 // ------
@@ -21,6 +21,7 @@
 // ADR-0018's "no auto-resolution" stance.
 
 import { Link } from '@tanstack/react-router';
+import { useState } from 'react';
 
 import {
   type ConflictResolution,
@@ -33,8 +34,15 @@ import { useMemoryRead } from '../hooks/useMemory.js';
 import { cn } from '../lib/cn.js';
 import { formatScope, relativeTime } from '../lib/format.js';
 
+// Conflict-list pagination: bumps the engine `limit` per click,
+// capped at the engine's `conflict.list.maxLimit` default. Same
+// idiom as the memory + audit pages.
+const LOAD_MORE_PAGE = 100;
+const LOAD_MORE_MAX = 1_000;
+
 export function ConflictsPage(): JSX.Element {
-  const conflicts = useConflictList({ open: true, limit: 200 });
+  const [displayLimit, setDisplayLimit] = useState(LOAD_MORE_PAGE);
+  const conflicts = useConflictList({ open: true, limit: displayLimit });
   const scan = useScanConflicts();
 
   const handleScan = (): void => {
@@ -56,17 +64,18 @@ export function ConflictsPage(): JSX.Element {
         <h1 className="font-sans text-xl font-semibold tracking-tight">Triage conflicts</h1>
       </header>
 
-      <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] uppercase tracking-widish text-muted">
-        <span>
-          open <span className="text-muted/70">({list.length})</span>
-        </span>
-        <span className="flex-1" />
+      {/* Action row — same reasoning as the memory list: the
+          fetched-page count was misleading because it caps at
+          conflict.list.maxLimit. The overview tile owns the
+          accurate count (rendered as `1,000+` when capped); this
+          page just shows the actions. */}
+      <div className="flex justify-end">
         <button
           type="button"
           onClick={handleScan}
           disabled={scan.isPending}
           className={cn(
-            'rounded border border-border px-2 py-0.5 normal-case tracking-normal',
+            'rounded border border-border px-2 py-0.5 font-mono text-xs',
             'hover:border-fg hover:text-fg disabled:opacity-50',
           )}
           title="Re-run conflict detection on memories created in the last 24h (conflict.scan)"
@@ -102,6 +111,21 @@ export function ConflictsPage(): JSX.Element {
           list.map((conflict) => <ConflictCard key={conflict.id} conflict={conflict} />)
         )}
       </section>
+
+      {list.length === displayLimit && displayLimit < LOAD_MORE_MAX ? (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => setDisplayLimit((d) => Math.min(d + LOAD_MORE_PAGE, LOAD_MORE_MAX))}
+            disabled={conflicts.isFetching}
+            className="rounded border border-border px-3 py-1.5 font-mono text-xs text-fg/90 hover:border-fg disabled:opacity-50"
+          >
+            {conflicts.isFetching
+              ? 'loading…'
+              : `load next ${Math.min(LOAD_MORE_PAGE, LOAD_MORE_MAX - displayLimit)}`}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -118,7 +142,7 @@ function ConflictCard({ conflict }: { readonly conflict: ConflictRow }): JSX.Ele
   return (
     <article className="flex flex-col gap-3 rounded border border-border p-4">
       <header className="flex flex-wrap items-baseline gap-2 font-mono text-[11px]">
-        <span className="rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 uppercase tracking-widish text-warn">
+        <span className="rounded border border-border bg-border/30 px-1.5 py-0.5 text-fg/80">
           {conflict.kind}
         </span>
         <span className="text-muted">opened {relativeTime(conflict.openedAt)}</span>

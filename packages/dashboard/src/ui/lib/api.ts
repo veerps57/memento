@@ -51,6 +51,22 @@ export type ApiResult<T> = ApiOk<T> | ApiErr;
 const TOKEN_STORAGE_KEY = 'memento.dashboard.token';
 
 /**
+ * Synthetic error code surfaced when the SPA was loaded without
+ * the launch token — either because the user opened the URL
+ * without the `#token=…` fragment, or because the server
+ * restarted and minted a fresh token while the tab was open.
+ *
+ * Pages render a single uniform "session expired" panel for this
+ * code instead of every route showing the raw 401 message with a
+ * different prefix. The dashboard server ALSO returns this code
+ * verbatim on a 401 so a single client-side check covers both
+ * "no token at all" and "token rejected by server". Keep this
+ * literal in sync with the matching constant in
+ * `dashboard/src/ui/components/TokenMissingPanel.tsx`.
+ */
+export const AUTH_REQUIRED_CODE = 'AUTH_REQUIRED';
+
+/**
  * Read the launch token from `window.location.hash`, persist it
  * to `sessionStorage`, and clear the fragment so it does not
  * sit in the address bar. Idempotent: subsequent calls just
@@ -98,11 +114,45 @@ export async function callCommand<T = unknown>(
   name: string,
   input: unknown = {},
 ): Promise<ApiResult<T>> {
+  // Pre-flight: if the launch token is unrecoverable (no fragment
+  // and nothing in sessionStorage), short-circuit to a uniform
+  // AUTH_REQUIRED error instead of issuing a 401-bound request
+  // whose error envelope leaks server-side wording into every
+  // page's "failed: …" line.
+  if (readToken() === null) {
+    return {
+      ok: false,
+      error: {
+        code: AUTH_REQUIRED_CODE,
+        message: 'Dashboard launch token is missing.',
+        hint: 'Re-open the dashboard via `memento dashboard` to get a fresh launch URL.',
+      },
+    };
+  }
   const response = await fetch(`/api/commands/${encodeURIComponent(name)}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...authHeaders() },
     body: JSON.stringify(input),
   });
+  // A 401 from the server means the token in sessionStorage is
+  // stale (server restarted while the tab was open). Forget the
+  // dead token so a subsequent reload-with-fragment can plant a
+  // fresh one without our cache shadowing it, and synthesise the
+  // AUTH_REQUIRED code regardless of the server's specific error
+  // wording — every route renders the same panel.
+  if (response.status === 401) {
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+    return {
+      ok: false,
+      error: {
+        code: AUTH_REQUIRED_CODE,
+        message: 'Dashboard launch token was rejected by the server.',
+        hint: 'Re-open the dashboard via `memento dashboard` to get a fresh launch URL.',
+      },
+    };
+  }
   // The body is always a Result envelope (the server commits to
   // that shape). A network-level failure (DNS, connection
   // refused) is the only path that does not return a Result; we

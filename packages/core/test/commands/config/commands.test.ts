@@ -5,6 +5,7 @@
 // SQLite) and a real MutableConfigStore, drive everything
 // through `executeCommand`.
 
+import { CONFIG_KEYS } from '@psraghuveer/memento-schema';
 import type { ActorRef, ConfigEntry, ConfigEvent } from '@psraghuveer/memento-schema';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createConfigCommands } from '../../../src/commands/config/index.js';
@@ -143,6 +144,83 @@ describe('createConfigCommands', () => {
       const events = await repo.history('decay.pinnedFloor');
       expect(events).toHaveLength(1);
       expect(events[0]?.newValue).toBe(0.7);
+    });
+
+    it('records the schema default as oldValue on the first edit', async () => {
+      // Regression for the dashboard's first-edit confusion:
+      // the audit feed used to read `null → 0.4` for any key
+      // touched once, hiding the actual transition from the
+      // schema default. The handler now plumbs the engine's
+      // effective value through `priorEffectiveValue` so the
+      // event chain captures `<default> → newValue`.
+      const { repo, byName } = await fixture();
+      const defaultPinned = CONFIG_KEYS['decay.pinnedFloor'].default as number;
+      const res = await executeCommand(
+        get(byName, 'config.set'),
+        { key: 'decay.pinnedFloor', value: 0.4 },
+        { actor: cliActor },
+      );
+      if (!res.ok) throw new Error(`expected ok: ${res.error.code}`);
+      const events = await repo.history('decay.pinnedFloor');
+      expect(events).toHaveLength(1);
+      expect(events[0]?.oldValue).toBe(defaultPinned);
+      expect(events[0]?.newValue).toBe(0.4);
+    });
+
+    it('records the prior runtime override as oldValue on subsequent edits', async () => {
+      // Once an event chain exists for a key, every subsequent
+      // edit records the *prior runtime override* — not the
+      // schema default — as oldValue. This is the steady-state
+      // behaviour and was unchanged by the priorEffectiveValue
+      // plumb-through; the test pins it so a future edit to
+      // `resolveOldValue` can't regress the chain.
+      const { repo, byName } = await fixture();
+      await executeCommand(
+        get(byName, 'config.set'),
+        { key: 'decay.pinnedFloor', value: 0.4 },
+        { actor: cliActor },
+      );
+      await executeCommand(
+        get(byName, 'config.set'),
+        { key: 'decay.pinnedFloor', value: 0.6 },
+        { actor: cliActor },
+      );
+      const events = await repo.history('decay.pinnedFloor');
+      expect(events.map((e) => [e.oldValue, e.newValue])).toEqual([
+        [CONFIG_KEYS['decay.pinnedFloor'].default, 0.4],
+        [0.4, 0.6],
+      ]);
+    });
+
+    it('records the schema default again on a set following an unset', async () => {
+      // After unset the runtime override layer is empty; the
+      // engine's effective value reverts to the next-lower
+      // layer (the default in this fixture). The next set's
+      // audit oldValue must reflect that, not the literal
+      // `null` written by the unset event — otherwise the
+      // dashboard would render `null → x` after every reset.
+      const { repo, byName } = await fixture();
+      const defaultPinned = CONFIG_KEYS['decay.pinnedFloor'].default as number;
+      await executeCommand(
+        get(byName, 'config.set'),
+        { key: 'decay.pinnedFloor', value: 0.4 },
+        { actor: cliActor },
+      );
+      await executeCommand(
+        get(byName, 'config.unset'),
+        { key: 'decay.pinnedFloor' },
+        { actor: cliActor },
+      );
+      await executeCommand(
+        get(byName, 'config.set'),
+        { key: 'decay.pinnedFloor', value: 0.55 },
+        { actor: cliActor },
+      );
+      const events = await repo.history('decay.pinnedFloor');
+      expect(events).toHaveLength(3);
+      expect(events[0]).toMatchObject({ oldValue: defaultPinned, newValue: 0.4 });
+      expect(events[1]).toMatchObject({ oldValue: 0.4, newValue: null });
+      expect(events[2]).toMatchObject({ oldValue: defaultPinned, newValue: 0.55 });
     });
 
     it('attributes mcp-actor calls to source=mcp', async () => {

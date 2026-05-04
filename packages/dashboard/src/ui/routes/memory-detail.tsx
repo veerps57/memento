@@ -1,4 +1,4 @@
-// `/memory/$id` — full memory detail (D5 + D11 + D12).
+// `/memory/$id` — full memory detail.
 //
 // Sections, top → bottom:
 //
@@ -139,7 +139,6 @@ export function MemoryDetailPage(): JSX.Element {
             onClick={handleForget}
             pending={forget.isPending}
             label="forget"
-            tone="warn"
             disabled={m.status === 'forgotten'}
             title={
               m.status === 'forgotten'
@@ -307,8 +306,8 @@ function KindBadge({ kind }: { readonly kind: string }): JSX.Element {
   return (
     <span
       className={cn(
-        'inline-block rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widish',
-        'border border-border bg-border/30',
+        'inline-block rounded px-1.5 py-0.5 font-mono text-[11px]',
+        'border border-border bg-border/30 text-fg/80',
       )}
     >
       {kind}
@@ -446,17 +445,14 @@ function EventRow({ event }: { readonly event: MemoryEventRow }): JSX.Element {
 }
 
 function EventTypeBadge({ type }: { readonly type: MemoryEventRow['type'] }): JSX.Element {
-  const tone =
-    type === 'forgotten' || type === 'archived'
-      ? 'text-warn'
-      : type === 'created' || type === 'restored' || type === 'reembedded'
-        ? 'text-accent'
-        : 'text-fg/80';
+  // Lowercase + neutral white. The earlier per-type tone
+  // (warn / accent / muted) was too loud for a dense audit
+  // timeline; the type label is a readability hint, not a
+  // priority cue. Keep all events visually equal.
   return (
     <span
       className={cn(
-        'inline-block w-24 shrink-0 rounded border border-border bg-border/30 px-1.5 py-0.5 text-center text-[11px] uppercase tracking-widish',
-        tone,
+        'inline-block w-24 shrink-0 rounded border border-border bg-border/30 px-1.5 py-0.5 text-center text-[11px] text-fg',
       )}
     >
       {type}

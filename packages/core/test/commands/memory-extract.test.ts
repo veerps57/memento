@@ -229,9 +229,13 @@ describe('memory.extract', () => {
   });
 
   it('deduplicates byte-identical candidates within the same batch', async () => {
-    // Round-2 finding C2: previously this wrote 3 separate memories.
-    // The in-batch fingerprint set ensures byte-identical content
-    // collapses to one row regardless of vector-search timing.
+    // Regression: byte-identical candidates submitted in one
+    // batch used to write three separate memories — the dedup
+    // path queried vector search against the DB, but auto-embed
+    // is fire-and-forget so earlier candidates' embeddings
+    // weren't persisted yet when later ones checked. The
+    // in-batch fingerprint set now collapses byte-identical
+    // content to a single row regardless of vector-search timing.
     const { command } = await fixture();
     const phrase = 'Identical-content extraction batch probe.';
     const result = await executeCommand(

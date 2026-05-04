@@ -124,7 +124,7 @@ export function createConflictCommands(deps: CreateConflictCommandsDeps): readon
   const scan: Command<typeof ConflictScanInputSchema, typeof ScanOutputSchema> = {
     name: 'conflict.scan',
     sideEffect: 'write',
-    surfaces: SURFACES,
+    surfaces: SURFACES_DASHBOARD,
     inputSchema: ConflictScanInputSchema,
     outputSchema: ScanOutputSchema,
     metadata: {
@@ -159,7 +159,15 @@ export function createConflictCommands(deps: CreateConflictCommandsDeps): readon
           status: 'active',
           createdAtGte: since,
         });
-        let scanned = 0;
+        // `scanned` reports memories *processed*, not the inner
+        // candidate-pairing count summed across them. The
+        // dashboard renders this as "scanned N memories" and
+        // accumulating the per-memory `result.scanned` produced
+        // a number an order of magnitude larger than the corpus
+        // (every candidate examined for every memory). Per-memory
+        // mode keeps the candidate-count semantics — that's the
+        // useful signal when you're inspecting one memory's
+        // detection run.
         const opened: Awaited<ReturnType<typeof detectConflicts>>['opened'][number][] = [];
         for (const candidate of candidates) {
           const result = await detectConflicts(
@@ -167,10 +175,9 @@ export function createConflictCommands(deps: CreateConflictCommandsDeps): readon
             { memoryRepository: memories, conflictRepository: conflicts },
             sharedOptions,
           );
-          scanned += result.scanned;
           opened.push(...result.opened);
         }
-        return { scanned, opened };
+        return { scanned: candidates.length, opened };
       }),
   };
 

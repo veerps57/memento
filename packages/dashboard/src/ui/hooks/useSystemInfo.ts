@@ -33,6 +33,34 @@ export interface SystemInfo {
     readonly superseded: number;
   };
   /**
+   * Total unresolved conflicts at the moment of the call —
+   * sourced from the engine, not from a paged `conflict.list`
+   * response, so the overview tile shows an exact number even
+   * when there are more than `conflict.list.maxLimit` open
+   * conflicts.
+   */
+  readonly openConflicts: number;
+  /**
+   * Process-level health subset of `memento doctor`: Node
+   * version, modules ABI, and the native-binding state. Powers
+   * the corresponding probes on `~/system`.
+   */
+  readonly runtime: {
+    readonly node: string;
+    readonly modulesAbi: string;
+    readonly nativeBinding: 'ok';
+  };
+  /**
+   * Resolved write-path scrubber state. Surfaced as a probe on
+   * `~/system` so the user can confirm at a glance that the
+   * redaction safety net is active. The key is pinned at
+   * server start (`mutable: false`); flipping it requires
+   * editing startup config.
+   */
+  readonly scrubber: {
+    readonly enabled: boolean;
+  };
+  /**
    * Single-user identity. `preferredName` is the value of the
    * `user.preferredName` config; the dashboard wordmark uses it
    * to render `<name>@memento_` (a shell-prompt style cue),
