@@ -1,4 +1,4 @@
-// `/memory` — the memory browse page (D3 + D6 + D11 + D13).
+// `/memory` — the memory browse page.
 //
 // Three regions:
 //
@@ -14,7 +14,7 @@
 // score desc in search mode.
 
 import { Link } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import {
   type MemoryKindName,
@@ -31,28 +31,85 @@ const STATUSES: readonly MemoryStatus[] = ['active', 'archived', 'forgotten', 's
 const KINDS: readonly MemoryKindName[] = ['fact', 'preference', 'decision', 'todo', 'snippet'];
 
 interface BrowseFilters {
-  readonly status: MemoryStatus;
-  readonly kind: MemoryKindName | null;
+  /**
+   * Active status filter as a Set. Same multi-select model as
+   * `kinds`. Defaults to `{ active }` so the page opens to the
+   * "what's currently in the store" view — toggling another
+   * status (`archived`, `forgotten`, `superseded`) widens the
+   * selection. Selecting every status individually collapses
+   * back to "all" so the displayed selection stays honest.
+   */
+  readonly statuses: ReadonlySet<MemoryStatus>;
+  /**
+   * Active kind filter as a Set so the user can multi-select. An
+   * empty Set means "all kinds" — shown as the `all` chip being
+   * active. The set is converted on the wire (memory.list takes
+   * a single optional `kind`; multi-selects are filtered
+   * client-side from the engine response — see the rows memo).
+   */
+  readonly kinds: ReadonlySet<MemoryKindName>;
   readonly pinnedOnly: boolean;
   readonly query: string;
 }
 
 const INITIAL_FILTERS: BrowseFilters = {
-  status: 'active',
-  kind: null,
+  statuses: new Set(['active']),
+  kinds: new Set(),
   pinnedOnly: false,
   query: '',
 };
 
+function toggleSet<T>(prev: ReadonlySet<T>, value: T): Set<T> {
+  const next = new Set(prev);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next;
+}
+
+// "Load more" page size. Each click bumps the engine `limit`
+// passed to `memory.list` by this many rows, up to LOAD_MORE_MAX
+// (the engine's `memory.list.maxLimit` default). The dashboard
+// is a triage surface, not a full browser — beyond LOAD_MORE_MAX
+// the user is meant to refine filters rather than scroll
+// indefinitely. Cursor-based pagination would be the right
+// long-run answer; this is the pragmatic incremental fix.
+const LOAD_MORE_PAGE = 100;
+const LOAD_MORE_MAX = 1_000;
+
 export function MemoryListPage(): JSX.Element {
   const [filters, setFilters] = useState<BrowseFilters>(INITIAL_FILTERS);
+  const [displayLimit, setDisplayLimit] = useState(LOAD_MORE_PAGE);
   const trimmedQuery = filters.query.trim();
 
+  // Sorted kind-set key for memoisation + reset detection.
+  const kindKey = useMemo(() => [...filters.kinds].sort().join(','), [filters.kinds]);
+  const statusKey = useMemo(() => [...filters.statuses].sort().join(','), [filters.statuses]);
+
+  // Reset the page size when the filter / search changes — the
+  // user's intent has shifted and the previous "I have loaded
+  // 600 archived" doesn't carry over to "loading active".
+  const filterKey = `${statusKey}|${kindKey}|${filters.pinnedOnly ? '1' : '0'}|${trimmedQuery}`;
+  const lastFilterKey = useRef(filterKey);
+  if (lastFilterKey.current !== filterKey) {
+    lastFilterKey.current = filterKey;
+    if (displayLimit !== LOAD_MORE_PAGE) setDisplayLimit(LOAD_MORE_PAGE);
+  }
+
+  // The engine `memory.list` input takes a single optional
+  // `status` and a single optional `kind`. To support multi-select
+  // we send a wire-level filter only when exactly one chip is
+  // selected (engine indexes do the work); for 2+ selections we
+  // fetch unfiltered for that axis and narrow client-side. With
+  // zero selections we pass nothing.
+  const wireStatus: MemoryStatus | undefined =
+    filters.statuses.size === 1 ? ([...filters.statuses][0] as MemoryStatus) : undefined;
+  const wireKind: MemoryKindName | undefined =
+    filters.kinds.size === 1 ? ([...filters.kinds][0] as MemoryKindName) : undefined;
   const list = useMemoryList({
-    status: filters.status,
-    kind: filters.kind ?? undefined,
+    status: wireStatus,
+    kind: wireKind,
     pinned: filters.pinnedOnly ? true : undefined,
-    limit: 200,
+    limit: displayLimit,
   });
 
   // Search mode kicks in only when the query is non-empty.
@@ -61,8 +118,9 @@ export function MemoryListPage(): JSX.Element {
     searchEnabled
       ? {
           text: trimmedQuery,
-          kinds: filters.kind ? [filters.kind] : undefined,
-          includeStatuses: [filters.status],
+          kinds: filters.kinds.size > 0 ? ([...filters.kinds] as MemoryKindName[]) : undefined,
+          includeStatuses:
+            filters.statuses.size > 0 ? ([...filters.statuses] as MemoryStatus[]) : undefined,
           limit: 100,
         }
       : null,
@@ -73,15 +131,28 @@ export function MemoryListPage(): JSX.Element {
       const out: readonly MemoryRow[] = (search.data?.results ?? []).map((r) => r.memory);
       return filters.pinnedOnly ? out.filter((m) => m.pinned) : out;
     }
-    const sorted = [...(list.data ?? [])].sort((a, b) =>
+    const base = list.data ?? [];
+    // Apply client-side narrowing for any axis where the user
+    // has picked 2+ values (the engine couldn't filter for the
+    // union — see the wire* computations above). When 0 or 1
+    // value is selected the engine already did the filter, so
+    // pass-through.
+    const narrowedByStatus =
+      filters.statuses.size > 1
+        ? base.filter((m) => filters.statuses.has(m.status as MemoryStatus))
+        : base;
+    const narrowedByKind =
+      filters.kinds.size > 1
+        ? narrowedByStatus.filter((m) => filters.kinds.has(m.kind.type as MemoryKindName))
+        : narrowedByStatus;
+    const sorted = [...narrowedByKind].sort((a, b) =>
       a.lastConfirmedAt < b.lastConfirmedAt ? 1 : -1,
     );
     return sorted;
-  }, [searchEnabled, search.data, list.data, filters.pinnedOnly]);
+  }, [searchEnabled, search.data, list.data, filters.pinnedOnly, filters.kinds, filters.statuses]);
 
   const isLoading = searchEnabled ? search.isLoading : list.isLoading;
   const error = searchEnabled ? search.error : list.error;
-  const total = rows.length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -121,16 +192,30 @@ export function MemoryListPage(): JSX.Element {
           ) : null}
         </label>
 
-        {/* Filter chips. Status is always set (default active);
-            kind is single-select from a closed set; pinned is a
-            toggle. */}
+        {/* Filter chips. Status and kind are both multi-select
+            (Set<T> behind the scenes). Pinned is a single toggle.
+            Per-axis: clicking a chip toggles it in the set;
+            clicking the same chip again removes it. Selecting
+            every chip individually collapses back to the empty
+            set (= "all") so the filter row stays honest. */}
         <div className="flex flex-wrap items-center gap-2">
           <ChipGroup label="status">
+            {/* Refuse to deselect the last-remaining status:
+                a zero-selection state on a single axis would
+                masquerade as "all" without an `all` chip to
+                explain it (kinds has its own `all` chip; status
+                doesn't because the four statuses always cover
+                the universe). */}
             {STATUSES.map((s) => (
               <Chip
                 key={s}
-                active={filters.status === s}
-                onClick={() => setFilters((f) => ({ ...f, status: s }))}
+                active={filters.statuses.has(s)}
+                onClick={() =>
+                  setFilters((f) => {
+                    if (f.statuses.has(s) && f.statuses.size === 1) return f;
+                    return { ...f, statuses: toggleSet(f.statuses, s) };
+                  })
+                }
               >
                 {s}
               </Chip>
@@ -139,16 +224,24 @@ export function MemoryListPage(): JSX.Element {
           <ChipDivider />
           <ChipGroup label="kind">
             <Chip
-              active={filters.kind === null}
-              onClick={() => setFilters((f) => ({ ...f, kind: null }))}
+              active={filters.kinds.size === 0}
+              onClick={() => setFilters((f) => ({ ...f, kinds: new Set<MemoryKindName>() }))}
             >
               all
             </Chip>
             {KINDS.map((k) => (
               <Chip
                 key={k}
-                active={filters.kind === k}
-                onClick={() => setFilters((f) => ({ ...f, kind: k }))}
+                active={filters.kinds.has(k)}
+                onClick={() =>
+                  setFilters((f) => {
+                    const next = toggleSet(f.kinds, k);
+                    return {
+                      ...f,
+                      kinds: next.size === KINDS.length ? new Set<MemoryKindName>() : next,
+                    };
+                  })
+                }
               >
                 {k}
               </Chip>
@@ -165,16 +258,17 @@ export function MemoryListPage(): JSX.Element {
         </div>
       </form>
 
-      {/* Results header — count + mode hint. */}
-      <div className="flex items-center justify-between gap-3 font-mono text-[11px] uppercase tracking-widish text-muted">
-        <span>
-          {searchEnabled ? 'search results' : 'recent memories'}{' '}
-          <span className="text-muted/70">({total})</span>
-        </span>
-        {!searchEnabled && total >= 200 ? (
-          <span className="text-muted/70">showing first 200 — refine with filters</span>
-        ) : null}
-      </div>
+      {/* Results meta row — only the cap hint, no row count. The
+          count was misleading because the page mixes engine-paged
+          rows with client-side narrowing (multi-select status /
+          kind), so the visible `(N)` rarely matched the user's
+          mental model of "how many active memories do I have"
+          (that lives on the overview tiles instead). */}
+      {!searchEnabled && displayLimit >= LOAD_MORE_MAX && rows.length >= LOAD_MORE_MAX ? (
+        <p className="font-mono text-[11px] uppercase tracking-widish text-muted/70">
+          showing first {LOAD_MORE_MAX} — refine with filters
+        </p>
+      ) : null}
 
       {/* Result list */}
       <section className="overflow-hidden rounded border border-border">
@@ -185,7 +279,7 @@ export function MemoryListPage(): JSX.Element {
             failed to load: {(error as { message?: string })?.message ?? String(error)}
           </RowMessage>
         ) : rows.length === 0 ? (
-          <EmptyState searchEnabled={searchEnabled} status={filters.status} />
+          <EmptyState searchEnabled={searchEnabled} statuses={filters.statuses} />
         ) : (
           <ul>
             {rows.map((m) => (
@@ -194,6 +288,31 @@ export function MemoryListPage(): JSX.Element {
           </ul>
         )}
       </section>
+
+      {/* Load-more affordance. Hidden in search mode (FTS+vector
+          already ranks across the whole corpus and a separate
+          paginator would be confusing). The button compares
+          against the engine response length rather than `total`
+          (which may be smaller after the client-side multi-kind
+          filter) so multi-kind selections still let the user
+          paginate. The button is disabled mid-fetch and at the
+          engine's hard ceiling. */}
+      {!searchEnabled &&
+      (list.data?.length ?? 0) === displayLimit &&
+      displayLimit < LOAD_MORE_MAX ? (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => setDisplayLimit((d) => Math.min(d + LOAD_MORE_PAGE, LOAD_MORE_MAX))}
+            disabled={list.isFetching}
+            className="rounded border border-border px-3 py-1.5 font-mono text-xs text-fg/90 hover:border-fg disabled:opacity-50"
+          >
+            {list.isFetching
+              ? 'loading…'
+              : `load next ${Math.min(LOAD_MORE_PAGE, LOAD_MORE_MAX - displayLimit)}`}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -245,11 +364,14 @@ function MemoryRowItem({ memory }: { readonly memory: MemoryRow }): JSX.Element 
 }
 
 function KindBadge({ kind }: { readonly kind: MemoryKindName }): JSX.Element {
+  // Lowercase, no letter-spacing — matches the surrounding
+  // mono prose tone. The previous uppercase + tracked treatment
+  // made the pill compete visually with content.
   return (
     <span
       className={cn(
-        'inline-block rounded px-1.5 py-0.5 text-[10px] uppercase tracking-widish',
-        'border border-border bg-border/30',
+        'inline-block rounded px-1.5 py-0.5 text-[11px]',
+        'border border-border bg-border/30 text-fg/80',
       )}
       title={`kind: ${kind}`}
     >
@@ -337,25 +459,29 @@ function RowMessage({
 
 function EmptyState({
   searchEnabled,
-  status,
+  statuses,
 }: {
   readonly searchEnabled: boolean;
-  readonly status: MemoryStatus;
+  readonly statuses: ReadonlySet<MemoryStatus>;
 }): JSX.Element {
+  // Render the active status set as a list. Empty set means
+  // "all statuses" — describe that explicitly so the empty
+  // message doesn't read as a blank filter.
+  const statusList = statuses.size === 0 ? 'any' : [...statuses].join(' / ');
   return (
     <div className="flex flex-col gap-3 px-4 py-6 font-mono text-xs text-muted">
       {searchEnabled ? (
         <>
           <p>no matches for that query at this status / kind / pinned filter.</p>
           <p className="text-muted/70">
-            tips: try a shorter term; toggle <code>archived</code> / <code>superseded</code>; clear
-            kind filter.
+            tips: try a shorter term; widen the <code>status</code> selection; clear the kind
+            filter.
           </p>
         </>
       ) : (
         <>
           <p>
-            no <span className="text-fg">{status}</span> memories with the current filters.
+            no <span className="text-fg">{statusList}</span> memories with the current filters.
           </p>
           <p className="text-muted/70">
             try writing one with <code className="text-fg/80">memento memory write</code>, or switch{' '}

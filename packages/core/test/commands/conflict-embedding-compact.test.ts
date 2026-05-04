@@ -138,10 +138,14 @@ describe('createConflictCommands', () => {
       'conflict.resolve',
       'conflict.scan',
     ];
-    // `conflict.list` and `conflict.resolve` opt into the
-    // dashboard surface (the UI's conflicts table); the rest
-    // remain mcp+cli-only.
-    const dashboardSubset = new Set(['conflict.list', 'conflict.resolve']);
+    // `conflict.list`, `conflict.resolve`, and `conflict.scan`
+    // opt into the dashboard surface — the conflicts page
+    // renders the list, the resolve buttons drive .resolve, and
+    // the "re-scan (24h)" button drives .scan. `conflict.read`
+    // and `conflict.events` stay mcp+cli-only because nothing in
+    // the v0 dashboard surface needs them yet (per ADR-0018's
+    // "expose only what the UI uses" stance).
+    const dashboardSubset = new Set(['conflict.list', 'conflict.resolve', 'conflict.scan']);
     for (const name of names) {
       const cmd = get(byName, name);
       expect(cmd.surfaces).toContain('mcp');
@@ -272,9 +276,12 @@ describe('createConflictCommands', () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Both memories are scanned; the second one opens a
-    // conflict against the first.
-    expect(result.value.scanned).toBeGreaterThanOrEqual(2);
+    // `scanned` in `since` mode is "memories processed" — exactly
+    // the two we wrote, not the inner candidate-pairing count
+    // summed across them. The previous accumulator semantic
+    // surfaced "scanned 68413 memories" on a 5k corpus, which is
+    // the work the detector did, not the size of the haystack.
+    expect(result.value.scanned).toBe(2);
     expect(result.value.opened.length).toBeGreaterThanOrEqual(1);
   });
 

@@ -92,6 +92,16 @@ export interface ConflictRepository {
   list(filter?: ConflictListFilter): Promise<Conflict[]>;
   /** All events for one conflict, oldest first. */
   events(id: ConflictId): Promise<ConflictEvent[]>;
+  /**
+   * Set of memory ids that already share an open conflict with
+   * `memoryId`, in either direction. Used by the detector to
+   * dedupe re-runs (`conflict.scan since` mode + repeated post-
+   * write hook fires) without inserting duplicate rows for the
+   * same logical pair. Returns directional partners only — i.e.
+   * for memory M, every C such that an open `(M, C)` or `(C, M)`
+   * row exists.
+   */
+  openPartners(memoryId: string): Promise<ReadonlySet<string>>;
 }
 
 export function createConflictRepository(
@@ -219,6 +229,26 @@ export function createConflictRepository(
         .orderBy('id', 'asc')
         .execute();
       return rows.map(rowToEvent);
+    },
+
+    async openPartners(memoryId) {
+      const rows = await db
+        .selectFrom('conflicts')
+        .select(['new_memory_id', 'conflicting_memory_id'])
+        .where('resolved_at', 'is', null)
+        .where((eb) =>
+          eb.or([eb('new_memory_id', '=', memoryId), eb('conflicting_memory_id', '=', memoryId)]),
+        )
+        .execute();
+      const partners = new Set<string>();
+      for (const row of rows) {
+        // The partner is whichever side ISN'T `memoryId`. The
+        // CHECK constraint guarantees the two ids differ.
+        partners.add(
+          row.new_memory_id === memoryId ? row.conflicting_memory_id : row.new_memory_id,
+        );
+      }
+      return partners;
     },
   };
 }

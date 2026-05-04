@@ -187,8 +187,12 @@ function StatusBar(): JSX.Element {
   const dbPath = info.data?.dbPath ?? '…';
   const active = info.data?.counts.active;
   const version = info.data?.version ?? '…';
-  const vector = info.data?.vectorEnabled;
 
+  // Vector-retrieval state used to render here too. Removed:
+  // it's a system-health probe (with the embedder model +
+  // dimension as context) and the `~/system` page already owns
+  // it. Status bar stays focused on db path + active count +
+  // version.
   return (
     <footer
       className={cn(
@@ -208,13 +212,6 @@ function StatusBar(): JSX.Element {
       <span>
         {active === undefined ? '…' : active.toLocaleString()}{' '}
         <span className="text-muted/80">active</span>
-      </span>
-      <span aria-hidden>·</span>
-      <span>
-        vec:{' '}
-        <span className={vector ? 'text-synapse' : 'text-muted/80'}>
-          {vector === undefined ? '…' : vector ? 'on' : 'off'}
-        </span>
       </span>
       <span className="flex-1" />
       <span className="text-muted/80">v{version}</span>

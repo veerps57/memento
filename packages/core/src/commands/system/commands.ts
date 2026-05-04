@@ -93,6 +93,49 @@ const SystemInfoOutputSchema = z
       })
       .strict(),
     /**
+     * Total number of unresolved conflicts at the moment of the
+     * call. Lifted into `system.info` so the dashboard's overview
+     * tile can display an accurate count instead of a paged
+     * `conflict.list` response capped at `conflict.list.maxLimit`
+     * — for stores with many open conflicts the paged shape was
+     * always rendering the cap, masking the post-resolve
+     * decrement.
+     */
+    openConflicts: z.number().int().nonnegative(),
+    /**
+     * Process-level health information mirroring the subset of
+     * `memento doctor` probes that are cheap to compute on every
+     * `system.info` call. `nativeBinding` is always `'ok'` here
+     * because reaching the handler implies the better-sqlite3
+     * .node addon loaded successfully — a structured failure
+     * surfaces through `memento doctor`, never through this
+     * handler.
+     */
+    runtime: z
+      .object({
+        /** `process.versions.node` — e.g. `'22.19.0'`. */
+        node: z.string().min(1),
+        /** `process.versions.modules` — Node's V8/N-API ABI tag. */
+        modulesAbi: z.string().min(1),
+        /** Always `'ok'` when this handler returns; reserved for future failure modes. */
+        nativeBinding: z.literal('ok'),
+      })
+      .strict(),
+    /**
+     * Write-path scrubber state. Surfaces the resolved
+     * `scrubber.enabled` config so the dashboard's system page
+     * can render a "safety net active?" probe without a
+     * separate `config.get` round-trip. The key is pinned at
+     * server start (`mutable: false`); the boolean here just
+     * mirrors the resolved value the engine is actually
+     * applying to writes.
+     */
+    scrubber: z
+      .object({
+        enabled: z.boolean(),
+      })
+      .strict(),
+    /**
      * Single-user identity surfaced to assistants. `preferredName`
      * is the value of the `user.preferredName` config; when null
      * the assistant should fall back to "The user" when authoring
@@ -172,7 +215,7 @@ export function createSystemCommands(deps: CreateSystemCommandsDeps): readonly A
     outputSchema: SystemInfoOutputSchema,
     metadata: {
       description:
-        'Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, per-status memory counts, and `user.preferredName` (the name an assistant should use when authoring memory content; falls back to "The user" when null). Read-only; safe to call freely — call once at session start to learn the user\'s name and the store\'s capabilities.\n\nTip: call system.list_scopes to discover valid scopes for memory.write.',
+        'Server health and capability snapshot. Returns version, schema version, db path, vector retrieval status, configured embedder model + dimension, per-status memory counts, open-conflict count, runtime info (Node version, modules ABI, native-binding state), scrubber state (write-path redaction master switch), and `user.preferredName` (the name an assistant should use when authoring memory content; falls back to "The user" when null). Read-only; safe to call freely — call once at session start to learn the user\'s name and the store\'s capabilities.\n\nTip: call system.list_scopes to discover valid scopes for memory.write.',
     },
     handler: async () =>
       runRepo('system.info', async () => {
@@ -190,6 +233,17 @@ export function createSystemCommands(deps: CreateSystemCommandsDeps): readonly A
           // status is a closed union from the table type.
           counts[row.status as keyof typeof counts] = n;
         }
+        // Cheap aggregate over the conflicts table — open
+        // conflicts have `resolved_at IS NULL`. Done inline here
+        // (rather than through `ConflictRepository`) to keep the
+        // dependency graph of system.info shallow; the count is
+        // a one-row scalar and doesn't justify a new repo method.
+        const openConflictsRow = await deps.db
+          .selectFrom('conflicts')
+          .select(deps.db.fn.countAll<number>().as('count'))
+          .where('resolved_at', 'is', null)
+          .executeTakeFirst();
+        const openConflicts = Number(openConflictsRow?.count ?? 0);
         return {
           version: deps.version,
           schemaVersion: deps.schemaVersion,
@@ -201,6 +255,19 @@ export function createSystemCommands(deps: CreateSystemCommandsDeps): readonly A
             dimension: deps.configStore.get('embedder.local.dimension'),
           },
           counts,
+          openConflicts,
+          // Reaching this code path implies the better-sqlite3
+          // native binding is healthy — the engine cannot have
+          // started otherwise. The doctor command does the
+          // verbose probe; this is the lightweight readout.
+          runtime: {
+            node: process.versions.node,
+            modulesAbi: process.versions.modules,
+            nativeBinding: 'ok' as const,
+          },
+          scrubber: {
+            enabled: deps.configStore.get('scrubber.enabled'),
+          },
           user: {
             preferredName: deps.configStore.get('user.preferredName'),
           },

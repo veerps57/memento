@@ -6,7 +6,7 @@
 // trip per row. The half-lives are the registry defaults; if
 // the user has overridden them via `decay.halfLifeDays.<kind>`
 // we'd ideally resolve those at request time — that's a v0.1
-// follow-up, tracked alongside D17.
+// follow-up.
 //
 // Pinned memories floor at `decay.pinnedFloor` (default 0.5).
 

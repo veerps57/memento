@@ -22,11 +22,21 @@ import { unwrap } from '../lib/query.js';
  * `IMMUTABLE_KEYS` in `routes/config.tsx` for the
  * client-side allow-list, with the server's `IMMUTABLE`
  * error code as the canonical fallback.
+ *
+ * `source` enumerates the layer that supplied the effective
+ * value, lowest precedence first: `default` (schema baseline),
+ * `user-file` / `workspace-file` (loaded at startup), `env`
+ * (environment variables at startup), and `cli` / `mcp`
+ * (runtime mutations through `config.set`). The values on the
+ * wire come from the schema's `ConfigSourceSchema`; the
+ * dashboard is forbidden from collapsing them.
  */
+export type ConfigSource = 'default' | 'user-file' | 'workspace-file' | 'env' | 'cli' | 'mcp';
+
 export interface ConfigEntry {
   readonly key: string;
   readonly value: unknown;
-  readonly source: 'default' | 'startup' | 'runtime';
+  readonly source: ConfigSource;
   readonly setAt: string;
   readonly setBy: { readonly type: string; readonly id?: string } | null;
 }
@@ -52,7 +62,7 @@ export interface ConfigEvent {
   readonly key: string;
   readonly at: string;
   readonly actor: { readonly type: string; readonly id?: string };
-  readonly source: 'default' | 'startup' | 'runtime';
+  readonly source: ConfigSource;
   readonly oldValue: unknown;
   readonly newValue: unknown;
 }
@@ -84,6 +94,15 @@ export function useSetConfig(): UseMutationResult<ConfigEntry, Error, SetConfigA
     onSuccess: (_data, vars) => {
       void qc.invalidateQueries({ queryKey: ['config.list'] });
       void qc.invalidateQueries({ queryKey: ['config.history', vars.key] });
+      // `system.info` exposes `user.preferredName` in its
+      // `user.preferredName` field; the layout's wordmark reads
+      // it. Without this invalidation the wordmark stays at the
+      // pre-edit value until the next focus-driven refetch.
+      // Several other config keys feed the system view too
+      // (vector enabled flag, embedder config), so we
+      // invalidate the whole `system.info` query rather than
+      // gating per-key.
+      void qc.invalidateQueries({ queryKey: ['system.info'] });
     },
   });
 }
@@ -96,6 +115,7 @@ export function useUnsetConfig(): UseMutationResult<ConfigEntry, Error, { readon
     onSuccess: (_data, vars) => {
       void qc.invalidateQueries({ queryKey: ['config.list'] });
       void qc.invalidateQueries({ queryKey: ['config.history', vars.key] });
+      void qc.invalidateQueries({ queryKey: ['system.info'] });
     },
   });
 }

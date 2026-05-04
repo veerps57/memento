@@ -76,6 +76,100 @@ describe('createConfigRepository', () => {
       expect(second.newValue).toBe(0.9);
       expect(second.source).toBe('mcp');
     });
+
+    it('records priorEffectiveValue as oldValue when no prior event exists', async () => {
+      // The dashboard / config.set handler passes the engine's
+      // effective value (typically the schema default) so the
+      // first edit reads `default → newValue` in the audit feed
+      // rather than `null → newValue`.
+      const handle = await fixture();
+      const repo = createConfigRepository(handle.db, {
+        clock: () => fixedClock,
+        eventIdFactory: counterFactory('CE'),
+      });
+
+      const event = await repo.set(
+        {
+          key: 'decay.pinnedFloor',
+          value: 0.4,
+          source: 'cli',
+          priorEffectiveValue: 0.85,
+        },
+        { actor: cliActor },
+      );
+
+      expect(event.oldValue).toBe(0.85);
+      expect(event.newValue).toBe(0.4);
+    });
+
+    it('priorEffectiveValue is ignored when a prior set event exists', async () => {
+      // The latest persisted event is the source of truth for an
+      // ongoing audit chain — only the *first* edit substitutes
+      // priorEffectiveValue. Otherwise consecutive overrides
+      // would lose the link from the prior runtime override.
+      const handle = await fixture();
+      const repo = createConfigRepository(handle.db, {
+        clock: () => fixedClock,
+        eventIdFactory: counterFactory('CE'),
+      });
+
+      await repo.set({ key: 'decay.pinnedFloor', value: 0.6, source: 'cli' }, { actor: cliActor });
+      const second = await repo.set(
+        {
+          key: 'decay.pinnedFloor',
+          value: 0.9,
+          source: 'cli',
+          priorEffectiveValue: 0.0, // would-be default, must not win
+        },
+        { actor: cliActor },
+      );
+      expect(second.oldValue).toBe(0.6);
+      expect(second.newValue).toBe(0.9);
+    });
+
+    it('priorEffectiveValue wins again after an unset reverts the runtime layer', async () => {
+      // After unset, the engine's effective value is whichever
+      // lower layer (default / file / env) had the key. The
+      // next set's audit `oldValue` should reflect that lower
+      // layer, not the literal `null` written by the unset event.
+      const handle = await fixture();
+      const repo = createConfigRepository(handle.db, {
+        clock: () => fixedClock,
+        eventIdFactory: counterFactory('CE'),
+      });
+
+      await repo.set({ key: 'decay.pinnedFloor', value: 0.7, source: 'cli' }, { actor: cliActor });
+      await repo.unset({ key: 'decay.pinnedFloor', source: 'cli' }, { actor: cliActor });
+      const next = await repo.set(
+        {
+          key: 'decay.pinnedFloor',
+          value: 0.3,
+          source: 'cli',
+          priorEffectiveValue: 0.85, // the schema default, post-unset
+        },
+        { actor: cliActor },
+      );
+      expect(next.oldValue).toBe(0.85);
+      expect(next.newValue).toBe(0.3);
+    });
+
+    it('falls back to oldValue=null when priorEffectiveValue is omitted (legacy callers)', async () => {
+      // Existing callers (CLI, MCP, scripts, tests) that don't
+      // plumb a config store through still see the original
+      // legacy behaviour. Important so the new param is purely
+      // additive.
+      const handle = await fixture();
+      const repo = createConfigRepository(handle.db, {
+        clock: () => fixedClock,
+        eventIdFactory: counterFactory('CE'),
+      });
+
+      const event = await repo.set(
+        { key: 'decay.pinnedFloor', value: 0.4, source: 'cli' },
+        { actor: cliActor },
+      );
+      expect(event.oldValue).toBeNull();
+    });
   });
 
   describe('unset', () => {
@@ -107,6 +201,25 @@ describe('createConfigRepository', () => {
         { actor: cliActor },
       );
       expect(event.oldValue).toBeNull();
+      expect(event.newValue).toBeNull();
+    });
+
+    it('uses priorEffectiveValue when unsetting a key that has no prior event', async () => {
+      // Defensive: even though `config.unset` on an empty
+      // runtime layer is a no-op semantically, the audit row
+      // should still capture the engine's effective value so the
+      // history view reads `default → null` rather than
+      // `null → null`.
+      const handle = await fixture();
+      const repo = createConfigRepository(handle.db, {
+        clock: () => fixedClock,
+        eventIdFactory: counterFactory('CE'),
+      });
+      const event = await repo.unset(
+        { key: 'decay.pinnedFloor', source: 'cli', priorEffectiveValue: 0.5 },
+        { actor: cliActor },
+      );
+      expect(event.oldValue).toBe(0.5);
       expect(event.newValue).toBeNull();
     });
   });

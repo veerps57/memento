@@ -43,13 +43,13 @@ Every named route ships as a real, functional view. The chrome is shared; each r
 
 **Sidebar** (`md:` breakpoint and up; otherwise a drawer) — six entries mirroring Memento's command namespaces:
 
-- `~/overview` (D2) — landing page with headline tiles, kind breakdown, scope distribution.
-- `~/memory` (D3 + D6 + D11) — browse with filter chips and search box; click a row to drill into detail. Effective-confidence meter on every row, decay-aware.
-- `~/memory/$id` (D5 + D11 + D12) — full content with sensitive-reveal toggle, supersession chain, audit timeline, provenance, pin / confirm / forget actions.
-- `~/conflicts` (D14 + D15 + D16) — pending conflicts as side-by-side memory cards with the four `conflict.resolve` actions, evidence detail toggle, "re-scan last 24h" button.
-- `~/audit` (D7 + D8) — global activity feed (id-less mode of `memory.events`), with type filters and deep links to memory detail.
-- `~/config` (D20 + D22) — every registered config key grouped by dotted prefix, with current value, source layer, mutability flag, type-key history, and a "copy as `memento config set` command" snippet.
-- `~/system` (D19 + D24) — doctor-style probes (database, vector retrieval, embedder, schema version, last write, version) plus a status-count tile row.
+- `~/overview` (D2) — landing page with headline tiles, status breakdown, scope distribution.
+- `~/memory` — browse with filter chips and search box; click a row to drill into detail. Effective-confidence meter on every row, decay-aware.
+- `~/memory/$id` — full content with sensitive-reveal toggle, supersession chain, audit timeline, provenance, pin / confirm / forget actions.
+- `~/conflicts` — pending conflicts as side-by-side memory cards with the four `conflict.resolve` actions, evidence detail toggle, "re-scan last 24h" button.
+- `~/audit` — global activity feed (id-less mode of `memory.events`), with type filters and deep links to memory detail.
+- `~/config` — every registered config key grouped by dotted prefix, with current value, source layer, mutability flag, per-key history, and a "copy as `memento config set` command" snippet.
+- `~/system` — doctor-style probes (Node, database, native binding, vector retrieval, scrubber, version) using a green/amber/red traffic-light indicator.
 
 **Cmd-K** opens a command palette from anywhere. Three modes: type to search memories (live `memory.search`); `>` to navigate (e.g. `>conf` matches `~/conflicts` and `~/config`); `:` to open a memory directly by ULID. Arrow keys to highlight, Enter to commit, Esc to close. Read-only by design — destructive verbs (`forget`, `archive`) stay on the memory detail page where the full content, supersession chain, and audit timeline are visible at the moment of the irrevocable choice.
 
@@ -57,17 +57,15 @@ Every named route ships as a real, functional view. The chrome is shared; each r
 
 **Landing page** — three rows:
 
-1. Headline tiles: active memories, last-write timestamp, vector retrieval status, open conflict count.
-2. By-kind breakdown: one tile per `MemoryKind` (fact / preference / decision / todo / snippet) with counts and percentages.
-3. By-scope distribution: top scopes with counts and last-write per scope.
+1. Headline tiles: active memory count (precise, not compact-rounded), last-write timestamp, vector retrieval status, open conflict count. The open-conflicts tile renders as `1,000+` when the fetched page hits the engine's `conflict.list.maxLimit` (1000 by default) — the dashboard does not yet have a count primitive that exceeds the page cap.
+2. By-status breakdown: one tile per `MemoryStatus` (active / archived / forgotten / superseded) with counts and percentages, sourced directly from `system.info.counts`. Counts are exact regardless of store size — no sampling.
+3. By-scope distribution: top 10 scopes with counts and last-write per scope. When more than 10 scopes exist a trailing reconciliation row labelled `+ N more scopes` shows the remaining total so the visible list sums to the headline `active` count.
 
 If your store is empty you'll see "no scopes yet — your store is empty." Write a few memories first to make the landing page useful:
 
 ```bash
 memento memory write --input '{"scope":{"type":"global"},"kind":{"type":"preference"},"tags":["tooling"],"content":"Raghu prefers pnpm over npm for Node projects."}'
 ```
-
-The "by kind" breakdown is approximate above 1000 active memories — it's computed client-side from a `memory.list` snapshot capped at 1000 (the `memory.list.maxLimit` config). You'll see `(of last 1000)` in the section header when that's the case. A future addition to `memory.list` for exact aggregate counts is queued as a separate design proposal; not blocking v0.
 
 ## Dev workflow
 
@@ -109,7 +107,11 @@ Every API route maps to one or more registered commands:
 
 The `/api/*` surface is **not** a public contract. Downstream tools must not depend on it; the registry remains the only documented programmatic surface (per ADR-0003 and ADR-0018). If you need to script against Memento, use the CLI or MCP.
 
-A same-origin guard rejects mutating requests whose `Origin` header doesn't start with `http://127.0.0.1:` or `http://localhost:`. This is the v0 CSRF defence; a per-session token is queued for v1 if real-world telemetry shows we need it.
+Three independent defence layers gate the API surface:
+
+1. **Per-launch token.** Every `memento dashboard` invocation mints a fresh 256-bit token, embeds it in the launch URL's fragment (`#token=…`), and the SPA copies it into `sessionStorage` on first load. Every `/api/*` request must carry the token in `Authorization: Bearer …` (or the legacy `X-Memento-Token` header). Token comparison is constant-time. The fragment never reaches the server, so the token can't leak through access logs.
+2. **Same-origin guard.** Mutating requests (`POST` / `PUT` / `PATCH` / `DELETE`) must carry an `Origin` header that exactly matches the dashboard's bound `http://127.0.0.1:<port>` or `http://localhost:<port>`. Closes browser-tab CSRF.
+3. **Host allowlist.** Every request's `Host` header must resolve to the dashboard's bound port. Closes DNS rebinding.
 
 ## Troubleshooting
 
@@ -117,7 +119,11 @@ A same-origin guard rejects mutating requests whose `Origin` header doesn't star
 
 **Port already in use.** If `--port 4747` collides with another process, switch to `--port 0` (OS picks) for the one-shot flow, or pick a different port for the dev flow (and update `vite.config.ts` to match).
 
-**Empty landing tiles, "loading…" forever.** Network panel will show whether `/api/commands/system.info` returned. If it's 403, the same-origin guard rejected it — make sure you're loading from a `localhost:` or `127.0.0.1:` origin and not a tunnel / proxy that strips the `Origin` header. If it's 500 with `STORAGE_ERROR`, it's the same DB-open path `memento serve` would use — `memento doctor` triages.
+**Empty landing tiles, "loading…" forever.** Network panel will show whether `/api/commands/system.info` returned.
+
+- **401** — the per-launch token is missing or no longer accepted. Re-open the dashboard via `memento dashboard` to mint a fresh token; the SPA renders a uniform "Session expired" panel for this case rather than per-route error messages.
+- **403** — the same-origin or Host guard rejected the request. Make sure you're loading from `http://localhost:<port>` or `http://127.0.0.1:<port>`, not a tunnel / proxy that rewrites those headers.
+- **500 with STORAGE_ERROR** — same DB-open path `memento serve` would use. `memento doctor` triages.
 
 **Browser doesn't open automatically.** `--no-open` is the explicit opt-out, but the open call is also best-effort and silently fails on hosts without an `xdg-open`-equivalent (some headless servers, some container images). The URL printed on stderr is what you copy and paste.
 
@@ -131,17 +137,17 @@ For the canonical list see ADR-0018. The short version:
 - No conflict auto-resolution — every resolution is a user decision.
 - No edit of immutable fields (`id`, `createdAt`, `scope`) — content edits route through `supersede`.
 - No raw SQL surface — power users have the CLI.
-- No login / auth — `127.0.0.1`-bound only. If the threat model requires multi-user, that's a different design.
+- No login / user accounts — the dashboard binds to `127.0.0.1` and gates the API surface with a per-launch token (regenerated on every `memento dashboard` invocation). If the threat model requires multi-user identity, that's a different design.
 - No telemetry. Memento is local-first; the dashboard inherits that.
 
 ## What's queued
 
 The v0 routes (including the command palette and inline config editor) ship in this PR. The natural next chunks build on them:
 
-1. **D17 — about-to-be-archived view** on `~/system` or `~/config` — surface memories below the decay archive threshold with a one-click `compact.run` preview.
-2. **D4 — bulk select / bulk pin / bulk forget** on `~/memory` (the foundation is the row click + checkbox column).
+1. **About-to-be-archived view** on `~/system` or `~/config` — surface memories below the decay archive threshold with a one-click `compact.run` preview.
+2. **Bulk select / bulk pin / bulk forget** on `~/memory` (the foundation is the row click + checkbox column).
 3. **`memory.context` preview widget** — a search-bar-like input showing exactly the ranked rows the agent would see, with the score breakdown visualised. The single highest-leverage "trust delivery" view we have not built.
-4. **D9 — conflict scope filter / kind filter on `~/conflicts`** — the data is already there, just needs chips.
+4. **Scope and kind filters on `~/conflicts`** — the data is already there, just needs chips.
 5. **Palette: write verbs** — supersede, write-new, archive (each behind a confirm step) so the palette becomes a full keyboard-driven console.
 
 None require new MCP commands or schema changes. Each can ship behind its own changeset.

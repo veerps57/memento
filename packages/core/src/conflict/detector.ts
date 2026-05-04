@@ -87,8 +87,22 @@ export async function detectConflicts(
     limit,
   });
 
+  // Pull the set of memories already paired with `memory` in an
+  // open conflict (either direction) so we can skip
+  // already-known pairs. Without this dedup, every re-run of
+  // `conflict.scan since` and every redundant post-write hook
+  // fire would insert a fresh `(memoryId, candidateId)` row for
+  // the same logical pair — observable in the dashboard's
+  // overview tile as a count that grows monotonically with the
+  // number of times the user pressed "re-scan (24h)".
+  // Cloned to a mutable Set so we can amend it as we open new
+  // conflicts within this run (avoids double-opens when two
+  // candidates land on the same partner via different paths).
+  const alreadyPaired = new Set(await deps.conflictRepository.openPartners(memory.id));
+
   const opened: Conflict[] = [];
   for (const candidate of candidates) {
+    if (alreadyPaired.has(candidate.id)) continue;
     const result = runPolicy(memory, candidate, policyConfig);
     if (!result.conflict) {
       continue;
@@ -103,6 +117,10 @@ export async function detectConflicts(
       { actor: options.actor },
     );
     opened.push(conflict);
+    // Track the new pair so a single scan over the same memory
+    // (or via candidates that recurse back to it) doesn't
+    // double-open within the run.
+    alreadyPaired.add(candidate.id);
   }
 
   return { scanned: candidates.length, opened };

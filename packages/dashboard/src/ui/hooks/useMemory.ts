@@ -100,6 +100,11 @@ export function useMemoryList(filter: MemoryListFilter = {}) {
           limit: filter.limit ?? 200,
         }),
       ),
+    // Keep the prior page's rows on screen while the next page
+    // fetches. Without this, the load-more flow flickers to a
+    // "loading…" message that empties the list — the browser
+    // loses its scroll anchor and snaps to the top.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -184,6 +189,8 @@ export function useMemoryEvents(filter: MemoryEventsFilter) {
           limit: filter.limit ?? 200,
         }),
       ),
+    // Same load-more reasoning as `useMemoryList`.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -205,13 +212,17 @@ export function useUpdateMemory(): UseMutationResult<MemoryRow, Error, UpdateMem
     onSuccess: (_data, vars) => {
       // Invalidate everything that could now be stale: the row
       // itself, every list query (status / kind / tag filters
-      // could now match differently), and the kind-count
-      // snapshot used by the landing page.
+      // could now match differently), the kind-count snapshot
+      // used by the landing page, and the scope list (a memory
+      // becoming pinned / sensitive doesn't change its scope, but
+      // future patches may, and explicit invalidation keeps the
+      // landing page from flashing stale data).
       void qc.invalidateQueries({ queryKey: ['memory.read', vars.id] });
       void qc.invalidateQueries({ queryKey: ['memory.list'] });
       void qc.invalidateQueries({ queryKey: ['memory.search'] });
       void qc.invalidateQueries({ queryKey: ['memory.events'] });
       void qc.invalidateQueries({ queryKey: ['system.info'] });
+      void qc.invalidateQueries({ queryKey: ['system.list_scopes'] });
     },
   });
 }
@@ -240,6 +251,7 @@ export function useForgetMemory(): UseMutationResult<MemoryRow, Error, ForgetMem
       void qc.invalidateQueries({ queryKey: ['memory.search'] });
       void qc.invalidateQueries({ queryKey: ['memory.events'] });
       void qc.invalidateQueries({ queryKey: ['system.info'] });
+      void qc.invalidateQueries({ queryKey: ['system.list_scopes'] });
     },
   });
 }
@@ -253,6 +265,12 @@ export function useConfirmMemory(): UseMutationResult<MemoryRow, Error, { readon
       void qc.invalidateQueries({ queryKey: ['memory.read', vars.id] });
       void qc.invalidateQueries({ queryKey: ['memory.list'] });
       void qc.invalidateQueries({ queryKey: ['memory.events'] });
+      // confirm bumps `lastConfirmedAt`, which affects the
+      // landing page's "last write per scope" tile via
+      // system.list_scopes and the system page's "last write"
+      // via system.info.
+      void qc.invalidateQueries({ queryKey: ['system.info'] });
+      void qc.invalidateQueries({ queryKey: ['system.list_scopes'] });
     },
   });
 }

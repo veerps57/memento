@@ -168,7 +168,16 @@ export function createConfigCommands(deps: CreateConfigCommandsDeps): readonly A
         return err(valueValidationError('config.set', key, parsed.error.issues));
       }
       return await runRepo('config.set', async () => {
-        const event = await repo.set({ key, value: parsed.data, source }, { actor: ctx.actor });
+        // Stamp the engine's effective value at the moment of the
+        // edit as the event's `oldValue` when no prior event
+        // exists for this key — otherwise the audit chain reads
+        // `null → newValue` for every first-time edit, which is
+        // visible (and confusing) in the dashboard's history view.
+        const priorEffectiveValue = store.entry(key).value;
+        const event = await repo.set(
+          { key, value: parsed.data, source, priorEffectiveValue },
+          { actor: ctx.actor },
+        );
         store.apply(event);
         return store.entry(key);
       });
@@ -197,7 +206,8 @@ export function createConfigCommands(deps: CreateConfigCommandsDeps): readonly A
         return err(immutableKeyError('config.unset', key));
       }
       return await runRepo('config.unset', async () => {
-        const event = await repo.unset({ key, source }, { actor: ctx.actor });
+        const priorEffectiveValue = store.entry(key).value;
+        const event = await repo.unset({ key, source, priorEffectiveValue }, { actor: ctx.actor });
         store.apply(event);
         return store.entry(key);
       });

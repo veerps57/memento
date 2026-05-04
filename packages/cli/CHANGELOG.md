@@ -236,13 +236,13 @@
 
   The new sibling package ships a local-first web UI for browsing, auditing, and curating your Memento store. Every named route lands as a real, functional view rather than a placeholder:
 
-  - **`~/overview`** (D2) — landing page with active count, last write, vector retrieval status, open conflicts; kind breakdown; scope distribution.
-  - **`~/memory`** (D3 + D6 + D11) — browse with filter chips (status, kind, pinned), search box wired to `memory.search` (FTS + vector when enabled), sort by `lastConfirmedAt`, decay-aware effective-confidence meter on every row, click-through to detail.
-  - **`~/memory/$id`** (D5 + D11 + D12) — full content with sensitive-reveal toggle, supersession chain (up / down links), audit timeline (`memory.events` for that id with type-pill colour coding and per-event payload summary), provenance (created, last confirmed, stored vs. effective confidence), pin / confirm / forget actions.
-  - **`~/conflicts`** (D14 + D15 + D16) — pending conflicts triaged as side-by-side memory cards with the four `conflict.resolve` actions (accept-new, accept-existing, supersede, ignore), evidence detail toggle, "re-scan last 24h" button.
-  - **`~/audit`** (D7 + D8) — global activity feed via the id-less mode of `memory.events`, with type filters and deep links to each memory.
-  - **`~/config`** (D20 + D22) — every registered config key grouped by dotted prefix, with current value, source layer (default / startup / runtime), mutability flag, type-key history per row (`config.history`), and a "copy as `memento config set` command" snippet for friction-free editing via the CLI.
-  - **`~/system`** (D19 + D24) — doctor-style probes (database, vector retrieval, embedder, schema version, last write, version) plus a status-count tile row.
+  - **`~/overview`** — landing page with active count, last write, vector retrieval status, open conflicts; kind breakdown; scope distribution.
+  - **`~/memory`** — browse with filter chips (status, kind, pinned), search box wired to `memory.search` (FTS + vector when enabled), sort by `lastConfirmedAt`, decay-aware effective-confidence meter on every row, click-through to detail.
+  - **`~/memory/$id`** — full content with sensitive-reveal toggle, supersession chain (up / down links), audit timeline (`memory.events` for that id with type-pill colour coding and per-event payload summary), provenance (created, last confirmed, stored vs. effective confidence), pin / confirm / forget actions.
+  - **`~/conflicts`** — pending conflicts triaged as side-by-side memory cards with the four `conflict.resolve` actions (accept-new, accept-existing, supersede, ignore), evidence detail toggle, "re-scan last 24h" button.
+  - **`~/audit`** — global activity feed via the id-less mode of `memory.events`, with type filters and deep links to each memory.
+  - **`~/config`** — every registered config key grouped by dotted prefix, with current value, source layer (default / startup / runtime), mutability flag, per-key history (`config.history`), and a "copy as `memento config set` command" snippet for friction-free editing via the CLI.
+  - **`~/system`** — doctor-style probes (database, vector retrieval, embedder, schema version, last write, version) plus a status-count tile row.
 
   Plus two cross-cutting pieces:
 

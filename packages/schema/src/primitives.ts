@@ -40,9 +40,9 @@ const REPO_REMOTE_PATTERN = /^[a-z0-9.-]+\/[a-z0-9._-]+\/[a-z0-9._-]+$/;
 
 // All four ULID-shaped fields share the same regex; the `message`
 // option attaches a uniformly helpful error so a bad input shows
-// callers the expected format instead of a bare "Invalid".
-// (Round-2 finding M2: `scope.id: Invalid` left no clue about the
-// 26-char Crockford-base32 requirement.)
+// callers the expected format instead of a bare "Invalid". The
+// previous `scope.id: Invalid` message left no clue about the
+// 26-char Crockford-base32 requirement.
 const ULID_ERROR_MESSAGE =
   'must be a 26-character Crockford-base32 ULID (e.g. "01HYXZ1A2B3C4D5E6F7G8H9J0K")';
 

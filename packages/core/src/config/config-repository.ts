@@ -58,11 +58,25 @@ export interface ConfigSetInput {
   /** JSON-serialisable value; the per-key Zod schema is the caller's responsibility. */
   readonly value: unknown;
   readonly source: ConfigSource;
+  /**
+   * Optional engine-effective value at the moment the caller
+   * issued the set. When provided AND there is no prior event for
+   * this key (i.e. the set runtime layer was empty), it is
+   * recorded as the event's `oldValue` instead of `null`. This
+   * makes the audit trail meaningful for first-time edits — a
+   * dashboard can render "default → newValue" instead of
+   * "null → newValue". When omitted, the legacy behaviour
+   * (oldValue=null when no prior event) is preserved so existing
+   * callers (CLI, MCP, scripts) keep their semantics.
+   */
+  readonly priorEffectiveValue?: unknown;
 }
 
 export interface ConfigUnsetInput {
   readonly key: string;
   readonly source: ConfigSource;
+  /** Same semantics as {@link ConfigSetInput.priorEffectiveValue}. */
+  readonly priorEffectiveValue?: unknown;
 }
 
 export interface ConfigRepositoryDeps {
@@ -110,7 +124,7 @@ export function createConfigRepository(
   return {
     async set(input, ctx) {
       return await db.transaction().execute(async (trx) => {
-        const oldValue = await readLatestValueJson(trx, input.key);
+        const oldValue = await resolveOldValue(trx, input.key, input.priorEffectiveValue);
         const event: ConfigEvent = ConfigEventSchema.parse({
           id: eventIdFactory() as EventId,
           key: input.key,
@@ -127,7 +141,7 @@ export function createConfigRepository(
 
     async unset(input, ctx) {
       return await db.transaction().execute(async (trx) => {
-        const oldValue = await readLatestValueJson(trx, input.key);
+        const oldValue = await resolveOldValue(trx, input.key, input.priorEffectiveValue);
         const event: ConfigEvent = ConfigEventSchema.parse({
           id: eventIdFactory() as EventId,
           key: input.key,
@@ -193,16 +207,30 @@ export function createConfigRepository(
 
 /**
  * Inside a transaction, read the latest persisted value for one
- * key. Returns `null` when there are no prior events, when the
- * latest event was an `unset`, or when the latest stored value
- * was the JSON literal `null` — in all three cases the prior
- * runtime override is "absent", which is the meaning the audit
- * `oldValue` field carries.
+ * key.
+ *
+ * Distinguishes three states via the returned discriminated
+ * shape:
+ *
+ *   - `{ found: false }` — no prior event for this key
+ *     (so the runtime layer is empty; the caller may want to
+ *     substitute the engine's effective value as `oldValue`).
+ *   - `{ found: true, value: null }` — the latest event was an
+ *     `unset`, OR the latest stored value was the JSON literal
+ *     `null`. Either way, the prior runtime state was "absent /
+ *     null"; the caller should record that faithfully.
+ *   - `{ found: true, value: <T> }` — a prior `set` event
+ *     persisted that value.
+ *
+ * The previous helper (`readLatestValueJson`) collapsed the
+ * first two cases into `null`, which made it impossible for the
+ * audit chain to record "first edit went from default → X" —
+ * the dashboard rendered every initial edit as `null → X`.
  */
-async function readLatestValueJson(
+async function readLatestEventValueJson(
   trx: Kysely<MementoSchema>,
   key: string,
-): Promise<unknown | null> {
+): Promise<{ readonly found: false } | { readonly found: true; readonly value: unknown }> {
   const row = await trx
     .selectFrom('config_events')
     .select('new_value_json')
@@ -210,9 +238,42 @@ async function readLatestValueJson(
     .orderBy('id', 'desc')
     .limit(1)
     .executeTakeFirst();
-  if (row === undefined) return null;
-  if (row.new_value_json === null) return null;
-  return JSON.parse(row.new_value_json);
+  if (row === undefined) return { found: false };
+  if (row.new_value_json === null) return { found: true, value: null };
+  return { found: true, value: JSON.parse(row.new_value_json) };
+}
+
+/**
+ * Compute the `oldValue` to record on a `set` or `unset` event.
+ *
+ * The audit chain wants `oldValue` to reflect the engine's
+ * **effective** value at the moment of the edit, not just the
+ * latest event's `newValue`. There are two cases where the latest
+ * event isn't authoritative — both representing "the runtime
+ * layer is empty, so the engine has reverted to a lower layer
+ * (defaults / startup config)":
+ *
+ *   1. No event exists for this key yet.
+ *   2. The latest event was an `unset` (i.e. its `newValue` is
+ *      `null`).
+ *
+ * In either case the caller-supplied `priorEffectiveValue`
+ * (typically `configStore.entry(key).value`) wins. When no
+ * `priorEffectiveValue` is supplied we fall back to `null`,
+ * preserving the legacy semantics for callers that don't want
+ * to plumb the store through (CLI scripts, tests, etc.).
+ */
+async function resolveOldValue(
+  trx: Kysely<MementoSchema>,
+  key: string,
+  priorEffectiveValue: unknown,
+): Promise<unknown> {
+  const fromEvent = await readLatestEventValueJson(trx, key);
+  const runtimeEmpty = !fromEvent.found || fromEvent.value === null;
+  if (runtimeEmpty) {
+    return priorEffectiveValue !== undefined ? priorEffectiveValue : null;
+  }
+  return fromEvent.value;
 }
 
 function eventToRow(event: ConfigEvent): ConfigEventsTable {

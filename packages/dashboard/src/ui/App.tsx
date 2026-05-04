@@ -6,7 +6,7 @@
 // keeps the build chain simpler — no Vite plugin, no generated
 // route tree to commit.
 
-import { QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import {
   Outlet,
   RouterProvider,
@@ -14,9 +14,12 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router';
+import { useEffect, useState } from 'react';
 
 import { CommandPalette } from './components/CommandPalette.js';
 import { Layout } from './components/Layout.js';
+import { TokenMissingPanel } from './components/TokenMissingPanel.js';
+import { AUTH_REQUIRED_CODE } from './lib/api.js';
 import { createQueryClient } from './lib/query.js';
 import { AuditPage } from './routes/audit.js';
 import { ConfigPage } from './routes/config.js';
@@ -28,15 +31,51 @@ import { SystemPage } from './routes/system.js';
 
 const queryClient = createQueryClient();
 
-const rootRoute = createRootRoute({
-  component: () => (
+/**
+ * Subscribes to TanStack's query cache for the lifetime of the
+ * tab. Whenever any query (or mutation, via React-Query's
+ * unified error path) settles with the synthetic
+ * `AUTH_REQUIRED` code, we flip the dashboard into
+ * "session-expired" mode: every route is replaced with the
+ * uniform `<TokenMissingPanel>` instead of each one rendering
+ * its own "failed:" message with a different prefix.
+ *
+ * Implemented as a hook (rather than a context provider) so the
+ * effect lives inside React's lifecycle and unsubscribes on
+ * unmount during HMR.
+ */
+function useAuthGate(): boolean {
+  const qc = useQueryClient();
+  const [authRequired, setAuthRequired] = useState(false);
+  useEffect(() => {
+    const queryUnsub = qc.getQueryCache().subscribe((event) => {
+      const error = (event.query.state.error ?? null) as { code?: string } | null;
+      if (error?.code === AUTH_REQUIRED_CODE) setAuthRequired(true);
+    });
+    const mutationUnsub = qc.getMutationCache().subscribe((event) => {
+      const error = (event.mutation?.state.error ?? null) as { code?: string } | null;
+      if (error?.code === AUTH_REQUIRED_CODE) setAuthRequired(true);
+    });
+    return () => {
+      queryUnsub();
+      mutationUnsub();
+    };
+  }, [qc]);
+  return authRequired;
+}
+
+function AppShell(): JSX.Element {
+  const authRequired = useAuthGate();
+  return (
     <>
-      <Layout>
-        <Outlet />
-      </Layout>
-      <CommandPalette />
+      <Layout>{authRequired ? <TokenMissingPanel /> : <Outlet />}</Layout>
+      {authRequired ? null : <CommandPalette />}
     </>
-  ),
+  );
+}
+
+const rootRoute = createRootRoute({
+  component: AppShell,
 });
 
 const indexRoute = createRoute({

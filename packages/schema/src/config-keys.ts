@@ -812,3 +812,20 @@ export type ConfigValueOf<K extends ConfigKey> =
 export const CONFIG_KEY_NAMES: readonly ConfigKey[] = Object.freeze(
   Object.keys(CONFIG_KEYS) as ConfigKey[],
 );
+
+/**
+ * Snapshot of every key flagged `mutable: false`. Surfaced as an
+ * exported constant so non-engine consumers (notably the
+ * dashboard's config editor) don't have to keep a hand-maintained
+ * mirror that drifts. The derived structure means a future
+ * migration that flips a key's mutability propagates to every
+ * consumer at the next type-checked build.
+ *
+ * Order is deterministic (insertion order from `CONFIG_KEYS`),
+ * which matches the order the dashboard renders rows.
+ */
+export const IMMUTABLE_CONFIG_KEY_NAMES: readonly ConfigKey[] = Object.freeze(
+  (Object.entries(CONFIG_KEYS) as Array<[ConfigKey, ConfigKeyDefinition<unknown>]>)
+    .filter(([, def]) => def.mutable === false)
+    .map(([key]) => key),
+);
