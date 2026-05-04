@@ -6,11 +6,11 @@ This guide is a starter pack of prompt fragments you can drop into your assistan
 
 The fragments below are deliberately short and opinionated. Adapt them to your usage.
 
-## Shortcut: use the bundled skill (Claude Code / Cowork)
+## Shortcut: use the bundled skill
 
-If your AI client supports [Anthropic skills](https://docs.claude.com/en/docs/agents/skills) — Claude Code and Cowork do today — install [`skills/memento/`](../../skills/memento/SKILL.md) and you can skip most of this guide. The skill encodes the same rules, loads automatically on intent match, and stays versioned with the rest of Memento. See [`skills/README.md`](../../skills/README.md) for install steps.
+If your AI client loads [Anthropic-format skills](https://docs.claude.com/en/docs/agents/skills), install [`skills/memento/`](../../skills/memento/SKILL.md) and you can skip most of this guide. Most skill-capable clients read user-scope skills from `~/.claude/skills/<name>/SKILL.md`; a few use a client-specific path (check your client's skill docs and re-target the install if the skill doesn't pick up after a restart). The skill encodes the same rules as this doc, loads automatically on intent match, and stays versioned with the rest of Memento. See [`skills/README.md`](../../skills/README.md) for install steps.
 
-Other clients (Cursor, Cline, OpenCode, VS Code Agent mode) do not support skills today. For those, the persona snippet below is still the supported approach.
+For clients that don't load skills, the persona snippet below is the supported alternative.
 
 ## Core directive
 

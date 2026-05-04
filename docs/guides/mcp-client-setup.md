@@ -4,22 +4,29 @@ Memento ships as a [Model Context Protocol](https://modelcontextprotocol.io) ser
 
 This guide is written for both human operators and AI agents. The configuration snippets are concrete and copy-paste ready; the "why" notes are short and one click away from the supporting docs.
 
-## Quickstart: `npx @psraghuveer/memento init`
+## Quickstart — three steps
 
 The fastest path is to let Memento generate every snippet for you, with the resolved database path already filled in:
 
-```bash
-# pick a stable database location once
-export MEMENTO_DB=~/.local/share/memento/memento.db
-mkdir -p "$(dirname "$MEMENTO_DB")"
+### 1. Initialize Memento
 
-# create the database, run migrations, print client snippets
+```bash
 npx @psraghuveer/memento init
 ```
 
-`init` is idempotent — running it again is safe and just reprints the snippets. It supports Claude Code, Claude Desktop, Cursor, VS Code Agent mode, and OpenCode out of the box. To target a subset, pass `--client` (csv): `npx @psraghuveer/memento init --client claude-code,opencode`.
+`init` creates the database under the XDG default (`$XDG_DATA_HOME/memento/memento.db`, typically `~/.local/share/memento/memento.db` on POSIX and `%LOCALAPPDATA%\memento\memento.db` on Windows), runs migrations, and prints copy-paste MCP snippets for every supported client. Idempotent — re-run any time to reprint the snippets. To pick a non-default location, pass `--db /custom/path/memento.db` or set `MEMENTO_DB` in your environment before running `init`.
 
-For the full per-client walkthrough (Cline, custom paths, troubleshooting), keep reading.
+To target a subset of clients, pass `--client` (csv): `npx @psraghuveer/memento init --client claude-code,opencode`.
+
+### 2. Connect your AI client
+
+For each client, `init` prints either a one-line subcommand (e.g. `claude mcp add memento …` for Claude Code) or a JSON snippet to merge into the client's MCP config. Pick the path for your client below, paste, then **restart the client** so it loads the new MCP server.
+
+### 3. Teach your assistant when to use Memento
+
+Memento ships the MCP tools; the assistant still needs to know *when* to call them. If your client loads Anthropic-format skills, install the bundled [skill](../../skills/memento/SKILL.md) — one `cp -R`, printed by `init`, copies the bundle into `~/.claude/skills/` (the path most skill-capable clients read from; a few use a client-specific directory, check the client's skill docs and re-target the `cp` if needed). If your client doesn't support skills, paste the persona snippet from [`teach-your-assistant.md`](teach-your-assistant.md) into the client's persona file (`.cursorrules`, custom system prompt, etc.).
+
+The full per-client walkthrough (Cline, custom paths, troubleshooting) is below.
 
 ## Prerequisites
 

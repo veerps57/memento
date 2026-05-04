@@ -78,7 +78,8 @@ export type LifecycleName =
   | 'backup'
   | 'completions'
   | 'explain'
-  | 'dashboard';
+  | 'dashboard'
+  | 'skill-path';
 
 export type ParsedCommand =
   | { kind: 'version' }
@@ -254,7 +255,8 @@ export function parseArgv({ argv, env }: ParseArgvOptions): ParsedCommand {
     head === 'backup' ||
     head === 'completions' ||
     head === 'explain' ||
-    head === 'dashboard'
+    head === 'dashboard' ||
+    head === 'skill-path'
   ) {
     return {
       kind: 'lifecycle',

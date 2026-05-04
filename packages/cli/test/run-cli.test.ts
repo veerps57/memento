@@ -309,6 +309,43 @@ describe('runCli: memento context', () => {
     expect(stdout).toContain('"version":');
   });
 
+  it('skill-path emits just the bare absolute path on stdout — even off-TTY', async () => {
+    // `skill-path` is designed for `cp -R "$(memento skill-path)" …`
+    // shell embedding. Inside `$(…)` bash detaches stdout from
+    // the TTY, so `auto` would normally resolve to JSON and break
+    // the substitution. The dispatcher overrides that for this
+    // command: success always prints the bare path with one
+    // trailing newline, matching `which` / `command -v`. JSON is
+    // opt-in via an explicit `--format json`.
+    const cap = fakeIO({ argv: ['skill-path'], isTTY: false });
+    const code = await drive(cap, REJECTING_DEPS);
+    expect(code).toBe(0);
+    expect(cap.stderr.join('')).toBe('');
+    const stdout = cap.stdout.join('');
+    // Bundle is staged (workspace root /skills/memento or
+    // packages/cli/skills/memento) so the path resolves and ends
+    // with `/skills/memento`. A single trailing newline only.
+    expect(stdout.endsWith('\n')).toBe(true);
+    expect(stdout.split('\n').filter((l) => l.length > 0)).toHaveLength(1);
+    expect(stdout.trimEnd()).toMatch(/[\\/]skills[\\/]memento$/);
+  });
+
+  it('skill-path in JSON mode returns the structured envelope', async () => {
+    const cap = fakeIO({
+      argv: ['--format', 'json', 'skill-path'],
+      isTTY: true,
+    });
+    const code = await drive(cap, REJECTING_DEPS);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(cap.stdout.join('')) as {
+      ok: boolean;
+      value?: { source: string; suggestedTarget: string };
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.value?.source).toMatch(/skills[\\/]memento$/);
+    expect(parsed.value?.suggestedTarget).toMatch(/\.claude[\\/]skills$/);
+  });
+
   it('reports STORAGE_ERROR with exit 8 when the DB cannot be opened', async () => {
     const cap = fakeIO({ argv: ['context'], isTTY: false });
     const code = await drive(cap, {

@@ -8,32 +8,32 @@ Every AI session starts the same way: re-explaining your preferences, your proje
 
 Memento is one place where that memory lives. It runs an [MCP](https://modelcontextprotocol.io) server over a local SQLite file, so any MCP-capable AI assistant — Claude Desktop, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, a research bot, a custom agent — can read and write durable, structured memory about you, your work, and your decisions. Local-first, no outbound network calls by default, no vendor lock-in.
 
-## Install
+## Quickstart
+
+Three steps from zero to a working memory layer:
+
+### 1. Initialize Memento
 
 ```bash
-export MEMENTO_DB=~/.local/share/memento/memento.db
 npx @psraghuveer/memento init
 ```
 
-`init` creates the database, runs migrations, and prints copy-paste MCP snippets for Claude Code, Claude Desktop, Cursor, VS Code Agent mode, and OpenCode. Paste the snippet for your client and you're done.
+Creates the database under the XDG default (`$XDG_DATA_HOME/memento/memento.db`, typically `~/.local/share/memento/memento.db` on POSIX), runs migrations, and prints copy-paste MCP snippets for every supported client. Idempotent — re-run any time to reprint the snippets.
 
-## Your first 5 minutes
+### 2. Connect your AI client
 
-After `init` and pasting the snippet:
+`init` prints, for each client, either a one-line subcommand (e.g. `claude mcp add memento …` for Claude Code) or a JSON snippet to merge into the client's MCP config (Claude Desktop, Cursor, Cline, VS Code Agent mode, OpenCode). Pick the one for your client, paste it, then **restart the client** so it loads the new MCP server.
 
-1. **Restart your AI client** so it loads the new MCP server.
-2. **Tell it something durable.** Try: *"Remember that I prefer pnpm over npm for Node projects."* Your assistant should call Memento's `write_memory` tool — most clients show this in a tool-call inspector.
-3. **Verify it landed.** In a terminal:
+The full per-client walkthrough lives in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md).
 
-   ```bash
-   npx @psraghuveer/memento status        # one-screen summary: counts, last event, db size
-   npx @psraghuveer/memento dashboard     # browser UI: search, audit, conflicts, config
-   ```
+### 3. Teach your assistant when to use Memento
 
-4. **Start a fresh session.** Ask: *"What's my preferred package manager for Node projects?"* Your assistant should call `search_memory` (or `get_memory_context`), find the preference, and answer — without you re-explaining.
-5. **For the most consistent UX**, install the bundled [Memento skill](skills/memento/SKILL.md) (Claude Code / Cowork) — it teaches the assistant when to write, recall, supersede, and confirm memories without prompting. For other clients, paste the persona snippet from [docs/guides/teach-your-assistant.md](docs/guides/teach-your-assistant.md).
+Memento exposes the MCP tools, but the assistant still needs to know *when* to call them. Two paths, depending on your client:
 
-If step 4 returns nothing, the assistant probably never called `write_memory` in step 2 — `npx @psraghuveer/memento status` confirms (memoryCount stays at zero). Tighten the persona / install the skill and try again.
+- **If your client loads Anthropic-format skills:** install the bundled [Memento skill](skills/memento/SKILL.md). One `cp -R` command, printed by `init`, copies it into `~/.claude/skills/` — the path most skill-capable clients read from. (A few use a client-specific directory; check your client's docs and re-target the `cp` if the skill doesn't pick up after a restart.) Restart the client; the skill auto-loads on intent match.
+- **If your client doesn't support skills:** paste the persona snippet from [docs/guides/teach-your-assistant.md](docs/guides/teach-your-assistant.md) into your client's persona file (`.cursorrules`, custom system prompt, etc.).
+
+That's it. Verify with `npx @psraghuveer/memento doctor --mcp` (scans known client configs and flags shape mismatches) and try a fresh session: *"Remember that I prefer pnpm over npm for Node projects."* In the next session, ask *"What's my preferred package manager?"* and the assistant should recall it without you re-explaining.
 
 ## Getting started
 
@@ -42,9 +42,10 @@ If step 4 returns nothing, the assistant probably never called `write_memory` in
 Run `init` once to set things up:
 
 ```bash
-export MEMENTO_DB=~/.local/share/memento/memento.db
 npx @psraghuveer/memento init
 ```
+
+`init` defaults the database to the XDG data dir; pass `--db /custom/path/memento.db` (or set `MEMENTO_DB=/custom/path/memento.db`) if you want a non-default location.
 
 To run the server directly (e.g. for debugging):
 
@@ -62,7 +63,7 @@ You can also point at an existing database with the `MEMENTO_DB` environment var
 
 **Verify the install** by running `npx @psraghuveer/memento doctor` (add `--quick` to skip the DB and embedder probes; add `--mcp` to also scan known MCP client config files). For a one-screen summary of what's in your store, `npx @psraghuveer/memento status`. To inspect what your install can do — registered commands, current config, database location — without speaking MCP, run `npx @psraghuveer/memento context`. To smoke-test the MCP transport end-to-end, `npx @psraghuveer/memento ping`.
 
-**Wiring Memento into an MCP client** (Claude Desktop, Claude Code, Cursor, Cline, OpenCode, VS Code Agent mode, …) is covered step by step in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md). The TL;DR: run `npx @psraghuveer/memento init`, paste the snippet, set `MEMENTO_DB` to a stable absolute path.
+**Wiring Memento into an MCP client** (Claude Desktop, Claude Code, Cursor, Cline, OpenCode, VS Code Agent mode, …) is covered step by step in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md). The TL;DR is the three-step quickstart above: `init`, paste the snippet, install the skill or paste the persona.
 
 **Vector retrieval** (paraphrase matching on top of FTS) is on by default. The first search triggers a one-time model download (~110 MB) into `$XDG_CACHE_HOME/memento/models` (or `~/.cache/memento/models` / `%LOCALAPPDATA%\memento\Cache\models`); after that, both FTS and vector arms run automatically. If the model has not yet downloaded, search degrades gracefully to FTS-only. For configuration options and library-wiring details, see [docs/guides/embeddings.md](docs/guides/embeddings.md).
 

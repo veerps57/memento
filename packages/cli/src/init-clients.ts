@@ -55,10 +55,15 @@ export interface ClientSnippet {
    * The init renderer gates the optional "install the skill"
    * section on at least one rendered client carrying this flag.
    *
-   * Anthropic-product clients (Claude Code, Claude Desktop,
-   * Cowork-hosted Claude) support skills today. Third-party
-   * MCP clients (Cursor, VS Code Agent, OpenCode) do not — they
-   * fall back to the persona-snippet approach in
+   * Most MCP clients today accept the same `SKILL.md` format and
+   * read user-scope skills from `~/.claude/skills/<name>/SKILL.md`
+   * (some also read from `~/.agents/skills/` or a
+   * client-specific path). When a client we register adds skill
+   * support, flip this flag — do not maintain external
+   * enumerations of "who supports skills today" outside this
+   * struct, since that drifts as third-party clients adopt the
+   * format. Clients that genuinely don't support skills fall
+   * back to the persona-snippet approach in
    * `docs/guides/teach-your-assistant.md`.
    */
   readonly supportsSkills: boolean;
@@ -232,21 +237,21 @@ const CLIENT_SPECS: readonly ClientSnippetSpec[] = [
     id: 'cursor',
     displayName: 'Cursor',
     configPath: '~/.cursor/mcp.json',
-    supportsSkills: false,
+    supportsSkills: true,
     render: renderCursor,
   },
   {
     id: 'vscode',
     displayName: 'VS Code',
     configPath: '.vscode/mcp.json (workspace) or user `mcp.json` (user scope)',
-    supportsSkills: false,
+    supportsSkills: true,
     render: renderVSCode,
   },
   {
     id: 'opencode',
     displayName: 'OpenCode',
     configPath: '~/.config/opencode/opencode.json',
-    supportsSkills: false,
+    supportsSkills: true,
     render: renderOpenCode,
   },
 ];

@@ -117,6 +117,10 @@ Spawn `memento serve`, list tools over MCP stdio, exit
 
 Run the MCP server over stdio (blocks until the peer disconnects)
 
+### `memento skill-path`
+
+Print the absolute path of the bundled Memento skill (for $(…) shell embedding)
+
 ### `memento status`
 
 Print a one-screen summary of the install (counts, last event, db size)

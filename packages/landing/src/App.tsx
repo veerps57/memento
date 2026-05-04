@@ -198,33 +198,34 @@ function Quickstart(): JSX.Element {
       <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
         <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/quickstart</p>
         <h2 className="text-3xl font-medium tracking-tight md:text-4xl">
-          Three commands, then you're done.
+          Three steps, then you're done.
         </h2>
         {/* `minmax(0, 1fr)` clamps each column's min-content so a long
-            unbreakable token in a step's CodeBlock (e.g. the
-            `MEMENTO_DB=~/.local/...` path) cannot push the grid past
-            the viewport on mobile. Standard CSS-grid mobile trap. */}
+            unbreakable token in a step's CodeBlock (e.g. the package
+            name + serve args) cannot push the grid past the viewport
+            on mobile. Standard CSS-grid mobile trap. */}
         <ol className="mt-12 grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-3">
           <Step
             n={1}
-            title="Pick a database location"
-            body="A stable absolute path so every client points at the same store."
-            command="export MEMENTO_DB=~/.local/share/memento/memento.db"
-          />
-          <Step
-            n={2}
             title="Run init"
-            body="Creates the database, runs migrations, prints a snippet for every supported MCP client."
+            body="Creates the SQLite database under the XDG default, runs migrations, and prints copy-paste MCP setup for every supported client."
             command="npx @psraghuveer/memento init"
           />
           <Step
-            n={3}
-            title="Paste the snippet"
-            body="Drop it into your AI client's MCP config (Claude Desktop, Cursor, Cline, OpenCode, VS Code Agent…) and restart the client."
+            n={2}
+            title="Connect your AI client"
+            body="Paste the JSON snippet into your client's MCP config (Claude Desktop, Cursor, Cline, OpenCode, VS Code Agent…) — or use the one-line subcommand init prints for Claude Code. Restart the client."
             command={null}
             preview={<SnippetPreview />}
           />
+          <Step
+            n={3}
+            title="Install the skill (or paste persona)"
+            body="If your client loads Anthropic-format skills, copy the bundled Memento skill into ~/.claude/skills/ — most skill-capable clients read from there. (A few use a client-specific path; check your client's skill docs.) If your client doesn't load skills, copy the persona snippet below into your client's persona file."
+            command={'cp -R "$(npx -y @psraghuveer/memento skill-path)" ~/.claude/skills/'}
+          />
         </ol>
+        <PersonaSnippet />
         <p className="mt-12 max-w-prose text-muted">
           Then start a fresh session and tell your assistant something durable —{' '}
           <em className="text-fg">"Remember that I prefer pnpm over npm for Node projects."</em> In
@@ -263,10 +264,10 @@ function Step({
   /** Show a copy-pasteable command. Mutually exclusive with `preview`. */
   readonly command: string | null;
   /**
-   * Optional visual rendered when `command` is null. Used by
-   * step 3 (no command — paste a JSON snippet from `init`'s
-   * output) to keep card heights visually balanced with the
-   * earlier two cards.
+   * Optional visual rendered when `command` is null. Used by the
+   * "connect your client" step (no command — paste a JSON snippet
+   * from `init`'s output) to keep card heights visually balanced
+   * with the surrounding command-bearing cards.
    */
   readonly preview?: ReactNode;
 }): JSX.Element {
@@ -310,6 +311,80 @@ const MCP_SNIPPET = `{
 
 function SnippetPreview(): JSX.Element {
   return <JsonBlock json={MCP_SNIPPET} />;
+}
+
+/**
+ * Persona snippet — the generic fallback for clients that don't
+ * load Anthropic-format skills. Surfaced inline so first-time
+ * users on those clients don't have to leave the page to reach
+ * a copyable block. Intentionally not enumerating which clients
+ * fall in this bucket: the list drifts as the ecosystem moves
+ * and is the user's concern, not ours.
+ *
+ * Source of truth (do not drift): the "A minimal end-to-end
+ * persona snippet" section in `docs/guides/teach-your-assistant.md`.
+ * Keep this verbatim with that file; cosmetic edits are fine,
+ * semantic edits should land in the doc first and be mirrored here.
+ */
+const PERSONA_SNIPPET = `## Memory (Memento)
+
+You have a local memory store via MCP. Use it as your durable
+memory; treat chat as ephemeral.
+
+- Memory ops are silent background plumbing. Don't preface them
+  ("let me check memory") and don't report results ("saved",
+  "memory was empty"). The UI shows the tool call; layering prose
+  on top pollutes the conversation. Speak only when the user
+  asked a question whose answer is in memory, a write surfaced a
+  conflict, or the user explicitly said "remember this" — and
+  then one word ("noted") is enough.
+- At the start of a task, call \`get_memory_context\` to load relevant
+  memories for this session. If context looks thin, call
+  \`search_memory\` with specific terms.
+- When you actually use a memory, call \`confirm_memory\` with its id.
+- Write durable user statements (preferences, decisions, facts,
+  todos, snippets) via \`write_memory\` with an explicit \`kind\`.
+- Before ending a session, call \`extract_memory\` with a batch of
+  candidates for anything worth remembering that wasn't written
+  explicitly during the conversation. The server deduplicates
+  automatically — when in doubt, include it. The default
+  configuration is async: the response will be \`{written:[],
+  skipped:[], superseded:[], mode:"async", batchId, hint, status:
+  "accepted"}\` — that is the receipt, not a failure. Writes land
+  as memories within seconds; do not retry.
+- For preferences and decisions, start \`content\` with a single
+  \`topic: value\` line followed by prose. Conflict detection
+  parses that line; without it, contradictory preferences
+  silently coexist.
+- Use the user's preferred name from \`info_system.user.preferredName\`
+  when authoring memory content; fall back to "The user" when
+  that field is null.
+- For changes of mind, use \`supersede_memory\`, not \`update_memory\`.
+- Never write secrets, tokens, or credentials.`;
+
+function PersonaSnippet(): JSX.Element {
+  return (
+    <div className="mt-10 rounded-md border border-border bg-bg/40 p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h3 className="text-base font-medium text-fg">
+          Persona snippet — for clients without skill support
+        </h3>
+        <a
+          href={`${GITHUB_URL}/blob/main/docs/guides/teach-your-assistant.md`}
+          className="font-mono text-xs uppercase tracking-widish text-muted underline decoration-border underline-offset-4 hover:text-fg hover:decoration-fg"
+        >
+          Full guide →
+        </a>
+      </div>
+      <p className="mt-2 max-w-prose text-sm text-muted">
+        Paste this near the top of your client's persona file. It tells the assistant when to call
+        Memento's MCP tools — without it, the assistant has the tools but no instinct to use them.
+      </p>
+      <div className="mt-4">
+        <JsonBlock json={PERSONA_SNIPPET} />
+      </div>
+    </div>
+  );
 }
 
 function DashboardPreview(): JSX.Element {

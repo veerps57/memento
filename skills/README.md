@@ -67,7 +67,7 @@ The skill should fire and the assistant should answer with rule 2 (no hardcoded 
 
 ### Other MCP clients
 
-Skills are an Anthropic-specific feature. For clients that do not support skills (Cursor, Cline, OpenCode, VS Code Agent mode, etc.), continue to use the persona snippet in [`docs/guides/teach-your-assistant.md`](../docs/guides/teach-your-assistant.md). The snippet's content mirrors what the `memento` skill teaches; the difference is delivery mechanism. There is no equivalent contributor surface for non-skill clients today — `AGENTS.md` is the canonical document, and contributors using non-skill clients should read it before opening a PR.
+Anthropic skills started as a Claude-product feature; the [`SKILL.md`](https://docs.claude.com/en/docs/agents/skills) format has since been adopted by other MCP clients. Most skill-capable clients read user-scope skills from `~/.claude/skills/<name>/SKILL.md`; a few use a client-specific path. Check your client's docs for the exact location. For clients that don't load skills at all, use the persona snippet in [`docs/guides/teach-your-assistant.md`](../docs/guides/teach-your-assistant.md). The snippet's content mirrors what the `memento` skill teaches; the difference is delivery mechanism. There is no equivalent contributor surface for non-skill clients today — `AGENTS.md` is the canonical document, and contributors using non-skill clients should read it before opening a PR.
 
 ## Verifying it works
 

@@ -40,6 +40,7 @@ import {
   type LifecycleDeps,
   type MigrateStoreOptions,
   type ServeStdioOptions,
+  type SkillPathSnapshot,
 } from './lifecycle/index.js';
 import { runRegistry } from './registry-run.js';
 import { renderResult, resolveFormat } from './render.js';
@@ -333,6 +334,21 @@ async function dispatch(parsed: ParsedCommand, io: CliIO, deps: RunCliDeps): Pro
           io.stdout.write(renderInitText(result.value as InitSnapshot, { color }));
           return EXIT_OK;
         }
+      }
+      // `skill-path` is designed for shell embedding —
+      //   cp -R "$(memento skill-path)" ~/.claude/skills/
+      // — so the success path emits just the bare absolute path
+      // followed by a newline, matching `which` / `command -v`
+      // conventions. The default is the path even off-TTY (where
+      // `auto` would normally resolve to JSON) because the whole
+      // point of the command is to be substituted into a shell
+      // command line, and that always happens off-TTY. The JSON
+      // envelope is opt-in via an explicit `--format json` for
+      // structured callers that want both `source` and
+      // `suggestedTarget` together.
+      if (parsed.name === 'skill-path' && result.ok && parsed.env.format !== 'json') {
+        io.stdout.write(`${(result.value as SkillPathSnapshot).source}\n`);
+        return EXIT_OK;
       }
       // `doctor` returns a structured `DoctorReport` (success
       // path) or wraps one in `error.details` (failure path).
