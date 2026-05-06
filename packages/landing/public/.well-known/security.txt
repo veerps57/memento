@@ -1,0 +1,8 @@
+# Memento — security disclosure policy
+# Full policy: https://github.com/veerps57/memento/blob/main/SECURITY.md
+
+Contact: https://github.com/veerps57/memento/security/advisories/new
+Policy: https://github.com/veerps57/memento/blob/main/SECURITY.md
+Preferred-Languages: en
+Canonical: https://runmemento.com/.well-known/security.txt
+Expires: 2027-05-01T00:00:00.000Z

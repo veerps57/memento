@@ -4,6 +4,7 @@ import { CodeBlock } from './components/CodeBlock.js';
 import { JsonBlock } from './components/JsonBlock.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
 import { Wordmark } from './components/Wordmark.js';
+import { FAQ_ITEMS } from './faq.js';
 
 const GITHUB_URL = 'https://github.com/veerps57/memento';
 const NPM_URL = 'https://www.npmjs.com/package/@psraghuveer/memento';
@@ -21,6 +22,7 @@ export default function App(): JSX.Element {
         <Quickstart />
         <DashboardPreview />
         <Features />
+        <Faq />
       </main>
       <Footer />
     </div>
@@ -502,6 +504,27 @@ function Features(): JSX.Element {
             </li>
           ))}
         </ul>
+      </div>
+    </section>
+  );
+}
+
+function Faq(): JSX.Element {
+  return (
+    <section id="faq" className="scroll-mt-20 border-b border-border">
+      <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
+        <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/faq</p>
+        <h2 className="text-3xl font-medium tracking-tight md:text-4xl">Frequently asked.</h2>
+        <dl className="mt-12 grid gap-8 md:grid-cols-2">
+          {FAQ_ITEMS.map((item) => (
+            <div key={item.question} className="flex flex-col gap-3">
+              <dt className="text-lg font-medium text-fg">{item.question}</dt>
+              <dd className="max-w-prose whitespace-pre-line text-sm text-muted md:text-base">
+                {item.answer}
+              </dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </section>
   );

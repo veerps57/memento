@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
+import { hydrateRoot } from 'react-dom/client';
 
 import App from './App.js';
 import './styles.css';
@@ -7,7 +7,8 @@ import './styles.css';
 const rootEl = document.getElementById('root');
 if (rootEl === null) throw new Error('Missing #root element in index.html');
 
-createRoot(rootEl).render(
+hydrateRoot(
+  rootEl,
   <StrictMode>
     <App />
   </StrictMode>,
