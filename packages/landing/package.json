@@ -13,9 +13,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "postbuild": "node scripts/build-llms-full.mjs",
-    "clean": "rm -rf dist .turbo",
+    "build": "vite build && vite build --ssr src/entry-server.tsx --outDir dist-ssr",
+    "postbuild": "node scripts/prerender.mjs && node scripts/build-llms-full.mjs",
+    "clean": "rm -rf dist dist-ssr .turbo",
     "dev": "vite",
     "preview": "vite preview"
   },

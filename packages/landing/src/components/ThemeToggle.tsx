@@ -4,24 +4,28 @@ type Theme = 'dark' | 'light';
 
 const STORAGE_KEY = 'memento-theme';
 
-function readInitialTheme(): Theme {
-  // The inline script in `index.html` already applied the right
-  // class before React mounted; mirror its decision so the
-  // toggle's icon matches the actual page state.
-  if (typeof document === 'undefined') return 'dark';
-  return document.documentElement.classList.contains('light') ? 'light' : 'dark';
-}
-
 /**
  * A small sun/moon toggle that persists the user's preference
  * to localStorage and applies the `.light` class on `<html>`.
  *
  * Default = dark (matches dashboard).
+ *
+ * Renders a neutral placeholder during SSR + first hydration so
+ * the prerendered HTML matches what hydrateRoot expects, then
+ * resolves the actual theme from the class the inline script in
+ * `index.html` applied. Without this, users in light mode see a
+ * hydration mismatch warning (server renders dark icon; client
+ * sees `.light` already on `<html>`).
  */
 export function ThemeToggle(): JSX.Element {
-  const [theme, setTheme] = useState<Theme>(readInitialTheme);
+  const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
+    setTheme(document.documentElement.classList.contains('light') ? 'light' : 'dark');
+  }, []);
+
+  useEffect(() => {
+    if (theme === null) return;
     document.documentElement.classList.toggle('light', theme === 'light');
     try {
       localStorage.setItem(STORAGE_KEY, theme);
@@ -29,6 +33,15 @@ export function ThemeToggle(): JSX.Element {
       /* storage may be disabled — toggle still works in-session */
     }
   }, [theme]);
+
+  if (theme === null) {
+    return (
+      <span
+        aria-hidden
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border"
+      />
+    );
+  }
 
   const isLight = theme === 'light';
   return (
