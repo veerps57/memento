@@ -25,7 +25,7 @@
 import { execSync } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const landingDir = resolve(here, '..');
@@ -33,7 +33,10 @@ const distDir = resolve(landingDir, 'dist');
 const ssrDir = resolve(landingDir, 'dist-ssr');
 const repoRoot = resolve(landingDir, '../..');
 
-const ssrEntry = resolve(ssrDir, 'entry-server.js');
+// `await import()` of an absolute path needs a file:// URL on
+// Windows, because Node's ESM loader otherwise treats the drive
+// letter (e.g. `D:`) as a URL scheme and rejects it.
+const ssrEntry = pathToFileURL(resolve(ssrDir, 'entry-server.js')).href;
 /** @type {{ render: () => string, FAQ_ITEMS: ReadonlyArray<{ question: string, answer: string }> }} */
 const { render, FAQ_ITEMS } = await import(ssrEntry);
 
