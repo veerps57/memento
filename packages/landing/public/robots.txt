@@ -8,6 +8,18 @@ Allow: /
 # the landing page is intentionally citeable; we want LLM-backed
 # search engines and assistants to surface it accurately. If this
 # policy changes (e.g. opt-out of training corpora), tighten here.
+#
+# Two classes of LLM crawler:
+#   1. Training-corpus crawlers (run periodically, scrape broadly).
+#      Opting in means our content can show up in future model
+#      training data — useful for "what is Memento" baseline
+#      knowledge in models that release after our content lands.
+#   2. Live-fetch crawlers (run on user request, scrape on demand).
+#      Opting in means our content can be cited in the AI answer
+#      a user sees right now. These are the citation-yielding
+#      ones and matter most for GEO.
+
+# Training-corpus crawlers
 User-agent: GPTBot
 Allow: /
 
@@ -17,7 +29,7 @@ Allow: /
 User-agent: Claude-Web
 Allow: /
 
-User-agent: PerplexityBot
+User-agent: Anthropic-AI
 Allow: /
 
 User-agent: Google-Extended
@@ -27,6 +39,46 @@ User-agent: CCBot
 Allow: /
 
 User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
+# Live-fetch / search crawlers (cite content in answers users see)
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: DuckAssistBot
+Allow: /
+
+User-agent: YouBot
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: cohere-training-data-crawler
+Allow: /
+
+User-agent: MistralAI-User
+Allow: /
+
+User-agent: Meta-ExternalFetcher
 Allow: /
 
 Sitemap: https://runmemento.com/sitemap.xml

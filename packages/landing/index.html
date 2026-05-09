@@ -4,13 +4,34 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark light" />
-    <meta name="theme-color" content="#0E0E10" />
+    <!-- Theme-color split. The page supports both modes via a
+         `.light` class toggle on <html>; iOS/Android browser
+         chrome should match whichever the user has on. Without
+         the media-query split, both modes render dark chrome. -->
+    <meta name="theme-color" content="#0E0E10" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+    <!-- Snippet/preview hints for search engines. Default snippet
+         is short (~150 chars) and previews are small thumbnails;
+         these tell crawlers "use as much as you want and the full
+         image" — important for rich SERP entries. -->
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
     <title>Memento — A local-first, LLM-agnostic memory layer for AI assistants</title>
     <meta
       name="description"
       content="A local-first, LLM-agnostic memory layer for AI assistants. Runs as an MCP server over a single SQLite file on your machine. No cloud, no vendor lock-in."
     />
     <link rel="canonical" href="https://runmemento.com/" />
+    <!-- Critical-font preload. Injected at build time by
+         scripts/prerender.mjs from the actual hashed filenames in
+         dist/assets/. Lifts the body + code fonts onto the critical
+         path so they're in flight before CSS parses, improving LCP
+         on first paint. -->
+    <!--FONT-PRELOAD-->
+    <!-- llms.txt / llms-full.txt discovery hints, per llmstxt.org.
+         Some AI crawlers look for these in HTML <link>s before
+         guessing the path. -->
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt — concise overview for AI crawlers" />
+    <link rel="alternate" type="text/plain" href="/llms-full.txt" title="llms-full.txt — full README + ARCHITECTURE concatenated" />
     <meta property="og:url" content="https://runmemento.com/" />
     <meta property="og:site_name" content="Memento" />
     <meta property="og:title" content="Memento — A local-first, LLM-agnostic memory layer for AI assistants" />
@@ -27,6 +48,11 @@
       property="og:image:alt"
       content="Memento — a local-first, LLM-agnostic memory layer for AI assistants."
     />
+    <!-- OG-equivalent of dateModified. OG-aware unfurlers
+         (LinkedIn, some AI fetchers) re-fetch when this changes,
+         replacing stale cached previews. Substituted at build
+         time from the most recent commit touching the landing. -->
+    <meta property="og:updated_time" content="__MEMENTO_OG_UPDATED_TIME__" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Memento — A local-first, LLM-agnostic memory layer for AI assistants" />
     <meta
@@ -38,12 +64,13 @@
       name="twitter:image:alt"
       content="Memento — a local-first, LLM-agnostic memory layer for AI assistants."
     />
-    <!-- Schema.org graph: WebSite (site identity) + SoftwareApplication
-         (the product) + Person (the author). Helps search engines
-         render rich results and lets LLM crawlers cite the npm
-         package, repo, and author as canonical references.
-         `__MEMENTO_VERSION__` and `__MEMENTO_LAST_MODIFIED__` are
-         build-time placeholders — see scripts/prerender.mjs. -->
+    <!-- Schema.org graph. Each node has a stable `@id` so cross-
+         references resolve as a single entity to crawlers that
+         walk the graph. The build substitutes:
+           - `__MEMENTO_VERSION__` — current package.json version
+           - `__MEMENTO_LAST_MODIFIED__` — most recent commit
+             touching packages/landing
+         See scripts/prerender.mjs. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -56,36 +83,93 @@
             "description": "A local-first, LLM-agnostic memory layer for AI assistants.",
             "inLanguage": "en",
             "dateModified": "__MEMENTO_LAST_MODIFIED__",
-            "publisher": { "@id": "https://github.com/veerps57" }
+            "publisher": { "@id": "https://runmemento.com/#organization" }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://runmemento.com/#organization",
+            "name": "Memento",
+            "url": "https://runmemento.com/",
+            "logo": "https://runmemento.com/icon-512.png",
+            "description": "Open-source local-first memory layer for AI assistants. Apache-2.0.",
+            "founder": { "@id": "https://github.com/veerps57" },
+            "sameAs": [
+              "https://github.com/veerps57/memento",
+              "https://www.npmjs.com/package/@psraghuveer/memento"
+            ]
           },
           {
             "@type": "SoftwareApplication",
             "@id": "https://runmemento.com/#software",
             "name": "Memento",
+            "alternateName": "@psraghuveer/memento",
             "applicationCategory": "DeveloperApplication",
+            "applicationSubCategory": "Memory layer for AI assistants",
             "operatingSystem": "macOS, Linux, Windows",
             "description": "A local-first, LLM-agnostic memory layer for AI assistants. Runs as an MCP server over a single SQLite file on your machine. No cloud, no vendor lock-in. Works with Claude Code, Cursor, Copilot, Cline, OpenCode, and any MCP-capable client.",
             "license": "https://www.apache.org/licenses/LICENSE-2.0",
             "url": "https://runmemento.com/",
             "downloadUrl": "https://www.npmjs.com/package/@psraghuveer/memento",
+            "installUrl": "https://www.npmjs.com/package/@psraghuveer/memento",
             "codeRepository": "https://github.com/veerps57/memento",
             "softwareVersion": "__MEMENTO_VERSION__",
+            "softwareRequirements": "Node.js >= 22.11",
+            "softwareHelp": "https://github.com/veerps57/memento#getting-started",
+            "releaseNotes": "https://github.com/veerps57/memento/releases",
+            "screenshot": "https://runmemento.com/og.png",
+            "image": "https://runmemento.com/og.png",
             "dateModified": "__MEMENTO_LAST_MODIFIED__",
             "author": { "@id": "https://github.com/veerps57" },
+            "publisher": { "@id": "https://runmemento.com/#organization" },
             "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-            "isPartOf": { "@id": "https://runmemento.com/#website" }
+            "isPartOf": { "@id": "https://runmemento.com/#website" },
+            "keywords": "MCP, Model Context Protocol, AI memory, local-first, SQLite, Claude, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, AI assistant memory, LLM memory layer, vendor-neutral memory, persistent context",
+            "featureList": [
+              "Local-first storage in a single SQLite file under your home directory",
+              "LLM-agnostic — works with any MCP-capable AI client",
+              "Typed memory model: fact, preference, decision, todo, snippet",
+              "Append-only audit log — every write produces an event",
+              "Built-in regex scrubber strips secrets before persistence",
+              "Conflict detection via post-write hook",
+              "Confidence decay with configurable half-life",
+              "Vector retrieval via local embeddings (no cloud calls)",
+              "JSONL export and import for portability",
+              "Local-first web dashboard for browsing, audit, and curation"
+            ]
           },
           {
             "@type": "Person",
             "@id": "https://github.com/veerps57",
             "name": "veerps57",
-            "url": "https://github.com/veerps57"
+            "url": "https://github.com/veerps57",
+            "sameAs": [
+              "https://www.linkedin.com/in/raghuveerps"
+            ]
           }
         ]
       }
     </script>
     <!--FAQ-PAGE-JSONLD-->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230E0E10'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='18' fill='%23E8B86C'%3Em%3C/text%3E%3C/svg%3E" />
+    <!--HOWTO-JSONLD-->
+    <!-- Icons. We ship real files (favicon.ico, favicon.svg,
+         favicon-{16,32}x{16,32}.png, apple-touch-icon.png) instead of
+         relying on a single inline data: URI: every browser,
+         preview unfurler, and AI crawler auto-probes /favicon.ico
+         and /apple-touch-icon.png on first contact regardless of
+         what's declared here. Missing these paths was the dominant
+         source of Cloudflare 4xx noise. The .svg is the canonical
+         source — see public/favicon.svg + scripts/generate-icons.mjs. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <!-- Bing/Edge live-tile probe defaults to /browserconfig.xml,
+         which is also a 404 source today. Pointing it at our PNG
+         skips the file and resolves the probe with one redirect. -->
+    <meta name="msapplication-TileColor" content="#0E0E10" />
+    <meta name="msapplication-TileImage" content="/icon-192.png" />
+    <meta name="msapplication-config" content="none" />
     <script>
       // Apply the saved theme before React mounts so we never
       // flash the default theme. Mirror dashboard convention:
@@ -104,8 +188,13 @@
   </head>
   <body class="bg-bg text-fg font-sans antialiased">
     <noscript>
+      <!-- Heading wording matches src/App.tsx exactly so non-JS
+           crawlers that parse both noscript and SSR'd body don't
+           see two top-level headings with divergent text. The
+           brand name lives in a paragraph below instead. -->
       <main style="max-width: 720px; margin: 4rem auto; padding: 0 1.25rem; font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; color: #e8e8ea; background: #0e0e10;">
-        <h1 style="font-size: 2rem; margin: 0 0 1rem;">Memento — one memory layer for every AI assistant you use.</h1>
+        <p style="font-family: ui-monospace, monospace; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin: 0 0 0.5rem;">Memento</p>
+        <h1 style="font-size: 2rem; margin: 0 0 1rem;">One memory layer for every AI assistant you use.</h1>
         <p>A local-first, LLM-agnostic memory layer for AI assistants. Memento runs an MCP server over a single SQLite file on your machine, so any MCP-capable AI assistant — Claude Desktop, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, custom agents — can read and write durable, structured memory about you, your work, and your decisions.</p>
         <p>Get started:</p>
         <pre style="background: #1a1a1d; padding: 1rem; border-radius: 6px; overflow-x: auto; font-family: ui-monospace, monospace;">npx @psraghuveer/memento init</pre>

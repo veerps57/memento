@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { COMPARISON } from './comparison.js';
 import { CodeBlock } from './components/CodeBlock.js';
 import { JsonBlock } from './components/JsonBlock.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
@@ -22,6 +23,7 @@ export default function App(): JSX.Element {
         <Quickstart />
         <DashboardPreview />
         <Features />
+        <Comparison />
         <Faq />
       </main>
       <Footer />
@@ -55,10 +57,13 @@ function TopBar(): JSX.Element {
 
 function Hero(): JSX.Element {
   return (
-    <section id="top" className="scroll-mt-20 border-b border-border">
+    <section id="top" aria-labelledby="hero-h1" className="scroll-mt-20 border-b border-border">
       <div className="mx-auto w-full max-w-6xl px-4 py-12 md:px-8 md:py-16">
         <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/memento</p>
-        <h1 className="max-w-4xl text-4xl font-medium leading-tight tracking-tight text-fg md:text-6xl">
+        <h1
+          id="hero-h1"
+          className="max-w-4xl text-4xl font-medium leading-tight tracking-tight text-fg md:text-6xl"
+        >
           One memory layer for every AI assistant you use.
         </h1>
         <p className="mt-6 max-w-prose text-lg text-fg/80">
@@ -106,10 +111,10 @@ function Hero(): JSX.Element {
 
 function Pain(): JSX.Element {
   return (
-    <section className="scroll-mt-20 border-b border-border bg-bg/40">
+    <section aria-labelledby="pain-h2" className="scroll-mt-20 border-b border-border bg-bg/40">
       <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
         <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/the_pain</p>
-        <h2 className="max-w-3xl text-3xl font-medium tracking-tight md:text-4xl">
+        <h2 id="pain-h2" className="max-w-3xl text-3xl font-medium tracking-tight md:text-4xl">
           Every AI session starts the same way.
         </h2>
         <p className="mt-6 max-w-prose text-base text-muted md:text-lg">
@@ -130,12 +135,16 @@ function Pain(): JSX.Element {
 
 function HowItWorks(): JSX.Element {
   return (
-    <section id="how-it-works" className="scroll-mt-20 border-b border-border">
+    <section
+      id="how-it-works"
+      aria-labelledby="how-it-works-h2"
+      className="scroll-mt-20 border-b border-border"
+    >
       <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
         <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">
           ~/how_it_works
         </p>
-        <h2 className="text-3xl font-medium tracking-tight md:text-4xl">
+        <h2 id="how-it-works-h2" className="text-3xl font-medium tracking-tight md:text-4xl">
           One place where memory lives.
         </h2>
         <p className="mt-6 max-w-prose text-muted">
@@ -196,10 +205,14 @@ function FlowArrow({ caption }: { readonly caption?: string }): JSX.Element {
 
 function Quickstart(): JSX.Element {
   return (
-    <section id="quickstart" className="scroll-mt-20 border-b border-border bg-bg/40">
+    <section
+      id="quickstart"
+      aria-labelledby="quickstart-h2"
+      className="scroll-mt-20 border-b border-border bg-bg/40"
+    >
       <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
         <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/quickstart</p>
-        <h2 className="text-3xl font-medium tracking-tight md:text-4xl">
+        <h2 id="quickstart-h2" className="text-3xl font-medium tracking-tight md:text-4xl">
           Three steps, then you're done.
         </h2>
         {/* `minmax(0, 1fr)` clamps each column's min-content so a long
@@ -274,7 +287,10 @@ function Step({
   readonly preview?: ReactNode;
 }): JSX.Element {
   return (
-    <li className="flex min-w-0 flex-col gap-3 rounded-md border border-border bg-bg/60 p-5">
+    <li
+      id={`quickstart-step-${n}`}
+      className="flex min-w-0 scroll-mt-20 flex-col gap-3 rounded-md border border-border bg-bg/60 p-5"
+    >
       <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-widish text-muted">
         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-accent text-accent">
           {n}
@@ -424,10 +440,10 @@ function DashboardPreview(): JSX.Element {
   ];
 
   return (
-    <section className="scroll-mt-20 border-b border-border">
+    <section aria-labelledby="dashboard-h2" className="scroll-mt-20 border-b border-border">
       <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
         <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/your_store</p>
-        <h2 className="max-w-3xl text-3xl font-medium tracking-tight md:text-4xl">
+        <h2 id="dashboard-h2" className="max-w-3xl text-3xl font-medium tracking-tight md:text-4xl">
           See what your assistants remember. Curate it in a browser.
         </h2>
         <p className="mt-6 max-w-prose text-muted">
@@ -490,10 +506,12 @@ function Features(): JSX.Element {
     },
   ];
   return (
-    <section className="scroll-mt-20 border-b border-border bg-bg/40">
+    <section aria-labelledby="features-h2" className="scroll-mt-20 border-b border-border bg-bg/40">
       <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
         <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/principles</p>
-        <h2 className="text-3xl font-medium tracking-tight md:text-4xl">What Memento is.</h2>
+        <h2 id="features-h2" className="text-3xl font-medium tracking-tight md:text-4xl">
+          What Memento is.
+        </h2>
         <ul className="mt-12 grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2 lg:grid-cols-3">
           {items.map((it) => (
             <li key={it.title} className="rounded-md border border-border bg-bg/60 p-5">
@@ -509,12 +527,118 @@ function Features(): JSX.Element {
   );
 }
 
+/**
+ * "Memento vs alternatives" comparison.
+ *
+ * Renders a wide table on md+ and a stacked card-per-tool layout
+ * on small screens, since 5-column tables don't fit on phones.
+ * Both views read the same data from `comparison.ts`, so a row
+ * change updates both. The point of this section is GEO: AI
+ * search engines surface comparison-shaped content for "X vs Y"
+ * queries when the contrast is concrete (yes/no), not hand-wavy.
+ */
+function Comparison(): JSX.Element {
+  const { columns, rows } = COMPARISON;
+  return (
+    <section
+      id="compared-to"
+      aria-labelledby="comparison-h2"
+      className="scroll-mt-20 border-b border-border"
+    >
+      <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
+        <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/compared_to</p>
+        <h2
+          id="comparison-h2"
+          className="max-w-3xl text-3xl font-medium tracking-tight md:text-4xl"
+        >
+          Memento vs the alternatives.
+        </h2>
+        <p className="mt-6 max-w-prose text-muted">
+          The closest comparable tools are vendor-specific: ChatGPT Memory (OpenAI), Claude Projects
+          (Anthropic), and the per-client config files most coding assistants ship with (
+          <code className="font-mono text-fg">CLAUDE.md</code>,{' '}
+          <code className="font-mono text-fg">.cursorrules</code>,{' '}
+          <code className="font-mono text-fg">copilot-instructions.md</code>). They each solve one
+          slice of the problem; Memento is the only one that's local-first and works across every AI
+          tool you use.
+        </p>
+        <div className="mt-12 hidden overflow-x-auto md:block">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="py-3 pr-4 text-left font-mono text-xs uppercase tracking-widish text-muted">
+                  Property
+                </th>
+                {columns.map((c) => (
+                  <th
+                    key={c.key}
+                    className="px-3 py-3 text-left font-mono text-xs uppercase tracking-widish text-muted"
+                  >
+                    {c.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.property} className="border-b border-border/60 align-top">
+                  <th scope="row" className="py-3 pr-4 text-left font-medium text-fg">
+                    {row.property}
+                  </th>
+                  {columns.map((c) => {
+                    const value = row[c.key];
+                    const isMemento = c.key === 'memento';
+                    return (
+                      <td
+                        key={c.key}
+                        className={`px-3 py-3 text-muted ${isMemento ? 'font-medium text-fg' : ''}`}
+                      >
+                        {value}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {/* Mobile: one card per tool, with rows listed underneath. */}
+        <div className="mt-12 grid gap-6 md:hidden">
+          {columns.map((c) => (
+            <div key={c.key} className="rounded-md border border-border bg-bg/60 p-5">
+              <h3
+                className={`font-mono text-sm uppercase tracking-widish ${
+                  c.key === 'memento' ? 'text-accent' : 'text-muted'
+                }`}
+              >
+                {c.label}
+              </h3>
+              <dl className="mt-4 grid gap-2 text-sm">
+                {rows.map((row) => (
+                  <div key={row.property} className="grid grid-cols-2 gap-2">
+                    <dt className="text-muted">{row.property}</dt>
+                    <dd className={c.key === 'memento' ? 'font-medium text-fg' : 'text-fg/80'}>
+                      {row[c.key]}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Faq(): JSX.Element {
   return (
-    <section id="faq" className="scroll-mt-20 border-b border-border">
+    <section id="faq" aria-labelledby="faq-h2" className="scroll-mt-20 border-b border-border">
       <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
         <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/faq</p>
-        <h2 className="text-3xl font-medium tracking-tight md:text-4xl">Frequently asked.</h2>
+        <h2 id="faq-h2" className="text-3xl font-medium tracking-tight md:text-4xl">
+          Frequently asked.
+        </h2>
         <dl className="mt-12 grid gap-8 md:grid-cols-2">
           {FAQ_ITEMS.map((item) => (
             <div key={item.question} className="flex flex-col gap-3">
@@ -534,9 +658,23 @@ function Footer(): JSX.Element {
   return (
     <footer className="border-t border-border">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-8 text-sm text-muted md:flex-row md:items-center md:justify-between md:px-8">
-        <div className="flex items-center gap-3">
-          <Wordmark className="text-sm" />
-          <span className="font-mono text-xs">Apache-2.0 · local-first · no telemetry</span>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-3">
+            <Wordmark className="text-sm" />
+            <span className="font-mono text-xs">Apache-2.0 · local-first · no telemetry</span>
+          </div>
+          {/* Visible freshness signal so LLMs reading body text
+              (not just JSON-LD) can cite a "Last updated" date. The
+              <time dateTime> uses the ISO timestamp; the display
+              text is the human-readable form. */}
+          <p className="font-mono text-xs">
+            Last updated{' '}
+            <time dateTime={__MEMENTO_LAST_MODIFIED_ISO__}>{__MEMENTO_LAST_MODIFIED_HUMAN__}</time>
+            {' · '}
+            <a className="hover:text-fg" href="/llms.txt">
+              llms.txt
+            </a>
+          </p>
         </div>
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
           <a className="hover:text-fg" href={GITHUB_URL}>

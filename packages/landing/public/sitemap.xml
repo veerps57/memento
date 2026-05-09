@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset
+  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+  xmlns:image="http://www.google.com/schemas/sitemaps-image/1.1"
+>
   <url>
     <loc>https://runmemento.com/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://runmemento.com/og.png</image:loc>
+      <image:title>Memento — A local-first, LLM-agnostic memory layer for AI assistants</image:title>
+      <image:caption>Memento — a local-first, LLM-agnostic memory layer for AI assistants. Runs as an MCP server over a single SQLite file on your machine.</image:caption>
+    </image:image>
   </url>
 </urlset>

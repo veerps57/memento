@@ -47,4 +47,29 @@ export const FAQ_ITEMS: readonly FaqItem[] = [
     answer:
       'Any MCP-capable client. Tested with Claude Desktop, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, and the Anthropic Agent SDK. New MCP-capable clients work without code changes — Memento exposes standard MCP tools and the client decides when to call them.',
   },
+  {
+    question: 'Does Memento send my data anywhere?',
+    answer:
+      'No. Memento makes no outbound network calls by default. The MCP server runs entirely on your machine, the SQLite file lives in your home directory, and the embeddings model used for vector retrieval is downloaded once on first use and runs locally. Your AI client talks to its model provider as it always does — Memento sits between the client and your local memory store, never between you and your model provider.',
+  },
+  {
+    question: 'Can I use the same Memento store across multiple machines?',
+    answer:
+      "Memento doesn't sync. The store is a single SQLite file under your home directory; you can copy or symlink it across machines through whatever sync layer you already use (iCloud, Dropbox, Syncthing, rsync, a shared NFS mount). Two machines writing at the same time can corrupt the SQLite WAL — most users keep one primary machine and treat sync as an explicit copy step. For multi-machine workflows, the JSONL export/import is safer than file-level sync.",
+  },
+  {
+    question: 'What happens to my memory if I switch AI tools?',
+    answer:
+      'Nothing — the memory stays in your SQLite file. Memento exposes the same MCP server to every client, so switching from Claude Code to Cursor to OpenCode is just pointing the new client at the existing Memento server. Memories are never moved or transformed; the new client reads the same store.',
+  },
+  {
+    question: 'How do I back up or migrate my memory?',
+    answer:
+      'Two options. (1) Copy the SQLite file directly: cp ~/.local/share/memento/memento.db backup.db — the file is fully self-contained. (2) Use the portable JSONL export: npx @psraghuveer/memento export > memories.jsonl, then npx @psraghuveer/memento import < memories.jsonl on the target machine. The JSONL is human-readable and version-controllable; the format is documented in ADR-0013 and stable across versions.',
+  },
+  {
+    question: 'Does Memento work with custom or self-built MCP clients?',
+    answer:
+      "Yes. Memento exposes the standard MCP protocol over stdio — any client that speaks MCP can talk to it. Build a custom agent with the Anthropic Agent SDK, the OpenAI Agents SDK, a LangChain wrapper, a Python script using mcp-python, or any other MCP-compatible runtime, and point it at npx @psraghuveer/memento serve. No code changes on Memento's side are needed for new client types.",
+  },
 ];

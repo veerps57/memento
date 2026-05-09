@@ -79,3 +79,25 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+
+      # Push-based indexing for Bing + Yandex via the IndexNow
+      # protocol. Tells search engines "this URL changed, re-crawl
+      # now" instead of waiting for them to find it on their own
+      # schedule. The key file at the keyLocation URL is how
+      # IndexNow verifies that the caller controls the host. The
+      # URL list is short (single-page site) so we don't bother
+      # diffing changed paths. Failure here is non-fatal — the
+      # site is already deployed; if the ping is rejected (e.g.
+      # IndexNow is briefly down), the search engines will pick
+      # up the change on their normal crawl cycle.
+      - name: Notify IndexNow (Bing, Yandex)
+        continue-on-error: true
+        run: |
+          curl -sS -X POST 'https://api.indexnow.org/indexnow' \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "host": "runmemento.com",
+              "key": "c4b63a76e5ff63fa22b432681c274d49",
+              "keyLocation": "https://runmemento.com/c4b63a76e5ff63fa22b432681c274d49.txt",
+              "urlList": ["https://runmemento.com/"]
+            }'

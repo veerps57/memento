@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Memento favicon. Same design as the inline data: URI in index.html,
+  promoted to a real file so browsers don't fall back to /favicon.ico
+  (which used to 404, and was the dominant source of Cloudflare 4xx
+  noise — every browser auto-probes that path regardless of the
+  <link rel="icon"> declaration).
+
+  Canonical source. To regenerate the .ico / .png variants from this
+  SVG, run `node packages/landing/scripts/generate-icons.mjs`.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="6" fill="#0E0E10"/>
+  <text x="16" y="22" text-anchor="middle" font-family="ui-monospace, monospace" font-weight="600" font-size="18" fill="#E8B86C">m</text>
+</svg>
