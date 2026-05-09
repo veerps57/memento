@@ -90,6 +90,13 @@ export const COMPARISON: {
       perClientFiles: 'Copy files',
     },
     {
+      property: 'Curated memory bundles',
+      memento: 'Yes (packs)',
+      chatgptMemory: 'No',
+      claudeProjects: 'No',
+      perClientFiles: 'Manual copy',
+    },
+    {
       property: 'Offline use',
       memento: 'Fully offline',
       chatgptMemory: 'Online only',

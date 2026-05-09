@@ -25,7 +25,12 @@ export const FAQ_ITEMS: readonly FaqItem[] = [
   {
     question: 'How is Memento different from ChatGPT Memory or Claude Projects?',
     answer:
-      "ChatGPT Memory and Claude Projects are vendor-specific — your memory is locked to one model and one company. Memento is local-first and tool-agnostic: the same memory store backs every AI assistant you use, you own the SQLite file, and there's no vendor lock-in. The data model is also richer (typed kinds, scopes, decay, append-only audit log), so the assistant can reason about what's still true rather than just retrieving text blobs.",
+      "ChatGPT Memory and Claude Projects are vendor-specific — your memory is locked to one model and one company. Memento is local-first and tool-agnostic: the same memory store backs every AI assistant you use, you own the SQLite file, and there's no vendor lock-in. Four pillars summarise the difference. Local: one SQLite file under your home directory, no cloud, no telemetry. Typed: five memory kinds with kind-specific fields, not free-form text. Audited: every write is an event, conflicts surface for triage, memories decay if you don't confirm them. Yours: configurable behaviour, JSONL portable, Apache-2.0.",
+  },
+  {
+    question: "What's a Memento pack?",
+    answer:
+      "A pack is a curated YAML bundle of memories you can install in one step. Install the bundled engineering-simplicity pack with `memento pack install engineering-simplicity` and you get eleven memories distilled from John Maeda's The Laws of Simplicity. Author your own from memories already in your store with `memento pack create`, then share by file, HTTPS URL, or community contribution. Packs are how you go from a fresh install to a useful memory layer without re-typing the same preferences and conventions every time. Re-install is idempotent, uninstall is dry-run by default, and every pack-installed memory carries a reserved `pack:<id>:<version>` tag so provenance never drifts. Full guide: https://github.com/veerps57/memento/blob/main/docs/guides/packs.md",
   },
   {
     question: 'Where is my data stored?',
