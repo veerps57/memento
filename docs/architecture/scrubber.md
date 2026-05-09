@@ -60,22 +60,32 @@ The defaults are intentionally **biased toward false positives**. False positive
 
 ## Custom rules
 
-Users add rules in their config:
+`scrubber.rules` is the full ordered rule list — setting it replaces the default set entirely. To extend rather than replace, add the new rules to a copy of `DEFAULT_SCRUBBER_RULES` (re-exported from `@psraghuveer/memento-core/scrubber/defaults`) and pass the merged list. Because both `scrubber.enabled` and `scrubber.rules` are immutable at runtime (pinned at server start so a prompt-injected `config.set` cannot weaken redaction before writing a secret), overrides land via `configOverrides` to `createMementoApp` for library hosts, or via `memento config set scrubber.rules '<json>'` against a stopped server's persisted layer for the CLI.
 
-```yaml
-scrubber:
-  rules:
-    - id: company-internal-host
-      description: Mask internal hostnames
-      pattern: "(?i)\\b[a-z0-9-]+\\.internal\\.example\\.com\\b"
-      placeholder: "<internal-host>"
-      severity: low
-    # User rules are appended after the defaults by default;
-    # a top-level `scrubber.replaceDefaults: true` lets advanced
-    # users start from an empty rule list.
+A library host extending the defaults looks like:
+
+```ts
+import { createMementoApp } from "@psraghuveer/memento-core";
+import { DEFAULT_SCRUBBER_RULES } from "@psraghuveer/memento-core/scrubber/defaults";
+
+const app = await createMementoApp({
+  dbPath: "/abs/path/to/memento.db",
+  configOverrides: {
+    "scrubber.rules": [
+      ...DEFAULT_SCRUBBER_RULES,
+      {
+        id: "company-internal-host",
+        description: "Mask internal hostnames",
+        pattern: "(?i)\\b[a-z0-9-]+\\.internal\\.example\\.com\\b",
+        placeholder: "<internal-host>",
+        severity: "low",
+      },
+    ],
+  },
+});
 ```
 
-Rules are validated by Zod at config load. Invalid regexes (RE2-incompatible, including unbounded backreferences and lookaheads) are rejected at load time, not at write time. This is principle 1 (First principles): the cost of an invalid rule should be paid by the user once, not by every subsequent write.
+Rules are validated by Zod at startup. Invalid regexes (RE2-incompatible, including unbounded backreferences and lookaheads) are rejected then, not at write time. This is principle 1 (First principles): the cost of an invalid rule should be paid by the operator once, not by every subsequent write.
 
 ## Engine
 

@@ -21,7 +21,7 @@ The forces in play:
 - **The audit history must travel.** Memory rows alone are insufficient: P1.5 ("see and audit what was remembered") requires the `memory_events` log on the new machine to look the same as on the old.
 - **No silent loss.** If an item cannot be imported (schema drift, duplicate id, scrubber rejection), the user sees a structured report, not a partially-populated database.
 - **Re-running is safe.** Importing the same artefact twice must not duplicate memories or events; the second run is a no-op.
-- **Embeddings are large and optional.** A typical bge-small-en-v1.5 embedding is ~3 KB per memory. Including them by default would 10× the artefact size; skipping them lets the new machine re-embed lazily.
+- **Embeddings are large and optional.** A typical `bge-base-en-v1.5` embedding is ~6 KB per memory (768 floats). Including them by default would substantially inflate the artefact size; skipping them lets the new machine re-embed lazily.
 
 ## Decision
 
@@ -37,7 +37,7 @@ The file is UTF-8 JSONL. Every line is a JSON object with a `type` discriminator
 {"type":"memory_event","data":{ /* canonical MemoryEvent row */ }}
 {"type":"conflict","data":{ /* canonical Conflict row */ }}
 {"type":"conflict_event","data":{ /* canonical ConflictEvent row */ }}
-{"type":"embedding","data":{"memoryId":"…","model":"…","dimension":384,"vector":[…]}}
+{"type":"embedding","data":{"memoryId":"…","model":"…","dimension":768,"vector":[…]}}
 {"type":"footer","sha256":"<hex digest of all preceding bytes>"}
 ```
 

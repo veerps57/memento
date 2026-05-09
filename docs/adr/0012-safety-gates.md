@@ -117,7 +117,7 @@ A new `ConfigKey` `safety.batchWriteLimit` defaults to `100`. The schema enforce
 ### Risks
 
 - **Confirm-gate fatigue.** Operators might wrap the four commands in scripts that always pass `confirm: true`. That is fine — the gate exists to stop *the model*, not to nag humans. It is one literal field, not an interactive prompt.
-- **clientToken collision across legitimate retries.** If a client reuses the same token after a deliberate forget + rewrite, the second write succeeds (the partial index only covers active rows). Documented in `docs/architecture/state-model.md`.
+- **clientToken collision across legitimate retries.** If a client reuses the same token after a deliberate forget + rewrite, the second write succeeds (the partial index only covers active rows).
 - **Redaction false-confidence.** `redactSensitiveSnippets` redacts only the `text` field; metadata (tags, scope, time) may still leak hints. Mitigation: `sensitive` is a tool, not a vault. The README and the audit reference both call this out.
 - **Migration cost.** Two new columns and one new index. Backfill is constant-time (default values); the index builds once on existing data.
 

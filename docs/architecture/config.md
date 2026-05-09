@@ -6,90 +6,24 @@ The principle: **behavior is shaped by configuration, not by code.** Every magic
 
 ## The shape
 
-Configuration is a single typed schema (`@psraghuveer/memento-schema/config`). It is a Zod schema; the TypeScript type is derived via `z.infer`. There is no separate type definition to drift.
+Configuration is a single typed schema (`@psraghuveer/memento-schema/config-keys`). Each key is registered with `defineKey(name, valueSchema, { default, mutable })` so the Zod schema, the TypeScript type, the default, and the immutability flag are co-located in one place. There is no separate type definition to drift.
 
-```ts
-type ConfigKey =
-  // — Server —
-  | "server.transport" // 'stdio'
-  | "server.logLevel" // 'trace' | 'debug' | 'info' | 'warn' | 'error'
+The complete, authoritative list — every registered key with its current default, value schema, immutability flag, and one-line description — is auto-generated from the registry into [`docs/reference/config-keys.md`](../reference/config-keys.md) on every `pnpm docs:generate` and verified in `pnpm verify`. Keys are grouped by dotted namespace:
 
-  // — Server —
-  | "server.maxMessageBytes" // hard cap on a single JSON-RPC message (immutable)
+- **`retrieval.*`** — FTS tokenizer, vector backend, ranker strategy and per-signal weights, candidate / search limits, recency half-life, scope boost.
+- **`decay.*`** — per-kind half-life (`fact`, `preference`, `decision`, `todo`, `snippet`), pinned floor, archive threshold, archive-after window.
+- **`conflict.*`** — master enable, per-write timeout, scope strategy, search surfacing, open-pressure warning threshold, list limits, and the per-kind detector tunables that exist (`conflict.fact.overlapThreshold`).
+- **`extraction.*`** and **`context.*`** — async-extraction processing mode and dedup thresholds; query-less context-injection ranker tunables.
+- **`embedder.*`** and **`embedding.*`** — local model id and dimension (immutable), input-byte cap, wallclock timeout, cache directory; auto-embed on write; bounded startup backfill.
+- **`packs.*`** — bundled-registry path (immutable), URL-fetch policy, size cap, timeout, max memories per pack.
+- **`scrubber.*`** — engine enable / rule list (both immutable, pinned at server start), per-rule budget.
+- **`safety.*`** — bulk-operation and resource-cap defaults.
+- **`server.*`** — stdio message size cap (immutable).
+- **`storage.*`** — SQLite busy timeout.
+- **`privacy.*`**, **`user.*`**, **`write.*`**, **`import.*`**, **`export.*`**, **`memory.*`**, **`events.*`**, **`compact.*`** — single-key namespaces for read-path redaction, the user's preferred display name, write-time defaults, import / export limits, list pagination, and compaction batch size.
+- **`plugin.*`** — reserved namespace, currently inert.
 
-  // — Storage —
-  | "storage.path" // override default DB path
-  | "storage.busyTimeoutMs"
-
-  // — Scope —
-  | "scope.defaultWriteScope" // 'global' | 'workspace' | 'repo' | 'branch' | 'session'
-  | "scope.defaultReadFilter" // 'all' | 'effective' | <list>
-  | "scope.layerBoosts.<scope>" // per-scope boost when layering
-
-  // — Retrieval —
-  | "retrieval.fts.tokenizer"
-  | "retrieval.fts.bm25.k1"
-  | "retrieval.fts.bm25.b"
-  | "retrieval.vector.enabled"
-  | "retrieval.vector.backend" // 'sqlite-vec' | 'brute-force' | 'auto'
-  | "retrieval.ranker.strategy" // 'linear' | 'reciprocal-rank-fusion' | 'custom'
-  | "retrieval.ranker.weights.fts"
-  | "retrieval.ranker.weights.vector"
-  | "retrieval.ranker.weights.confidence"
-  | "retrieval.ranker.weights.recency"
-  | "retrieval.ranker.weights.scope"
-  | "retrieval.ranker.weights.pinned"
-  | "retrieval.recency.halfLife"
-
-  // — Decay —
-  | "decay.halfLife.fact"
-  | "decay.halfLife.preference"
-  | "decay.halfLife.decision"
-  | "decay.halfLife.todo"
-  | "decay.halfLife.snippet"
-  | "decay.pinnedFloor"
-  | "decay.archiveThreshold"
-  | "decay.archiveAfter"
-
-  // — Conflict —
-  | "conflict.enabled"
-  | "conflict.timeoutMs"
-  | "conflict.scopeStrategy" // 'same' | 'effective'
-  | "conflict.surfaceInSearch"
-  | "conflict.maxOpenBeforeWarning"
-  | "conflict.<kind>.*" // per-kind tuning
-
-  // — Embedding —
-  | "embedding.autoEmbed" // default true; fire-and-forget embed on write
-  // — Embedder —
-  | "embedder.local.model" // default 'bge-base-en-v1.5', resolved as `Xenova/<model>`
-  | "embedder.local.dimension" // default 768; must match the chosen model
-
-  | "embedder.local.maxInputBytes" // UTF-8 truncation cap; immutable
-  | "embedder.local.timeoutMs" // wallclock cap on a single embed; immutable
-  | "embedder.local.cacheDir" // model cache directory; null → XDG default; immutable
-
-  // — Scrubber —
-  | "scrubber.enabled" // immutable: cannot be flipped at runtime via config.set
-  | "scrubber.rules" // immutable: ordered list of rule objects
-  | "scrubber.engineBudgetMs" // per-rule wallclock budget; aborts a slow rule mid-scan
-  | "scrubber.placeholderFormat" // template string
-
-  // — Safety —
-  | "safety.batchWriteLimit" // max items per memory.write_many
-  | "safety.bulkDestructiveLimit" // max rows per forget_many/archive_many
-  | "safety.memoryContentMaxBytes" // operator-tunable cap on memory.write content
-  | "safety.summaryMaxBytes" // cap on memory.write summary
-  | "safety.tagMaxCount" // cap on memory.write tag count
-
-  // — Import —
-  | "import.maxBytes" // hard cap on an artefact accepted by `memento import`
-
-  // — Reserved —
-  | "plugin.*"; // reserved namespace, currently inert
-```
-
-The full list with types and defaults is generated into [`docs/reference/config-keys.md`](../reference/config-keys.md).
+For an exact value, default, mutability flag, or the rationale for any specific key, read the generated reference. This document keeps the prose; the reference keeps the table.
 
 ## Layering
 
@@ -118,15 +52,12 @@ Configuration is mutable at runtime via:
 
 Every mutation writes a `ConfigEvent` with `{ key, oldValue, newValue, source, actor, at }`. Configuration history is queryable: `memento config history --key=<key>`.
 
-Some keys are immutable after server start. The schema marks these (`mutable: false`); attempts to mutate them at runtime return an `IMMUTABLE` error. The current set:
+Some keys are immutable after server start. The schema marks these (`mutable: false`); attempts to mutate them at runtime return an `IMMUTABLE` error. The current set is enumerated in [`docs/reference/config-keys.md`](../reference/config-keys.md) — broadly: `storage.busyTimeoutMs`; the FTS tokenizer and vector backend; the local embedder's model, dimension, byte cap, timeout, and cache directory; the stdio message-size cap; the scrubber's enable flag and rule list; the bundled-pack registry path; and the startup-backfill knobs.
 
-- `storage.busyTimeoutMs`
-- `retrieval.fts.tokenizer`, `retrieval.vector.backend`
-- `embedder.local.model`, `embedder.local.dimension`, `embedder.local.maxInputBytes`, `embedder.local.timeoutMs`, `embedder.local.cacheDir`
-- `server.maxMessageBytes`
-- `scrubber.enabled`, `scrubber.rules` — pinned at server start so a prompt-injected MCP `config.set` cannot disable redaction or weaken the rule set before writing a secret. See ADR-0019 for the related "imports never trust caller-supplied audit claims" stance.
+Two clusters worth calling out for the reasoning:
 
-The set is small and pinned in the reference docs.
+- **`scrubber.enabled` and `scrubber.rules`** are pinned at server start so a prompt-injected MCP `config.set` cannot disable redaction or weaken the rule set before writing a secret. See ADR-0019 for the related "imports never trust caller-supplied audit claims" stance.
+- **`embedder.local.model` and `embedder.local.dimension`** are immutable so the stored vector space cannot drift mid-session — switching models is an explicit `embedding.rebuild` operation (Rule 14). Operators that need a different model pass it via `configOverrides` to `createMementoApp` (library use); `config.set` will reject the change at runtime.
 
 ## Defaults
 

@@ -15,8 +15,10 @@ The conflict workflow is the deliberate "slow down here" surface in Memento. It'
 List unresolved conflicts:
 
 ```bash
-memento conflict list --input '{"status":"open"}'
+memento conflict list --input '{"open":true}'
 ```
+
+The `conflict.list` filter is `{ open?: boolean, kind?: MemoryKind, memoryId?: ULID, limit?: number }`. Pass `open: true` for unresolved only, `open: false` for resolved only, or omit `open` entirely to list both.
 
 Read a single conflict:
 
@@ -24,7 +26,7 @@ Read a single conflict:
 memento conflict read --input '{"id":"<conflict-id>"}'
 ```
 
-Show the audit-event chain for a single conflict (when it was detected, who acknowledged it, when it resolved):
+Show the audit-event chain for a single conflict (when it was detected, who resolved it, with what resolution):
 
 ```bash
 memento conflict events --input '{"id":"<conflict-id>"}'
@@ -34,43 +36,39 @@ A `memento status` snapshot includes `conflictCount` (rows where `resolved_at IS
 
 ## Resolve a conflict
 
-`conflict.resolve` takes a conflict id, a resolution policy, and (depending on the policy) which side to keep:
+`conflict.resolve` takes a conflict id and one of four resolutions. The resolver writes a `resolved` event with the chosen value; **it does not touch the involved memories' lifecycle.** Any structural side-effects (forgetting the loser, superseding one with the other) are the caller's responsibility — the resolution is an audit decision, not a state-machine transition.
 
 ```bash
-# keep the new memory, mark the older one superseded
-memento conflict resolve --input '{
-  "id": "<conflict-id>",
-  "policy": "supersede",
-  "winner": "incoming"
-}'
+# accept the newer memory as authoritative
+memento conflict resolve --input '{"id":"<conflict-id>","resolution":"accept-new"}'
 
-# keep the existing memory, mark the new one superseded
-memento conflict resolve --input '{
-  "id": "<conflict-id>",
-  "policy": "supersede",
-  "winner": "existing"
-}'
+# accept the existing memory as authoritative
+memento conflict resolve --input '{"id":"<conflict-id>","resolution":"accept-existing"}'
 
-# acknowledge that the two memories coexist (they are not actually contradictory)
-memento conflict resolve --input '{
-  "id": "<conflict-id>",
-  "policy": "coexist"
-}'
+# acknowledge the two memories coexist (e.g. the detector was over-eager)
+memento conflict resolve --input '{"id":"<conflict-id>","resolution":"ignore"}'
+
+# defer to a manual supersede the caller will run separately
+memento conflict resolve --input '{"id":"<conflict-id>","resolution":"supersede"}'
 ```
 
-`supersede` rewrites one of the involved memories' lifecycle to `superseded` and links it to the surviving row, so future reads of the loser still resolve to the winner with the relationship intact. `coexist` clears the conflict without changing either memory.
+The four valid resolutions are `accept-new`, `accept-existing`, `supersede`, and `ignore`. After resolving, follow up with `memento memory forget` or `memento memory supersede` if you need the corresponding lifecycle change.
 
 The full input schemas are in [`docs/reference/mcp-tools.md`](../reference/mcp-tools.md) under the `conflict.*` namespace.
 
 ## Re-scan after the fact
 
-If you change `conflict.scopeStrategy` or import a batch of memories from another machine, you can re-run the detector across the live store:
+If you flip `conflict.scopeStrategy` or import a batch of memories from another machine, re-run the detector across the live store. `conflict.scan` has two modes — `memory` to recheck a single id, `since` to replay detection over every memory created at or after a timestamp:
 
 ```bash
-memento conflict scan
+# recheck one memory after a config change
+memento conflict scan --input '{"mode":"memory","memoryId":"<memory-id>"}'
+
+# replay detection across everything written in the last week
+memento conflict scan --input '{"mode":"since","since":"2026-05-03T00:00:00.000Z"}'
 ```
 
-`scan` only inspects pairs that haven't already produced a conflict row, so it is safe to re-run; it does not surface duplicate noise on memories that were already adjudicated.
+Mode is required (the schema rejects bare `conflict.scan` calls) and the matching field — `memoryId` for `memory`, `since` for `since` — is required by `.refine()`. Already-resolved conflicts are not re-opened; the scan emits a fresh `Conflict` row only for pairs that don't already have one.
 
 ## Configuration
 

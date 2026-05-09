@@ -4,11 +4,11 @@ This directory ships [Anthropic-format skills](https://docs.claude.com/en/docs/a
 
 ## Why skills live in this repo
 
-The persona-snippet approach in [`docs/guides/teach-your-assistant.md`](../docs/guides/teach-your-assistant.md) is documentation: users have to find it, copy it, paste it into the right config file, and remember to update it when Memento's surface evolves. A skill bundle moves that knowledge into something the runtime actually reaches for — the assistant's client loads the skill on intent match, not on user discipline.
+The persona-snippet approach in [docs/guides/teach-your-assistant.md](https://github.com/veerps57/memento/blob/main/docs/guides/teach-your-assistant.md) is documentation: users have to find it, copy it, paste it into the right config file, and remember to update it when Memento's surface evolves. A skill bundle moves that knowledge into something the runtime actually reaches for — the assistant's client loads the skill on intent match, not on user discipline.
 
 Shipping the skill from this repo (rather than a side channel) keeps the skill versioned with the code. When an ADR adds or changes a command, the matching skill update lands in the same PR. There is no parallel artefact to chase.
 
-This is purely additive: the skill bundle does not change Memento's MCP/CLI surface, data model, dependencies, or load-bearing config defaults. No ADR is required (per [`AGENTS.md`](../AGENTS.md) §"Before you start a change"). Reviewers who want to understand the rationale can read this file.
+This is purely additive: the skill bundle does not change Memento's MCP/CLI surface, data model, dependencies, or load-bearing config defaults. No ADR is required (per [AGENTS.md](https://github.com/veerps57/memento/blob/main/AGENTS.md) §"Before you start a change"). Reviewers who want to understand the rationale can read this file.
 
 ## Available skills
 
@@ -67,7 +67,7 @@ The skill should fire and the assistant should answer with rule 2 (no hardcoded 
 
 ### Other MCP clients
 
-Anthropic skills started as a Claude-product feature; the [`SKILL.md`](https://docs.claude.com/en/docs/agents/skills) format has since been adopted by other MCP clients. Most skill-capable clients read user-scope skills from `~/.claude/skills/<name>/SKILL.md`; a few use a client-specific path. Check your client's docs for the exact location. For clients that don't load skills at all, use the persona snippet in [`docs/guides/teach-your-assistant.md`](../docs/guides/teach-your-assistant.md). The snippet's content mirrors what the `memento` skill teaches; the difference is delivery mechanism. There is no equivalent contributor surface for non-skill clients today — `AGENTS.md` is the canonical document, and contributors using non-skill clients should read it before opening a PR.
+Anthropic skills started as a Claude-product feature; the [`SKILL.md`](https://docs.claude.com/en/docs/agents/skills) format has since been adopted by other MCP clients. Most skill-capable clients read user-scope skills from `~/.claude/skills/<name>/SKILL.md`; a few use a client-specific path. Check your client's docs for the exact location. For clients that don't load skills at all, use the persona snippet in [docs/guides/teach-your-assistant.md](https://github.com/veerps57/memento/blob/main/docs/guides/teach-your-assistant.md). The snippet's content mirrors what the `memento` skill teaches; the difference is delivery mechanism. There is no equivalent contributor surface for non-skill clients today — `AGENTS.md` is the canonical document, and contributors using non-skill clients should read it before opening a PR.
 
 ## Verifying it works
 

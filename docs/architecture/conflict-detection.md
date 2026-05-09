@@ -53,7 +53,7 @@ Conflict semantics differ by kind:
 | `fact`       | Same subject, contradictory predicate (heuristic: high text overlap + opposite stance) |
 | `preference` | Same preference key, different value                                                   |
 | `decision`   | Same decision context, different choice                                                |
-| `todo`       | Identical action, different `done` state                                               |
+| `todo`       | Identical action, different `due` timestamp                                            |
 | `snippet`    | Same identifier in same language, different body                                       |
 
 Each policy is implemented as a function that takes `(newMemory, candidate, config)` and returns `{ conflict: true, evidence } | { conflict: false }`. Policies are registered at module load; the structural test asserts that every `MemoryKind` has a policy. Adding a new kind without adding a policy fails the build.

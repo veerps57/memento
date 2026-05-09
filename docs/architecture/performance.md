@@ -23,7 +23,7 @@ The goal is honesty. If an operation is `O(n)` we say so, and we name the thresh
 Notes:
 
 - `n_e` is the count of active rows that already carry an embedding for the current model. Rows without an embedding (because vector retrieval was disabled when they were written, or because the model changed) are skipped by vector search and counted separately by `embedding.rebuild`.
-- "Indexed" means an index that already exists in `0001_initial_schema.ts`; adding new ones is a migration.
+- "Indexed" means an index that already exists in `packages/core/src/storage/migrations/`; adding new ones is a new migration.
 
 ## What the numbers mean in practice
 
@@ -68,8 +68,8 @@ Every entry in this table is in `docs/reference/config-keys.md`. We list them he
 | --------------------------------------- | --------------------------------------------------------------------------- |
 | `retrieval.vector.enabled`              | Enables the linear-cost vector path on search and the async embedder call on write (default: true) |
 | `retrieval.vector.backend`              | `brute-force` is `O(n_e · d)`; `auto` will pick a native ANN when available |
-| `retrieval.candidates.maxPerSource`     | Bounds `m` from each candidate source — caps ranker work                     |
-| `retrieval.results.defaultPageSize`     | Bounds `k` for the top-`k` heap                                              |
+| `retrieval.candidate.ftsLimit` / `retrieval.candidate.vectorLimit` | Bound `m` from each candidate source — cap ranker work                     |
+| `retrieval.search.defaultLimit` / `retrieval.search.maxLimit` | Bound `k` for the top-`k` heap (default and ceiling)                  |
 | `safety.bulkDestructiveLimit`           | Caps the work of one bulk `forget_many` / `archive_many` call               |
 | `embedder.local.model`                  | Changing it requires `memento embedding rebuild` (linear-cost reindex)      |
 

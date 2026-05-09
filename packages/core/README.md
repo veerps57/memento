@@ -189,7 +189,7 @@ const result = await reembedAll(repo, provider, {
 
 ### Commands (ADR 0003)
 
-The single command registry. Every operation Memento exposes is defined exactly **once** as a `Command` — name, side-effect class, Zod input/output schemas, and a `Result`-returning handler. Adapters (`@psraghuveer/memento-server` for MCP, `@psraghuveer/memento` for the CLI) bind to the same registry; a contract test will assert parity once the adapters land.
+The single command registry. Every operation Memento exposes is defined exactly **once** as a `Command` — name, side-effect class, Zod input/output schemas, and a `Result`-returning handler. Adapters (`@psraghuveer/memento-server` for MCP, `@psraghuveer/memento` for the CLI, `@psraghuveer/memento-dashboard` for the local web UI) bind to the same registry. A contract test in `packages/cli/test/deprecation.contract.test.ts` pins this for every command that carries the deprecated flag.
 
 | Export                                                         | Purpose                                                                                                                                                                                                                                                                 |
 | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -201,7 +201,7 @@ The single command registry. Every operation Memento exposes is defined exactly 
 | `CommandSurface`                                               | Closed enum: `'mcp' \| 'cli'`. Each command lists the surfaces it must appear on.                                                                                                                                                                                       |
 | `CommandRegistry`, `CommandRegistryBuilder`, `CommandMetadata` | Supporting types.                                                                                                                                                                                                                                                       |
 
-The registry only owns the contract here — concrete commands (memory, conflict, embedding, compact) are registered via the factory helpers exported alongside (`createMemoryCommands`, `createConflictCommands`, `createEmbeddingCommands`, `createCompactCommands`); adapters in `@psraghuveer/memento-server` and `@psraghuveer/memento` consume the frozen registry.
+The registry only owns the contract here — concrete commands (memory, conflict, embedding, compact, config, system, pack) are registered by the engine bootstrap (`createMementoApp` in this package) via internal factory helpers under `packages/core/src/commands/`. Those factories are private to the engine: adapters in `@psraghuveer/memento-server`, `@psraghuveer/memento`, and `@psraghuveer/memento-dashboard` consume the frozen registry that bootstrap returns, never the factories directly. The public surface from `@psraghuveer/memento-core` is `createMementoApp`, `createRegistry`, `executeCommand`, and the `Command` / `CommandRegistry` types.
 
 ```ts
 import { createRegistry, executeCommand } from "@psraghuveer/memento-core";

@@ -56,4 +56,4 @@ If in doubt, run `pnpm changeset` and pick "none" for the bump type — that rec
 ## See also
 
 - [Changesets docs](https://github.com/changesets/changesets)
-- [`/docs/contributing.md`](../docs/contributing.md)
+- [`CONTRIBUTING.md`](../CONTRIBUTING.md)

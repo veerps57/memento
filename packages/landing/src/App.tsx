@@ -443,7 +443,7 @@ function Packs(): JSX.Element {
         <p className="mt-6 max-w-prose text-muted">
           A fresh Memento install is empty. Packs are curated YAML bundles of memories you can
           install in one step — a stack guide (Rust + Axum, TypeScript + pnpm, Python + uv…), a
-          team's conventions, or a personal set you authored on another machine. Bundled with v0.9.
+          team's conventions, or a personal set you authored on another machine.
         </p>
         <div className="mt-10 grid max-w-2xl gap-3">
           <CodeBlock command="memento pack install engineering-simplicity" />

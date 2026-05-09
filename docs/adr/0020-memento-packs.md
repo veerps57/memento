@@ -1,6 +1,6 @@
 # ADR-0020: Memento packs — curated YAML bundles for cold-start seeding
 
-- **Status:** Accepted
+- **Status:** Accepted (amended by [ADR-0021](0021-install-time-embedding-and-startup-backfill.md) — `pack.install` now performs synchronous batch embedding so vector retrieval works on the first session after install; the pack format and install semantics are unchanged)
 - **Date:** 2026-05-09
 - **Deciders:** Memento Authors
 - **Tags:** adoption, lifecycle, distribution, authoring
@@ -13,7 +13,7 @@ The three existing population mechanisms each solve a different problem and none
 
 - **`memento import`** ([ADR-0013](0013-portable-export-import.md)) is the wire format for machine-to-machine portability. Every record carries a synthetic ULID, a full `OwnerRef`, an event chain, and a footer SHA — the artefact is optimised for round-tripping a real store, not for hand-authoring a curated bundle. Authoring a `memento-export/v1` JSONL by hand is hostile UX: the user has to mint synthetic ids, fabricate event timestamps, and pretend the file came out of a store that never existed. Nothing in the format is geared for the "I want to share my Rust+Axum conventions with the world" use case.
 - **`memory.extract`** ([ADR-0016](0016-assisted-extraction-and-context-injection.md)) compounds passive use over time — once the assistant has a few sessions of context, extraction snowballs. But on a fresh install there is *nothing to anchor on*: the extractor's dedup against existing memories is trivial when there are no existing memories, and the first batch lands at the lower extracted-confidence (0.8) so it decays faster than hand-authored content. Extraction is a flywheel, and a flywheel needs a push.
-- **`memento init`** ([packages/cli/src/lifecycle/init.ts](../../packages/cli/src/lifecycle/init.ts:1)) is print-only MCP client setup. By design it does not write to the store — it prints copy-paste snippets for Claude Desktop, Cursor, etc. and exits. Conflating it with memory seeding would mix two unrelated concerns and break the `init` failure mode (today, `init` is safely re-runnable; making it write memory would change that).
+- **`memento init`** ([packages/cli/src/lifecycle/init.ts](../../packages/cli/src/lifecycle/init.ts)) is print-only MCP client setup. By design it does not write to the store — it prints copy-paste snippets for Claude Desktop, Cursor, etc. and exits. Conflating it with memory seeding would mix two unrelated concerns and break the `init` failure mode (today, `init` is safely re-runnable; making it write memory would change that).
 
 The forces in play:
 
@@ -77,7 +77,7 @@ The install path is composable from operations that already exist:
 
 1. **Resolve the manifest.** `BundledResolver`, `FileResolver`, and `UrlResolver` implement a single `PackSourceResolver` interface. The CLI flag (`<id>`, `--from-file`, `--from-url`) selects which resolver runs. URL fetches are HTTPS-only, do not follow redirects, and abort on first byte exceeding `packs.maxPackSizeBytes`.
 2. **Parse and validate.** YAML → `PackManifestSchema` (Zod). Validation errors carry the YAML line/column. Unknown top-level keys produce warnings, not errors.
-3. **Build write items.** For each memory in `manifest.memories`, merge `manifest.defaults`, append the reserved tag `pack:<id>:<version>`, apply scope override if the caller passed one, and generate a deterministic `clientToken = sha256(packId + version + index)`. The `clientToken` is what makes re-install idempotent ([memory write path](../../packages/core/src/storage/memory-repository.ts) §clientToken — per-scope, per-token uniqueness via partial index).
+3. **Build write items.** For each memory in `manifest.memories`, merge `manifest.defaults`, append the reserved tag `pack:<id>:<version>`, apply scope override if the caller passed one, and generate a deterministic `clientToken = sha256(packId + version + index)`. The `clientToken` is what makes re-install idempotent ([memory write path](../../packages/core/src/repository/memory-repository.ts) §clientToken — per-scope, per-token uniqueness via partial index).
 4. **Detect content drift.** Compute a stable canonical JSON hash over `manifest.memories` (excluding cosmetic fields: title, description, author). Compare against memories already tagged `pack:<id>:<version>`. If the existing set's clientToken hashes match the new manifest's, the install is a no-op (`alreadyInstalled: true`). If they diverge, refuse with `PACK_VERSION_REUSED` — the pack author must bump the version.
 5. **Run the standard write path.** The translated items go through `memory.write_many` unchanged: the scrubber runs on every `content`/`summary`/`rationale`, `OwnerRef` is stamped local-self by the command layer, and a `created` event is emitted per memory. No new event variant or payload extension is added — the canonical `pack:<id>:<version>` tag is the entire pack provenance, queryable via the standard tag filter.
 6. **Return a structured snapshot.** `{ dryRun, written: [...], skipped: [...], alreadyInstalled, packId, version }`. Mirrors the shape of the import snapshot for caller ergonomics.

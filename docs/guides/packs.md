@@ -134,7 +134,13 @@ This catches the "I edited the YAML but kept v1.0.0" footgun. Mint a new version
 memento pack uninstall engineering-simplicity --version 0.1.0 --confirm
 ```
 
-Defaults to `--dry-run` per [ADR-0014](../adr/0014-bulk-destructive-operations.md). Pass `--dry-run=false` (or omit the flag and confirm via the dashboard) to actually forget. Each per-memory transition emits a normal `forgotten` event — the audit log shape is identical to manual `memory.forget` calls.
+The `--confirm` flag is required (the dry-run-default applies at the registry layer per [ADR-0014](../adr/0014-bulk-destructive-operations.md); the CLI lifecycle inverts the default so `memento pack uninstall ... --confirm` actually forgets). To preview first without writing, add `--dry-run`:
+
+```bash
+memento pack uninstall engineering-simplicity --version 0.1.0 --dry-run --confirm
+```
+
+Each per-memory transition emits a normal `forgotten` event — the audit log shape is identical to manual `memory.forget` calls.
 
 To remove every version of a pack:
 

@@ -1,6 +1,6 @@
 # Bundled packs
 
-Curated YAML bundles of memories that ship with Memento. Each pack lives at `<id>/v<version>.yaml`. The full guide — what packs are, how to install one, how to author your own — is at [`../docs/guides/packs.md`](../docs/guides/packs.md).
+Curated YAML bundles of memories that ship with Memento. Each pack lives at `<id>/v<version>.yaml`. The full guide — what packs are, how to install one, how to author your own — is at [docs/guides/packs.md](https://github.com/veerps57/memento/blob/main/docs/guides/packs.md).
 
 ## What's bundled
 
@@ -28,7 +28,7 @@ After either path: run `pnpm format:packs && pnpm test packages/core/test/packs/
 
 ## Contributing a new pack
 
-The full walkthrough is [Authoring a pack](../docs/guides/packs.md#authoring-a-pack) in the guide. The TL;DR:
+The full walkthrough is [Authoring a pack](https://github.com/veerps57/memento/blob/main/docs/guides/packs.md#authoring-a-pack) in the guide. The TL;DR:
 
 1. Drop a `<id>/v<version>.yaml` under this directory.
 2. Add the `# yaml-language-server: $schema=https://runmemento.com/schemas/memento-pack-v1.json` header so editors validate live.

@@ -18,7 +18,7 @@ Two forces have changed the math for the **product**:
 
 1. **Adoption depends on transparency and trust.** The persona audit (P1.5: "see and audit what was remembered" and P1.6: "correct or remove memory at will") is satisfied by the CLI in principle, but in practice users who don't live in terminals never reach those flows. A read-mostly, curate-occasionally GUI is the missing affordance.
 
-2. **The core surface is stable enough.** Memento ships 32 registered commands, 9 lifecycle commands, 9 stable error codes, and a frozen-additive config registry. A dashboard built strictly on that surface costs the core nothing.
+2. **The core surface is stable enough.** At the time of this decision Memento shipped 32 registered commands, 9 lifecycle commands, 9 stable error codes, and a frozen-additive config registry; that surface has only grown additively since (the auto-generated [`docs/reference/cli.md`](../reference/cli.md) and [`docs/reference/error-codes.md`](../reference/error-codes.md) carry the current counts). A dashboard built strictly on that surface costs the core nothing.
 
 The constraint that makes this tractable: **the dashboard introduces no new MCP commands, no new registered CLI commands, no new config keys, no schema migrations.** It is a pure projection of the existing surface, plus four small client-side bridges (tag-filtering on lists, compact preview, sensitive list, global config history) where the registry is deliberately narrow.
 
