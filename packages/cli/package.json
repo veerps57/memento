@@ -51,7 +51,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "scripts", "skills", "README.md"],
+  "files": ["dist", "scripts", "skills", "packs", "README.md"],
   "dependencies": {
     "@clack/prompts": "0.8.2",
     "@hono/node-server": "1.13.7",
@@ -74,10 +74,11 @@
   },
   "scripts": {
     "build:skills": "node ./scripts/copy-skills.mjs",
-    "build": "node ./scripts/copy-skills.mjs && tsup",
-    "clean": "rm -rf dist skills .turbo *.tsbuildinfo",
+    "build:packs": "node ./scripts/copy-packs.mjs",
+    "build": "node ./scripts/copy-skills.mjs && node ./scripts/copy-packs.mjs && tsup",
+    "clean": "rm -rf dist skills packs .turbo *.tsbuildinfo",
     "test": "vitest run",
     "postinstall": "node ./scripts/postinstall.mjs",
-    "prepack": "node ./scripts/copy-skills.mjs"
+    "prepack": "node ./scripts/copy-skills.mjs && node ./scripts/copy-packs.mjs"
   }
 }

@@ -62,3 +62,7 @@ reports/
 # Skills bundle staged by the CLI build (source of truth lives at
 # /skills/; packages/cli/skills/ is a per-build copy for the npm tarball).
 packages/cli/skills/
+
+# Bundled packs staged by the CLI build (source of truth lives at
+# /packs/; packages/cli/packs/ is a per-build copy for the npm tarball).
+packages/cli/packs/

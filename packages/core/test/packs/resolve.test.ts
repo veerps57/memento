@@ -80,7 +80,23 @@ describe('BundledResolver', () => {
     if (!result.ok) expect(result.code).toBe('NOT_FOUND');
   });
 
-  it('refuses bundled lookups without an explicit version (v1 contract)', async () => {
+  it('returns NOT_FOUND when the pack directory exists but contains no v*.yaml files', async () => {
+    const dir = await makeTempDir();
+    const packDir = join(dir, 'rust-axum');
+    await mkdir(packDir, { recursive: true });
+    // Drop a non-version file in the directory (e.g. a stray
+    // README); the picker should ignore it.
+    await writeFile(join(packDir, 'README.md'), '# nothing here yet');
+    const r = opts({ bundledRoot: dir });
+    const result = await r.resolve({
+      type: 'bundled',
+      id: PackIdSchema.parse('rust-axum'),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('NOT_FOUND');
+  });
+
+  it('returns NOT_FOUND when no version is given and the pack directory is missing entirely', async () => {
     const dir = await makeTempDir();
     const r = opts({ bundledRoot: dir });
     const result = await r.resolve({
@@ -104,6 +120,87 @@ describe('BundledResolver', () => {
     });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.raw).toContain('memento-pack/v1');
+  });
+
+  it('picks the only version when no version is supplied and one exists', async () => {
+    const dir = await makeTempDir();
+    const packDir = join(dir, 'rust-axum');
+    await mkdir(packDir, { recursive: true });
+    await writeFile(join(packDir, 'v0.1.0.yaml'), 'format: memento-pack/v1\nid: rust-axum\n');
+    const r = opts({ bundledRoot: dir });
+    const result = await r.resolve({
+      type: 'bundled',
+      id: PackIdSchema.parse('rust-axum'),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.sourceLabel).toContain('v0.1.0.yaml');
+  });
+
+  it('picks the highest stable version when multiple versions exist', async () => {
+    const dir = await makeTempDir();
+    const packDir = join(dir, 'rust-axum');
+    await mkdir(packDir, { recursive: true });
+    await writeFile(join(packDir, 'v0.1.0.yaml'), '# v0.1.0\n');
+    await writeFile(join(packDir, 'v1.0.0.yaml'), '# v1.0.0\n');
+    await writeFile(join(packDir, 'v0.9.5.yaml'), '# v0.9.5\n');
+    const r = opts({ bundledRoot: dir });
+    const result = await r.resolve({
+      type: 'bundled',
+      id: PackIdSchema.parse('rust-axum'),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.sourceLabel).toContain('v1.0.0.yaml');
+  });
+
+  it('prefers stable over prerelease at the same MAJOR.MINOR.PATCH (semver §11)', async () => {
+    const dir = await makeTempDir();
+    const packDir = join(dir, 'rust-axum');
+    await mkdir(packDir, { recursive: true });
+    await writeFile(join(packDir, 'v1.0.0.yaml'), '# stable\n');
+    await writeFile(join(packDir, 'v1.0.0-rc.1.yaml'), '# rc1\n');
+    const r = opts({ bundledRoot: dir });
+    const result = await r.resolve({
+      type: 'bundled',
+      id: PackIdSchema.parse('rust-axum'),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.sourceLabel).toContain('v1.0.0.yaml');
+  });
+
+  it('picks the higher prerelease when only prereleases are present', async () => {
+    const dir = await makeTempDir();
+    const packDir = join(dir, 'rust-axum');
+    await mkdir(packDir, { recursive: true });
+    await writeFile(join(packDir, 'v1.0.0-rc.1.yaml'), '# rc1\n');
+    await writeFile(join(packDir, 'v1.0.0-rc.10.yaml'), '# rc10\n');
+    await writeFile(join(packDir, 'v1.0.0-rc.2.yaml'), '# rc2\n');
+    const r = opts({ bundledRoot: dir });
+    const result = await r.resolve({
+      type: 'bundled',
+      id: PackIdSchema.parse('rust-axum'),
+    });
+    expect(result.ok).toBe(true);
+    // Numeric prerelease identifiers compare numerically, so
+    // rc.10 > rc.2 > rc.1.
+    if (result.ok) expect(result.sourceLabel).toContain('v1.0.0-rc.10.yaml');
+  });
+
+  it('ignores files that are not v<semver>.yaml', async () => {
+    const dir = await makeTempDir();
+    const packDir = join(dir, 'rust-axum');
+    await mkdir(packDir, { recursive: true });
+    await writeFile(join(packDir, 'v1.0.0.yaml'), '# v1.0.0\n');
+    await writeFile(join(packDir, 'README.md'), '# notes');
+    await writeFile(join(packDir, 'v.yaml'), '# bad: missing version');
+    await writeFile(join(packDir, 'v01.0.0.yaml'), '# bad: leading zero');
+    await writeFile(join(packDir, 'v2.yaml'), '# bad: not full semver');
+    const r = opts({ bundledRoot: dir });
+    const result = await r.resolve({
+      type: 'bundled',
+      id: PackIdSchema.parse('rust-axum'),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.sourceLabel).toContain('v1.0.0.yaml');
   });
 
   it('honours bundledOverride for tests', async () => {

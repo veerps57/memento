@@ -15,9 +15,15 @@
 // for a fake. Production passes the real implementation; tests
 // pass an in-memory builder.
 
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import {
+  type CreateMementoAppOptions,
   type EmbeddingProvider,
   MIGRATIONS,
+  type MementoApp,
   type MigrationOutcome,
   createMementoApp,
   migrateToLatest,
@@ -268,8 +274,52 @@ async function defaultLaunchDashboard(
   return { url, port: resolvedPort, host: options.host, opened: openedBrowser };
 }
 
+/**
+ * Resolve the staged bundled-packs directory shipped in the CLI
+ * tarball — sibling of `dist/`, populated by `copy-packs.mjs` at
+ * build time. Returns `null` when the directory is absent
+ * (development workflow without a fresh build, or odd packaging),
+ * in which case the runtime falls back to the registry default
+ * for `packs.bundledRegistryPath` (no bundled-id installs).
+ *
+ * Resolved at module-load time, not per-call, since the path is a
+ * function of the binary's install location and never changes
+ * within a process.
+ */
+function resolveBundledPacksPath(): string | null {
+  const here = dirname(fileURLToPath(import.meta.url));
+  // `import.meta.url` resolves to the CLI's bundled `dist/cli.js`
+  // (or `src/run.ts` under tsx/vitest); the staged `packs/`
+  // directory is the dist's sibling either way.
+  const candidate = resolve(here, '..', 'packs');
+  return existsSync(candidate) ? candidate : null;
+}
+
+const BUNDLED_PACKS_PATH = resolveBundledPacksPath();
+
+/**
+ * Wraps `createMementoApp` so the CLI sets `packs.bundledRegistryPath`
+ * to the staged directory by default. Caller-supplied
+ * `configOverrides` win over the CLI default — tests and embedded
+ * integrations can still point the resolver elsewhere — but a
+ * vanilla `memento pack install <bundled-id>` resolves out of the
+ * box without manual config.
+ */
+async function createAppWithCliDefaults(options: CreateMementoAppOptions): Promise<MementoApp> {
+  if (BUNDLED_PACKS_PATH === null) {
+    return createMementoApp(options);
+  }
+  return createMementoApp({
+    ...options,
+    configOverrides: {
+      'packs.bundledRegistryPath': BUNDLED_PACKS_PATH,
+      ...options.configOverrides,
+    },
+  });
+}
+
 const DEFAULT_DEPS: RunCliDeps = {
-  createApp: createMementoApp,
+  createApp: createAppWithCliDefaults,
   migrateStore: defaultMigrateStore,
   serveStdio: defaultServeStdio,
   resolveEmbedder: defaultResolveEmbedder,

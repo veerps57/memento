@@ -81,10 +81,10 @@ memento pack install --from-file ./my-pack.yaml
 ### From a bundled pack id
 
 ```bash
-memento pack install rust-axum --version 1.0.0
+memento pack install engineering-simplicity
 ```
 
-Bundled packs live under the directory named by `packs.bundledRegistryPath` (immutable, default `null` — set by the runtime to the package's bundled directory). Layout: `<root>/<id>/v<version>.yaml`.
+Bundled packs live under the directory named by `packs.bundledRegistryPath` (immutable, default `null` — set by the runtime to the package's bundled directory). Layout: `<root>/<id>/v<version>.yaml`. When `--version` is omitted, the resolver scans the pack directory and picks the highest semver (stable beats prerelease per semver §11).
 
 ### From an HTTPS URL
 
@@ -131,7 +131,7 @@ This catches the "I edited the YAML but kept v1.0.0" footgun. Mint a new version
 `pack.uninstall` is a thin wrapper over `memory.forget_many` filtered by the pack's tag:
 
 ```bash
-memento pack uninstall rust-axum --version 1.0.0 --confirm
+memento pack uninstall engineering-simplicity --version 0.1.0 --confirm
 ```
 
 Defaults to `--dry-run` per [ADR-0014](../adr/0014-bulk-destructive-operations.md). Pass `--dry-run=false` (or omit the flag and confirm via the dashboard) to actually forget. Each per-memory transition emits a normal `forgotten` event — the audit log shape is identical to manual `memory.forget` calls.
@@ -139,7 +139,7 @@ Defaults to `--dry-run` per [ADR-0014](../adr/0014-bulk-destructive-operations.m
 To remove every version of a pack:
 
 ```bash
-memento pack uninstall rust-axum --all-versions --confirm
+memento pack uninstall engineering-simplicity --all-versions --confirm
 ```
 
 Forgotten memories are soft-removed; restore via `memento memory restore <id>` if you change your mind, or re-install the pack to bring them back fresh.
@@ -206,7 +206,7 @@ After either path, run `pnpm format:packs && pnpm test packages/core/test/packs/
 Every pack-installed memory carries the canonical tag `pack:<id>:<version>`. The tag is the entire provenance — no new event variant, no new column on `Memory`. Query it with the standard tag filter:
 
 ```bash
-memento memory list --tag pack:rust-axum:1.0.0
+memento memory list --tag pack:engineering-simplicity:0.1.0
 ```
 
 `pack:` is a reserved tag prefix. User-authored writes (`memory.write`, `memory.write_many`, `memory.extract`) reject any tag starting with `pack:` so provenance can't be forged. Only the pack-install path writes these tags.

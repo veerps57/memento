@@ -13,7 +13,7 @@
 // raw bytes"; size caps and timeouts apply here, content
 // validation runs in {@link parsePackManifest}.
 
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { PackId, PackVersion } from '@psraghuveer/memento-schema';
@@ -24,8 +24,9 @@ import type { PackId, PackVersion } from '@psraghuveer/memento-schema';
  * these; the resolver's `resolve` decides what to read.
  *
  * - `bundled` — pull from `packs.bundledRegistryPath`. `version`
- *   is optional; when omitted the resolver picks the highest
- *   semver under `packs/<id>/` (ADR-0020 §Bundled).
+ *   is optional; when omitted the resolver scans
+ *   `<bundledRoot>/<id>/v*.yaml`, parses each filename as semver,
+ *   and picks the highest (stable beats prerelease per semver §11).
  * - `file`    — read from a local filesystem path. Used for
  *   `pack install --from-file <path>` and for pack authoring
  *   round-trips.
@@ -136,20 +137,100 @@ async function resolveBundled(
       error: `no bundled pack registry configured (set "packs.bundledRegistryPath")`,
     };
   }
-  // Without a directory listing we cannot pick "the highest
-  // version". For v1 we require an explicit version when reading
-  // bundled packs to keep the resolver dependency-free; the
-  // command layer is welcome to scan the directory and pick a
-  // version, then call us with the resolved version.
-  if (!version) {
-    return {
-      ok: false,
-      code: 'NOT_FOUND',
-      error: `bundled pack ${id} requires a version when no override is supplied`,
-    };
+  let resolvedVersion: PackVersion;
+  if (version) {
+    resolvedVersion = version;
+  } else {
+    // Pick the highest semver under `<bundledRoot>/<id>/v*.yaml`.
+    // Stable releases beat prereleases at the same MAJOR.MINOR.PATCH
+    // (per semver §11). The directory may also contain a README or
+    // other files; non-`v<semver>.yaml` entries are ignored.
+    const picked = await pickHighestVersion(join(opts.bundledRoot, id));
+    if (picked === null) {
+      return {
+        ok: false,
+        code: 'NOT_FOUND',
+        error: `bundled pack ${id} not found at ${opts.bundledRoot}/${id}`,
+      };
+    }
+    resolvedVersion = picked;
   }
-  const path = join(opts.bundledRoot, id, `v${version}.yaml`);
+  const path = join(opts.bundledRoot, id, `v${resolvedVersion}.yaml`);
   return resolveFile(path, opts);
+}
+
+/**
+ * Scan `<dir>/v*.yaml` for valid semver filenames and return the
+ * highest. Returns `null` if the directory is missing, contains
+ * no matching files, or every match has an invalid semver.
+ *
+ * Stable releases beat prereleases at the same MAJOR.MINOR.PATCH;
+ * within prereleases, identifiers compare per semver §11.
+ */
+async function pickHighestVersion(dir: string): Promise<PackVersion | null> {
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return null;
+  }
+  const candidates: { version: string; tuple: SemverTuple }[] = [];
+  for (const entry of entries) {
+    const match = /^v(.+)\.yaml$/.exec(entry);
+    if (!match) continue;
+    const versionString = match[1] as string;
+    const tuple = parseSemverTuple(versionString);
+    if (tuple === null) continue;
+    candidates.push({ version: versionString, tuple });
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => compareSemver(b.tuple, a.tuple));
+  return candidates[0]?.version as PackVersion;
+}
+
+/**
+ * Tuple form of a semver string for comparison. The fourth slot is
+ * the prerelease identifier list (`-rc.1` → `['rc', '1']`); empty
+ * array marks a stable release.
+ */
+type SemverTuple = readonly [number, number, number, readonly string[]];
+
+const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(.+))?$/;
+
+function parseSemverTuple(version: string): SemverTuple | null {
+  const match = SEMVER_RE.exec(version);
+  if (match === null) return null;
+  const [, major, minor, patch, prerelease] = match;
+  const pre = typeof prerelease === 'string' && prerelease.length > 0 ? prerelease.split('.') : [];
+  return [Number(major), Number(minor), Number(patch), pre];
+}
+
+/** Returns < 0 if a < b, > 0 if a > b, 0 if equal. */
+function compareSemver(a: SemverTuple, b: SemverTuple): number {
+  if (a[0] !== b[0]) return a[0] - b[0];
+  if (a[1] !== b[1]) return a[1] - b[1];
+  if (a[2] !== b[2]) return a[2] - b[2];
+  // Same MAJOR.MINOR.PATCH — stable releases beat prereleases.
+  if (a[3].length === 0 && b[3].length > 0) return 1;
+  if (a[3].length > 0 && b[3].length === 0) return -1;
+  if (a[3].length === 0 && b[3].length === 0) return 0;
+  // Both prereleases — compare identifiers per semver §11.
+  const len = Math.min(a[3].length, b[3].length);
+  for (let i = 0; i < len; i += 1) {
+    const ai = a[3][i] as string;
+    const bi = b[3][i] as string;
+    if (ai === bi) continue;
+    const aNum = /^\d+$/.test(ai);
+    const bNum = /^\d+$/.test(bi);
+    if (aNum && bNum) return Number(ai) - Number(bi);
+    if (aNum && !bNum) return -1;
+    if (!aNum && bNum) return 1;
+    return ai < bi ? -1 : 1;
+  }
+  // All shared identifiers equal — the longer prerelease list
+  // wins (semver §11: more identifiers means higher precedence
+  // when leading identifiers match).
+  return a[3].length - b[3].length;
 }
 
 async function resolveFile(path: string, opts: DefaultResolverOptions): Promise<PackResolveResult> {
