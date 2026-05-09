@@ -152,6 +152,15 @@ describe('translateManifestToWriteInputs', () => {
       expect(tok.length).toBeLessThanOrEqual(128);
     }
   });
+
+  it('stamps every item with the configured defaultConfidence (defaults to 1)', () => {
+    const m = baseManifest();
+    const fallback = translateManifestToWriteInputs(m);
+    for (const item of fallback.items) expect(item.storedConfidence).toBe(1);
+
+    const customised = translateManifestToWriteInputs(m, { defaultConfidence: 0.7 });
+    for (const item of customised.items) expect(item.storedConfidence).toBe(0.7);
+  });
 });
 
 describe('checkInstallState', () => {

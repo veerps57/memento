@@ -174,6 +174,28 @@ describe('UrlResolver', () => {
     }
   });
 
+  it('returns TIMEOUT when the fetch is aborted', async () => {
+    const fetchImpl: typeof fetch = (_input, init) =>
+      new Promise((_resolve, reject) => {
+        const signal = (init as RequestInit | undefined)?.signal;
+        signal?.addEventListener('abort', () => {
+          const e = new Error('aborted');
+          e.name = 'AbortError';
+          reject(e);
+        });
+      });
+    const r = opts({ fetchImpl, urlFetchTimeoutMs: 5 });
+    const result = await r.resolve({
+      type: 'url',
+      url: 'https://example.com/slow.yaml',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('TIMEOUT');
+      expect(result.error).toMatch(/exceeded/);
+    }
+  });
+
   it('returns TOO_LARGE when the response exceeds the byte cap', async () => {
     const big = 'a'.repeat(2048);
     const fetchImpl: typeof fetch = async () => new Response(big, { status: 200 });
