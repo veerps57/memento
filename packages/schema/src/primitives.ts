@@ -118,3 +118,41 @@ export const RepoRemoteSchema = z
   )
   .brand<'RepoRemote'>();
 export type RepoRemote = z.infer<typeof RepoRemoteSchema>;
+
+/**
+ * Tag prefixes reserved for system-managed provenance. User-authored
+ * writes (`memory.write`, `memory.write_many`, `memory.extract`)
+ * reject any tag starting with one of these prefixes. The internal
+ * write paths that own the namespace (e.g. pack install) bypass the
+ * rejection by threading a write-source flag through the command
+ * context. Reserved prefixes are a Rule 12 invariant — hardcoded,
+ * not configurable.
+ *
+ * See ADR-0020 (memento packs) for the `pack:` prefix; future
+ * provenance prefixes append here.
+ */
+export const RESERVED_TAG_PREFIXES = ['pack:'] as const;
+export type ReservedTagPrefix = (typeof RESERVED_TAG_PREFIXES)[number];
+
+/**
+ * Returns true if the candidate tag begins with any reserved prefix.
+ * Operates on raw strings as well as branded Tags; use it before a
+ * write that should not own the reserved namespace.
+ */
+export function isReservedTag(tag: string): boolean {
+  return RESERVED_TAG_PREFIXES.some((prefix) => tag.startsWith(prefix));
+}
+
+/**
+ * Tag schema that rejects values starting with any reserved prefix.
+ * Use anywhere a tag is supplied through a user-authored path
+ * (manifest authoring, command inputs); the internal write paths
+ * that own the reserved namespace use the bare {@link TagSchema}.
+ *
+ * The refinement runs after {@link TagSchema}'s normalise+validate,
+ * so the prefix check sees the lowercased canonical form.
+ */
+export const NonReservedTagSchema = TagSchema.refine((tag) => !isReservedTag(tag), {
+  message: `Tag uses a reserved prefix (${RESERVED_TAG_PREFIXES.join(', ')})`,
+});
+export type NonReservedTag = z.infer<typeof NonReservedTagSchema>;

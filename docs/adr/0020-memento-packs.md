@@ -20,14 +20,14 @@ The forces in play:
 - **Authoring must be hand-friendly.** A pack is a curated artefact written by a human. Multi-line memory content is the norm (a snippet, a rationale, a non-trivial preference); JSON's escaped-newline strings are a usability cliff. The format must support literal multi-line blocks, kind-discriminated entries, and zero ceremony beyond what the data model itself requires.
 - **Install must be safe.** Pack content arrives from a third party (a community contributor, a teammate, a public URL). The same threat model that drove [ADR-0019](0019-import-re-stamp-policy.md) applies: the importer must never trust caller-supplied owner claims, audit chains, or arbitrary scrubber output. The install path re-stamps `OwnerRef` to local-self, runs the importer's current scrubber, and emits a fresh `created` event whose payload records pack provenance.
 - **Re-install must be idempotent.** Users will run `memento pack install <id>` more than once — to upgrade, to recover from a failed install, or accidentally. Re-running the same install must be a no-op; re-running with a different version must upgrade safely.
-- **Content drift must be caught.** A pack author who edits a pack's content but forgets to bump the version creates a silent inconsistency: two users with `pack:rust-axum@1.0.0` may have different memories. Refusing the second install with a structured error is the minimum honest behaviour.
+- **Content drift must be caught.** A pack author who edits a pack's content but forgets to bump the version creates a silent inconsistency: two users with `pack:rust-axum:1.0.0` may have different memories. Refusing the second install with a structured error is the minimum honest behaviour.
 - **Uninstall must be clean.** A user who tries a pack and dislikes it must be able to remove every memory the pack created, in one command, with no orphans. The audit log must continue to show what was there.
 - **Distribution must be free of central infrastructure.** Memento is local-first and pre-1.0. We will not stand up a registry server, a sign-in flow, or a payment system to ship v1. A pack must install from a bundled directory, a local file, or an HTTPS URL — three sources, one install path.
 - **Provenance must travel.** When the user runs `memory.list` and sees a memory, they must be able to tell whether it came from a pack and which one. The provenance must round-trip through export/import without special handling.
 
 ## Decision
 
-We add a YAML pack format **`memento-pack/v1`** and a set of registry commands `pack.{install, preview, uninstall, list, export}` plus thin CLI lifecycle wrappers that handle file IO. A pack is a YAML file declaring metadata (id, version, title, description, default scope, default tags, license, homepage) and a list of memory items keyed by `kind`. The installer is a pure function that translates a parsed manifest into a `MemoryWriteInput[]`; the registry command composes that with `memory.write_many`. Every pack-installed memory is tagged `pack:<id>@<version>` — a reserved tag prefix that user-authored writes cannot use — and carries pack-source provenance in its `created` event payload (`payload.source = { type: 'pack', packId, version, sourceHash }`). Uninstall is a thin wrapper over `memory.forget_many` filtered by that tag, inheriting the dry-run-default and `confirm: z.literal(true)` gate from [ADR-0014](0014-bulk-destructive-operations.md). Manifests resolve from one of three sources: a bundled directory at the path named by `packs.bundledRegistryPath`, a local file via `--from-file`, or an HTTPS URL via `--from-url` (gated by `packs.allowRemoteUrls`, capped by `packs.maxPackSizeBytes`, timed out by `packs.urlFetchTimeoutMs`). The dashboard surfaces pack browse and install/uninstall as a "Packs" tab built entirely on these registry commands ([ADR-0018](0018-dashboard-package.md) §Decision: thin projection only).
+We add a YAML pack format **`memento-pack/v1`** and a set of registry commands `pack.{install, preview, uninstall, list, export}` plus thin CLI lifecycle wrappers that handle file IO. A pack is a YAML file declaring metadata (id, version, title, description, default scope, default tags, license, homepage) and a list of memory items keyed by `kind`. The installer is a pure function that translates a parsed manifest into a `MemoryWriteInput[]`; the registry command composes that with `memory.write_many`. Every pack-installed memory is tagged `pack:<id>:<version>` — a reserved tag prefix that user-authored writes cannot use — and carries pack-source provenance in its `created` event payload (`payload.source = { type: 'pack', packId, version, sourceHash }`). Uninstall is a thin wrapper over `memory.forget_many` filtered by that tag, inheriting the dry-run-default and `confirm: z.literal(true)` gate from [ADR-0014](0014-bulk-destructive-operations.md). Manifests resolve from one of three sources: a bundled directory at the path named by `packs.bundledRegistryPath`, a local file via `--from-file`, or an HTTPS URL via `--from-url` (gated by `packs.allowRemoteUrls`, capped by `packs.maxPackSizeBytes`, timed out by `packs.urlFetchTimeoutMs`). The dashboard surfaces pack browse and install/uninstall as a "Packs" tab built entirely on these registry commands ([ADR-0018](0018-dashboard-package.md) §Decision: thin projection only).
 
 ### Format — `memento-pack/v1`
 
@@ -35,7 +35,7 @@ The artefact is UTF-8 YAML with the top-level shape:
 
 ```yaml
 format: memento-pack/v1
-id: rust-axum                      # ^[a-z][a-z0-9-]{1,63}$
+id: rust-axum                      # ^[a-z][a-z0-9-]{1,31}$
 version: 1.2.0                     # semver
 title: Rust + Axum web service conventions
 description: >
@@ -49,7 +49,7 @@ tags: [rust, web, axum]            # pack-discovery tags, not memory tags
 defaults:
   scope: { type: global }          # caller may override at install time
   pinned: false
-  tags: []                         # `pack:<id>@<version>` is appended automatically
+  tags: []                         # `pack:<id>:<version>` is appended automatically
 
 memories:
   - kind: preference
@@ -67,7 +67,7 @@ memories:
 
 The `format` field is the version negotiation point. v1 readers parse v1 artefacts; v1 readers presented with v2 artefacts refuse with `INVALID_INPUT` and a clear "this Memento doesn't know format v2" message. v1 readers presented with a v1 artefact carrying *unknown top-level fields* (a forward-compat additive in v1.x) emit a `Result.warnings` entry and continue — same posture as `memento import`'s schema-version-skew handling ([ADR-0013](0013-portable-export-import.md) §schema-version-skew).
 
-The pack's `id` is validated against `^[a-z][a-z0-9-]{1,63}$`. Lowercase kebab-case constrains naming to a single shape so package-manager-style "did you mean…" suggestions and case-insensitive comparison both stay simple.
+The pack's `id` is validated against `^[a-z][a-z0-9-]{1,31}$` — 2 to 32 chars. The cap is tighter than the bare-tag character allowance because the full provenance tag `pack:<id>:<version>` must fit inside the 64-char `TagSchema` ceiling once a typical semver version is appended. The separator is `:` (not `@`) for the same reason: `@` is not in the existing tag character set (`^[a-z0-9][a-z0-9._:/-]*$`), and `:` is already the conventional namespace separator there. Pack version is similarly constrained: `^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[a-z0-9.-]+)?$` with a 24-char ceiling — semver MAJOR.MINOR.PATCH plus an optional lowercase prerelease, no build metadata (semver `+` is also outside the tag character set, and build metadata is ignored for ordering anyway).
 
 YAML is chosen over JSON because authoring is the primary use case and YAML's literal-block syntax (`|`) makes multi-line memory content tolerable. We rejected JSON-for-symmetry-with-import because import and authoring are different problems (see Alternative A below).
 
@@ -77,8 +77,8 @@ The install path is composable from operations that already exist:
 
 1. **Resolve the manifest.** `BundledResolver`, `FileResolver`, and `UrlResolver` implement a single `PackSourceResolver` interface. The CLI flag (`<id>`, `--from-file`, `--from-url`) selects which resolver runs. URL fetches are HTTPS-only, do not follow redirects, and abort on first byte exceeding `packs.maxPackSizeBytes`.
 2. **Parse and validate.** YAML → `PackManifestSchema` (Zod). Validation errors carry the YAML line/column. Unknown top-level keys produce warnings, not errors.
-3. **Build write items.** For each memory in `manifest.memories`, merge `manifest.defaults`, append the reserved tag `pack:<id>@<version>`, apply scope override if the caller passed one, and generate a deterministic `clientToken = sha256(packId + version + index)`. The `clientToken` is what makes re-install idempotent ([memory write path](../../packages/core/src/storage/memory-repository.ts) §clientToken — per-scope, per-token uniqueness via partial index).
-4. **Detect content drift.** Compute a stable canonical JSON hash over `manifest.memories` (excluding cosmetic fields: title, description, author). Compare against memories already tagged `pack:<id>@<version>`. If the existing set's clientToken hashes match the new manifest's, the install is a no-op (`alreadyInstalled: true`). If they diverge, refuse with `PACK_VERSION_REUSED` — the pack author must bump the version.
+3. **Build write items.** For each memory in `manifest.memories`, merge `manifest.defaults`, append the reserved tag `pack:<id>:<version>`, apply scope override if the caller passed one, and generate a deterministic `clientToken = sha256(packId + version + index)`. The `clientToken` is what makes re-install idempotent ([memory write path](../../packages/core/src/storage/memory-repository.ts) §clientToken — per-scope, per-token uniqueness via partial index).
+4. **Detect content drift.** Compute a stable canonical JSON hash over `manifest.memories` (excluding cosmetic fields: title, description, author). Compare against memories already tagged `pack:<id>:<version>`. If the existing set's clientToken hashes match the new manifest's, the install is a no-op (`alreadyInstalled: true`). If they diverge, refuse with `PACK_VERSION_REUSED` — the pack author must bump the version.
 5. **Run the standard write path.** The translated items go through `memory.write_many` unchanged: the scrubber runs on every `content`/`summary`/`rationale`, `OwnerRef` is stamped local-self by the command layer, and a `created` event is emitted per memory. The event's `payload.source` records pack provenance for audit symmetry with `imported` events from [ADR-0019](0019-import-re-stamp-policy.md).
 6. **Return a structured snapshot.** `{ dryRun, written: [...], skipped: [...], alreadyInstalled, packId, version }`. Mirrors the shape of the import snapshot for caller ergonomics.
 
@@ -86,7 +86,7 @@ The integrity rules — re-stamp, scrub, refuse-on-content-drift, reserved tag �
 
 ### Uninstall semantics
 
-`pack.uninstall <id> [--version <version>] [--all-versions]` resolves to a `memory.forget_many` filter on the `pack:<id>@<version>` tag (or the prefix `pack:<id>@` if `--all-versions`). Inherits everything from [ADR-0014](0014-bulk-destructive-operations.md): dry-run defaults to `true`, `confirm: z.literal(true)` is required even in dry-run, the bulk-destructive cap (`safety.bulkDestructiveLimit`) applies. Each per-row transition is a normal `forgotten` event — the audit log shows the same shape as a manual `memory.forget` call, with no special "uninstalled" event variant. Rule 6 (status transitions are explicit) is preserved because the underlying primitive is `forget`, not a new transition.
+`pack.uninstall <id> [--version <version>] [--all-versions]` resolves to a `memory.forget_many` filter on the `pack:<id>:<version>` tag (or the prefix `pack:<id>:` if `--all-versions`). Inherits everything from [ADR-0014](0014-bulk-destructive-operations.md): dry-run defaults to `true`, `confirm: z.literal(true)` is required even in dry-run, the bulk-destructive cap (`safety.bulkDestructiveLimit`) applies. Each per-row transition is a normal `forgotten` event — the audit log shows the same shape as a manual `memory.forget` call, with no special "uninstalled" event variant. Rule 6 (status transitions are explicit) is preserved because the underlying primitive is `forget`, not a new transition.
 
 Uninstall is reversible via existing `memory.restore` — the per-row events make this work without any pack-system changes. A user who uninstalls and changes their mind runs `memory.restore` against the affected ids (visible in the dry-run snapshot) or re-installs the pack.
 
@@ -98,7 +98,7 @@ The export-import round-trip is *not* byte-equivalent for the audit log. A pack 
 
 ### Reserved tag prefix `pack:*`
 
-The tag `pack:<id>@<version>` is the load-bearing piece of provenance. To prevent forgery and accidental collision, user-authored writes (`memory.write`, `memory.write_many`, `memory.extract`) reject any tag matching `^pack:`. The pack install path threads an internal flag (`source: 'pack-install'`) through the write context that the schema refinement consults — only `pack-install` writes may use the reserved prefix. This is a Rule 12 invariant, not configurable.
+The tag `pack:<id>:<version>` is the load-bearing piece of provenance. To prevent forgery and accidental collision, user-authored writes (`memory.write`, `memory.write_many`, `memory.extract`) reject any tag matching `^pack:`. The pack install path threads an internal flag (`source: 'pack-install'`) through the write context that the schema refinement consults — only `pack-install` writes may use the reserved prefix. This is a Rule 12 invariant, not configurable.
 
 ### Config keys
 
@@ -123,7 +123,7 @@ Bundled packs are *data*, not code. They live at repo root in `packs/<id>/v<vers
 | `pack.list` | mcp, cli, dashboard | read | List installed packs, grouped by `pack:*` tag |
 | `pack.preview` | mcp, cli, dashboard | read | Resolve and parse a manifest, return what would be installed |
 | `pack.install` | mcp, cli, dashboard | write | Install a pack via `memory.write_many` |
-| `pack.uninstall` | mcp, cli, dashboard | destructive | `forget_many` filter on `pack:<id>@<version>` tag |
+| `pack.uninstall` | mcp, cli, dashboard | destructive | `forget_many` filter on `pack:<id>:<version>` tag |
 | `pack.export` | mcp, cli, dashboard | read | Assemble a manifest YAML from a list filter |
 
 The CLI lifecycle adds:
@@ -140,7 +140,7 @@ The CLI lifecycle adds:
 - The cold-start adoption gap closes with a single command. A user who runs `memento pack install ts-monorepo-pnpm` after `memento init` has a populated store in under 30 seconds.
 - Packs are a free distribution channel for community contributors. Each authored pack is an artefact the contributor can share — every contribution is light marketing for Memento, every install is the project meeting a new user where their stack is.
 - Authoring is hand-friendly. YAML literal blocks make multi-line content (a snippet, a rationale, a sub-paragraph preference) tolerable to write and trivial to read in `git diff`.
-- Provenance is first-class and reversible. Every pack-installed memory carries `pack:<id>@<version>` in its tags and the pack source in its `created` event payload. `memory.list --tag pack:rust-axum@1.2.0` shows exactly what a pack contributed; `pack.uninstall` removes it cleanly.
+- Provenance is first-class and reversible. Every pack-installed memory carries `pack:<id>:<version>` in its tags and the pack source in its `created` event payload. `memory.list --tag pack:rust-axum:1.2.0` shows exactly what a pack contributed; `pack.uninstall` removes it cleanly.
 - Re-install is idempotent. Deterministic `clientToken`s plus the existing per-scope uniqueness index mean running `pack install` twice is a no-op without any new code path.
 - Content drift is caught. A pack author who forgets to bump the version is told by `PACK_VERSION_REUSED`, not by users discovering inconsistencies in the wild.
 - The dashboard gets a Packs tab for free. Per [ADR-0018](0018-dashboard-package.md), the dashboard is a thin projection of registry commands; pack browsing and install/uninstall are exactly that. No new core commands are needed for dashboard support.
