@@ -43,6 +43,13 @@ async function tmpDir(): Promise<string> {
 // `import.maxBytes` cap, so we forward `createApp` to the real
 // bootstrap. The other deps remain stubs since the import path
 // does not call them.
+//
+// `resolveEmbedder` returns a noop provider so
+// `openAppForSurface` (which the import lifecycle uses since
+// ADR-0021 to wire post-commit embedAndStore) succeeds with
+// the default `retrieval.vector.enabled = true`. The noop
+// provider's embeddings are not asserted in these tests; they
+// only confirm the surrounding plumbing.
 const NULL_DEPS: LifecycleDeps = {
   createApp: createMementoApp,
   migrateStore: async () => {
@@ -51,6 +58,12 @@ const NULL_DEPS: LifecycleDeps = {
   serveStdio: async () => {
     throw new Error('serveStdio should not be called from runImport');
   },
+  resolveEmbedder: async () => ({
+    model: 'test-noop-embedder',
+    dimension: 3,
+    embed: async () => [0, 0, 0] as readonly number[],
+    embedBatch: async (texts) => texts.map(() => [0, 0, 0] as readonly number[]),
+  }),
 };
 
 const NULL_IO: CliIO = {

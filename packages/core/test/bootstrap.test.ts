@@ -404,3 +404,220 @@ describe('createMementoApp', () => {
     expect(stored?.embedding).toBeNull();
   });
 });
+
+// — Startup embedding backfill (ADR-0021) ——————————————————————
+//
+// Bootstrap kicks off a bounded `reembedAll` pass at boot when
+// an embedder is wired. These tests pin three things:
+//
+//   1. The pass actually runs (drains rows whose vector is
+//      missing or stale relative to the configured embedder).
+//   2. It is bounded by `embedding.startupBackfill.maxRows`.
+//   3. It is gated by `embedding.startupBackfill.enabled` and
+//      by the presence of an embedder.
+
+describe('createMementoApp — startup embedding backfill', () => {
+  // Build a backfill provider that hands back a deterministic
+  // 3-vector. We track every embed/embedBatch invocation so a
+  // test can assert the backfill *did* fire.
+  function makeProvider(): {
+    provider: EmbeddingProvider;
+    embedCalls: () => number;
+    batchCalls: () => number;
+    totalTexts: () => number;
+  } {
+    let embed = 0;
+    let batch = 0;
+    let texts = 0;
+    return {
+      provider: {
+        model: 'startup-backfill-test',
+        dimension: 3,
+        embed: async () => {
+          embed += 1;
+          return [0.1, 0.2, 0.3];
+        },
+        embedBatch: async (ts) => {
+          batch += 1;
+          texts += ts.length;
+          return ts.map(() => [0.1, 0.2, 0.3] as readonly number[]);
+        },
+      },
+      embedCalls: () => embed,
+      batchCalls: () => batch,
+      totalTexts: () => texts,
+    };
+  }
+
+  // The backfill runs off-thread (kicked off from bootstrap
+  // and not awaited by createMementoApp). Tests poll the DB
+  // for vectors to land instead of relying on a fixed delay.
+  async function waitForVectors(
+    app: MementoApp,
+    expected: number,
+    deadlineMs = 1500,
+  ): Promise<number> {
+    const deadline = Date.now() + deadlineMs;
+    let count = 0;
+    while (Date.now() < deadline) {
+      const memories = await app.memoryRepository.list({ status: 'active' });
+      count = memories.filter((m) => m.embedding !== null).length;
+      if (count >= expected) return count;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    return count;
+  }
+
+  it('drains pending embeddings at boot when an embedder is wired and enabled', async () => {
+    // Phase 1: write a memory with autoEmbed off — so it
+    // lands without a vector. Then reopen the same DB with
+    // autoEmbed AND startupBackfill enabled; the backfill
+    // should fill in the vector.
+    const phase1Provider = makeProvider();
+    const app1 = await newApp({
+      embeddingProvider: phase1Provider.provider,
+      configOverrides: { 'embedding.autoEmbed': false },
+    });
+    const writeResult = await executeCommand(
+      app1.registry.get('memory.write')!,
+      { ...baseWriteInput, content: 'orphan-from-prev-session' },
+      ctx,
+    );
+    expect(writeResult.ok).toBe(true);
+    if (!writeResult.ok) return;
+    const orphanId = writeResult.value.id;
+    // Sanity: no vector landed (autoEmbed off).
+    expect((await app1.memoryRepository.read(orphanId))?.embedding).toBeNull();
+
+    // Close phase-1 app but keep the SQLite handle alive for
+    // phase 2 to adopt. (`:memory:` is per-handle, so we have
+    // to share the database handle across the two apps.)
+    const sharedDb = app1.db;
+    apps.pop(); // remove from afterEach close list — phase 2 will close
+    // Don't actually close — phase 2 adopts.
+
+    // Phase 2: reopen with the same DB handle, an embedder, and
+    // startup backfill enabled. The backfill should fire and
+    // populate the orphan's vector.
+    const phase2Provider = makeProvider();
+    const app2 = await createMementoApp({
+      database: sharedDb,
+      embeddingProvider: phase2Provider.provider,
+      configOverrides: {
+        'embedding.startupBackfill.enabled': true,
+      },
+    });
+    apps.push(app2);
+    const landed = await waitForVectors(app2, 1);
+    expect(landed).toBe(1);
+    // The provider's embedBatch was invoked at least once.
+    expect(phase2Provider.batchCalls() + phase2Provider.embedCalls()).toBeGreaterThan(0);
+    const refreshed = await app2.memoryRepository.read(orphanId);
+    expect(refreshed?.embedding).not.toBeNull();
+    expect(refreshed?.embedding?.model).toBe('startup-backfill-test');
+  });
+
+  it('does not run startup backfill when embedding.startupBackfill.enabled is false', async () => {
+    const provider = makeProvider();
+    const app1 = await newApp({
+      embeddingProvider: provider.provider,
+      configOverrides: { 'embedding.autoEmbed': false },
+    });
+    const writeResult = await executeCommand(
+      app1.registry.get('memory.write')!,
+      { ...baseWriteInput, content: 'no-backfill-please' },
+      ctx,
+    );
+    expect(writeResult.ok).toBe(true);
+    const sharedDb = app1.db;
+    apps.pop();
+
+    const provider2 = makeProvider();
+    const app2 = await createMementoApp({
+      database: sharedDb,
+      embeddingProvider: provider2.provider,
+      configOverrides: {
+        'embedding.startupBackfill.enabled': false,
+      },
+    });
+    apps.push(app2);
+
+    // Wait a beat to be sure the backfill task — if there
+    // were one — would have fired.
+    await new Promise((r) => setTimeout(r, 100));
+    expect(provider2.batchCalls()).toBe(0);
+    expect(provider2.embedCalls()).toBe(0);
+    const memories = await app2.memoryRepository.list({ status: 'active' });
+    expect(memories.every((m) => m.embedding === null)).toBe(true);
+  });
+
+  it('does not run startup backfill when no embedder is wired (vector retrieval off)', async () => {
+    // Seed phase: same DB, write a memory.
+    const provider = makeProvider();
+    const app1 = await newApp({
+      embeddingProvider: provider.provider,
+      configOverrides: { 'embedding.autoEmbed': false },
+    });
+    await executeCommand(
+      app1.registry.get('memory.write')!,
+      { ...baseWriteInput, content: 'no-embedder-this-time' },
+      ctx,
+    );
+    const sharedDb = app1.db;
+    apps.pop();
+
+    // Reopen WITHOUT an embedder. The startup-backfill check
+    // shortcircuits before touching anything.
+    const app2 = await createMementoApp({
+      database: sharedDb,
+      configOverrides: {
+        'embedding.startupBackfill.enabled': true,
+      },
+    });
+    apps.push(app2);
+
+    await new Promise((r) => setTimeout(r, 50));
+    const memories = await app2.memoryRepository.list({ status: 'active' });
+    expect(memories.every((m) => m.embedding === null)).toBe(true);
+  });
+
+  it('respects the maxRows cap (writes only up to the configured number)', async () => {
+    // Seed 5 orphan memories with autoEmbed off.
+    const provider1 = makeProvider();
+    const app1 = await newApp({
+      embeddingProvider: provider1.provider,
+      configOverrides: { 'embedding.autoEmbed': false },
+    });
+    for (let i = 0; i < 5; i += 1) {
+      await executeCommand(
+        app1.registry.get('memory.write')!,
+        { ...baseWriteInput, content: `orphan-${i}` },
+        ctx,
+      );
+    }
+    const sharedDb = app1.db;
+    apps.pop();
+
+    // Reopen with a maxRows cap of 2. The backfill scans 2
+    // and stops; the other 3 stay pending until the next boot
+    // or an explicit `embedding.rebuild`.
+    const provider2 = makeProvider();
+    const app2 = await createMementoApp({
+      database: sharedDb,
+      embeddingProvider: provider2.provider,
+      configOverrides: {
+        'embedding.startupBackfill.enabled': true,
+        'embedding.startupBackfill.maxRows': 2,
+      },
+    });
+    apps.push(app2);
+    const landed = await waitForVectors(app2, 2);
+    expect(landed).toBe(2);
+    // Wait a beat past the deadline-window to ensure no
+    // additional embeds slip in.
+    await new Promise((r) => setTimeout(r, 100));
+    const memories = await app2.memoryRepository.list({ status: 'active' });
+    const withVectors = memories.filter((m) => m.embedding !== null);
+    expect(withVectors).toHaveLength(2);
+  });
+});

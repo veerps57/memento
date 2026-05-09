@@ -148,6 +148,32 @@ export interface ImportOptions {
    * Per-record JSON-payload cap. Defaults to {@link DEFAULT_IMPORT_RECORD_MAX_BYTES}.
    */
   readonly maxRecordBytes?: number;
+  /**
+   * Synchronous batch-embed callback invoked **after** the
+   * import transaction commits, with every freshly-inserted
+   * memory that did **not** receive an embedding from the
+   * artefact itself. Receives the importer's `actor` for audit
+   * attribution; resolves when every vector has been written;
+   * never throws (partial failures are recoverable via
+   * `embedding.rebuild`).
+   *
+   * Why post-commit, why synchronous. The artefact may include
+   * pre-computed embedding records (export ships them when
+   * available); when present, those are applied inside the
+   * transaction and need no re-embed. Only memories whose
+   * artefact carried no embedding need this fallback. We run
+   * it post-commit so embed inference (potentially seconds)
+   * does not hold a write lock on the DB. Synchronous because
+   * `memento import` is a one-shot CLI lifecycle: when the
+   * handler returns, the process exits and any fire-and-forget
+   * embed promise dies with it. Same race we closed for
+   * `pack.install` in this PR.
+   *
+   * Skipped entirely when `undefined` (vector retrieval
+   * disabled in the host) or when there is nothing to embed
+   * (artefact embeddings covered every imported memory).
+   */
+  readonly embedAndStore?: (memories: readonly Memory[], actor: ActorRef) => Promise<void>;
 }
 
 export interface ImportSummary {
@@ -447,6 +473,13 @@ async function applyArtefact(
   const importClock = options.clock ?? (() => new Date().toISOString() as Timestamp);
   const importEventIdFactory = options.eventIdFactory ?? (() => ulid());
 
+  // Collected during the transaction; consumed after commit.
+  // Tracks every freshly-inserted memory so the post-commit
+  // pass can batch-embed those whose artefact didn't carry a
+  // pre-computed embedding.
+  const insertedMemories: Memory[] = [];
+  const embeddedMemoryIds = new Set<string>();
+
   try {
     await db.transaction().execute(async (trx) => {
       // Pre-fetch existing ids so policy decisions don't depend on
@@ -493,6 +526,10 @@ async function applyArtefact(
 
         await trx.insertInto('memories').values(memoryToRow(rewritten.memory)).execute();
         newMemoryIds.add(sourceMemory.id);
+        // Track the rewritten Memory object so we can post-commit
+        // batch-embed any inserts that the artefact didn't
+        // carry pre-computed vectors for.
+        insertedMemories.push(rewritten.memory);
         applied.memories += 1;
 
         if (!trustSource) {
@@ -600,6 +637,9 @@ async function applyArtefact(
           })
           .where('id', '=', embedding.memoryId)
           .execute();
+        // Mark this memory as already-embedded so the
+        // post-commit fallback skips it.
+        embeddedMemoryIds.add(embedding.memoryId);
         applied.embeddings += 1;
       }
     });
@@ -614,6 +654,21 @@ async function applyArtefact(
       code: 'STORAGE_ERROR',
       message: error instanceof Error ? error.message : 'Import failed during apply.',
     });
+  }
+
+  // Post-commit batch-embed for any freshly-inserted memory
+  // whose artefact didn't carry a pre-computed embedding. Run
+  // outside the transaction so embedder inference (potentially
+  // seconds) doesn't hold a write lock; synchronous so the
+  // one-shot `memento import` CLI process doesn't exit before
+  // the async work completes (same race we close in
+  // `pack.install` here). `embedAndStore` never throws —
+  // partial failures are recoverable via `embedding.rebuild`.
+  if (options.embedAndStore !== undefined) {
+    const needsEmbed = insertedMemories.filter((m) => !embeddedMemoryIds.has(m.id));
+    if (needsEmbed.length > 0) {
+      await options.embedAndStore(needsEmbed, importActor);
+    }
   }
 
   return ok({

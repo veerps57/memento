@@ -14,6 +14,7 @@
 // wraps these for file-IO and pretty-printing only.
 
 import {
+  type ActorRef,
   type MementoError,
   type Memory,
   type MemoryId,
@@ -77,15 +78,45 @@ export interface PackCommandDeps {
    * memory during `pack.install`. Mirrors the contract on
    * `createMemoryCommands` / `createMemoryExtractCommand`:
    * synchronous throws are swallowed; async rejections are the
-   * integrator's problem. Bootstrap wires the same
-   * `runConflictHook` + auto-embed chain here as it does for
-   * `memory.write_many`, so pack-installed memories pick up
-   * conflict detection and embedding by the same path as any
-   * other write. Idempotent items (resolved by clientToken) are
-   * **not** re-fired — their hooks already ran at original
-   * write time.
+   * integrator's problem. Bootstrap wires `runConflictHook`
+   * here so pack-installed memories pick up conflict detection
+   * by the same path as any other write. Idempotent items
+   * (resolved by clientToken) are **not** re-fired — their
+   * hooks already ran at original write time.
+   *
+   * Note. This is conflict-only. Auto-embed for pack installs
+   * is **synchronous** via {@link embedAndStore} below — fire
+   * and forget would race with one-shot CLI process exit and
+   * the user-visible promise of "install pack, get useful
+   * retrieval" would be broken half the time.
    */
   readonly afterWrite?: (memory: Memory, ctx: CommandContext) => void;
+  /**
+   * Synchronous batch-embed callback invoked **once** per fresh
+   * install, after `writeMany` returns and before the handler
+   * resolves. Receives every freshly-inserted memory (idempotent
+   * items skipped, same rule as `afterWrite`). Resolves when
+   * every vector has been written; never throws — partial
+   * failures are best-effort and recoverable via
+   * `embedding.rebuild`.
+   *
+   * Why synchronous. Pack install is a one-shot user-initiated
+   * batch op: the CLI process exits when the handler returns,
+   * and any in-flight async-embed promises die with it. The MCP
+   * server is more lenient but still bounded. Awaiting the
+   * batch before returning closes the race for both surfaces.
+   * The cost — typically a few seconds with the model warm —
+   * is acceptable for a discrete install operation. See ADR
+   * `docs/adr/0021-install-time-embedding-and-startup-backfill.md`
+   * (added in this PR).
+   *
+   * When the host has not wired an embedder (vector retrieval
+   * disabled), this is `undefined` and the install path skips
+   * the embed step. Recovery is the same as for any other
+   * embed-disabled write: turn vectors on later and run
+   * `embedding.rebuild`.
+   */
+  readonly embedAndStore?: (memories: readonly Memory[], actor: ActorRef) => Promise<void>;
 }
 
 export function createPackCommands(deps: PackCommandDeps): readonly AnyCommand[] {
@@ -169,17 +200,15 @@ export function createPackCommands(deps: PackCommandDeps): readonly AnyCommand[]
         const results = await deps.memoryRepository.writeMany(finalTranslation.items, {
           actor: ctx.actor,
         });
-        // Fire afterWrite for each freshly-inserted row only —
-        // same skip rule as `memory.write_many` (idempotent
-        // items had their hooks fired at original write time).
-        // Without this, pack-installed memories would skip both
-        // `runConflictHook` and the auto-embed hook that
-        // bootstrap wires through here, which is exactly the
-        // bug this commit fixes.
+        // Fire afterWrite (conflict hook, fire-and-forget) for
+        // each freshly-inserted row only. Idempotent items had
+        // their hooks fired at original write time.
         const written: MemoryId[] = [];
+        const freshMemories: Memory[] = [];
         for (const r of results) {
           if (r.idempotent) continue;
           written.push(r.memory.id);
+          freshMemories.push(r.memory);
           if (deps.afterWrite !== undefined) {
             try {
               deps.afterWrite(r.memory, ctx);
@@ -188,6 +217,19 @@ export function createPackCommands(deps: PackCommandDeps): readonly AnyCommand[]
               // the install Result.
             }
           }
+        }
+        // Synchronous batch-embed before the handler resolves.
+        // This closes the race that bit us in 0.6.0 and 0.6.1:
+        // fire-and-forget auto-embed got cut off when the
+        // one-shot CLI exited (or the MCP server restarted)
+        // before the async-embed work completed. By awaiting
+        // here, every fresh memory has its vector persisted by
+        // the time `pack.install` returns. `embedAndStore`
+        // never throws — partial failures are recoverable via
+        // `embedding.rebuild`. Skipped entirely when the host
+        // has not wired an embedder.
+        if (deps.embedAndStore !== undefined && freshMemories.length > 0) {
+          await deps.embedAndStore(freshMemories, ctx.actor);
         }
         return ok<PackInstallOutput>({
           ...baseSnapshot,
