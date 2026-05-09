@@ -40,7 +40,7 @@ import {
 } from '../../packs/index.js';
 import type { MemoryListFilter, MemoryRepository } from '../../repository/memory-repository.js';
 import { repoErrorToMementoError } from '../errors.js';
-import type { AnyCommand, Command } from '../types.js';
+import type { AnyCommand, Command, CommandContext } from '../types.js';
 
 import {
   type PackExportInput,
@@ -72,6 +72,20 @@ export interface PackCommandDeps {
   readonly memoryRepository: MemoryRepository;
   readonly resolver: PackSourceResolver;
   readonly configStore?: ConfigStore;
+  /**
+   * Fire-and-forget hook invoked once per freshly-written
+   * memory during `pack.install`. Mirrors the contract on
+   * `createMemoryCommands` / `createMemoryExtractCommand`:
+   * synchronous throws are swallowed; async rejections are the
+   * integrator's problem. Bootstrap wires the same
+   * `runConflictHook` + auto-embed chain here as it does for
+   * `memory.write_many`, so pack-installed memories pick up
+   * conflict detection and embedding by the same path as any
+   * other write. Idempotent items (resolved by clientToken) are
+   * **not** re-fired — their hooks already ran at original
+   * write time.
+   */
+  readonly afterWrite?: (memory: Memory, ctx: CommandContext) => void;
 }
 
 export function createPackCommands(deps: PackCommandDeps): readonly AnyCommand[] {
@@ -155,7 +169,26 @@ export function createPackCommands(deps: PackCommandDeps): readonly AnyCommand[]
         const results = await deps.memoryRepository.writeMany(finalTranslation.items, {
           actor: ctx.actor,
         });
-        const written = results.filter((r) => !r.idempotent).map((r) => r.memory.id);
+        // Fire afterWrite for each freshly-inserted row only —
+        // same skip rule as `memory.write_many` (idempotent
+        // items had their hooks fired at original write time).
+        // Without this, pack-installed memories would skip both
+        // `runConflictHook` and the auto-embed hook that
+        // bootstrap wires through here, which is exactly the
+        // bug this commit fixes.
+        const written: MemoryId[] = [];
+        for (const r of results) {
+          if (r.idempotent) continue;
+          written.push(r.memory.id);
+          if (deps.afterWrite !== undefined) {
+            try {
+              deps.afterWrite(r.memory, ctx);
+            } catch {
+              // Fire-and-forget: a buggy hook must not corrupt
+              // the install Result.
+            }
+          }
+        }
         return ok<PackInstallOutput>({
           ...baseSnapshot,
           state: 'fresh',
