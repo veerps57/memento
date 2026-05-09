@@ -27,11 +27,17 @@
 
 import { writeFile } from 'node:fs/promises';
 
-import { executeCommand } from '@psraghuveer/memento-core';
+import {
+  type MementoApp,
+  buildManifestFromMemories,
+  executeCommand,
+} from '@psraghuveer/memento-core';
 import { type Result, type Scope, err, ok } from '@psraghuveer/memento-schema';
 
 import { resolveVersion } from '../version.js';
 
+import type { PackCreatePrompter } from './pack-prompts.js';
+import type { ReviewMemoryItem } from './pack-types.js';
 import type { LifecycleCommand, LifecycleDeps, LifecycleInput } from './types.js';
 
 export type PackAction = 'install' | 'preview' | 'uninstall' | 'list' | 'create';
@@ -96,7 +102,7 @@ export async function runPack(
       case 'list':
         return await runList(app);
       case 'create':
-        return await runCreate(app, a);
+        return await runCreate(app, a, input.io.isTTY === true, deps.createPackPrompter);
     }
   } finally {
     app.close();
@@ -176,12 +182,13 @@ async function runList(
 }
 
 async function runCreate(
-  app: Awaited<ReturnType<LifecycleDeps['createApp']>>,
+  app: MementoApp,
   a: PackArgs,
+  stdinIsTty: boolean,
+  prompterFactory: (() => PackCreatePrompter) | undefined,
 ): Promise<Result<unknown>> {
   const required: ReadonlyArray<readonly [keyof PackArgs, string]> = [
     ['out', '--out'],
-    ['positional', '<id>'],
     ['version', '--version'],
     ['title', '--title'],
   ];
@@ -195,7 +202,6 @@ async function runCreate(
     });
   }
   for (const [key, flagName] of required) {
-    if (key === 'positional') continue;
     if (a[key] === null) {
       return err({
         code: 'INVALID_INPUT',
@@ -204,6 +210,24 @@ async function runCreate(
     }
   }
 
+  // Interactive review triggers when stdin is a TTY AND no
+  // filter flags were supplied. ADR-0020 §Authoring: passing any
+  // `--filter` makes the command non-interactive (so scripted
+  // pipelines stay deterministic).
+  const hasFilterFlags =
+    a.filterKind !== null || a.filterTags.length > 0 || a.filterPinned || a.filterScope !== null;
+  if (stdinIsTty && !hasFilterFlags) {
+    return runCreateInteractive(app, a, id, prompterFactory);
+  }
+
+  return runCreateNonInteractive(app, a, id);
+}
+
+async function runCreateNonInteractive(
+  app: MementoApp,
+  a: PackArgs,
+  id: string,
+): Promise<Result<unknown>> {
   const command = app.registry.get('pack.export');
   if (!command) {
     return err({ code: 'INTERNAL', message: 'pack.export command is not registered' });
@@ -229,29 +253,148 @@ async function runCreate(
   if (!result.ok) return result;
 
   const value = result.value as { yaml: string; exported: number; warnings: string[] };
-  // `--out=-` writes to stdout; otherwise write to the path. We
-  // never overwrite without the user's explicit path — `writeFile`
-  // here is intentional, not `appendFile`.
-  if (a.out === '-') {
-    process.stdout.write(value.yaml);
-  } else if (a.out !== null) {
-    try {
-      await writeFile(a.out, value.yaml, 'utf8');
-    } catch (cause) {
-      return err({
-        code: 'STORAGE_ERROR',
-        message: `pack create: failed to write to '${a.out}': ${cause instanceof Error ? cause.message : String(cause)}`,
-      });
-    }
-  }
-
-  return ok({
+  return await writeOrStdout(a.out, value.yaml, {
     out: a.out,
     packId: id,
     version: a.version,
     exported: value.exported,
     warnings: value.warnings,
   });
+}
+
+async function runCreateInteractive(
+  app: MementoApp,
+  a: PackArgs,
+  id: string,
+  prompterFactory: (() => PackCreatePrompter) | undefined,
+): Promise<Result<unknown>> {
+  if (!prompterFactory) {
+    return err({
+      code: 'INTERNAL',
+      message:
+        'pack create: interactive mode required but no prompter factory was wired in LifecycleDeps',
+    });
+  }
+  const prompter = prompterFactory();
+
+  prompter.intro?.('memento pack create');
+
+  // List every active memory in the user's store. The
+  // interactive review handles narrowing — no scope filter
+  // applies because the user picks per-memory.
+  let memories: Awaited<ReturnType<typeof app.memoryRepository.list>>;
+  try {
+    memories = await app.memoryRepository.list({ status: 'active' });
+  } catch (cause) {
+    return err({
+      code: 'STORAGE_ERROR',
+      message: `pack create: failed to list memories: ${cause instanceof Error ? cause.message : String(cause)}`,
+    });
+  }
+
+  if (memories.length === 0) {
+    return err({
+      code: 'INVALID_INPUT',
+      message: 'pack create: no active memories to review.',
+    });
+  }
+
+  const reviewItems: ReviewMemoryItem[] = memories.map((m) => ({
+    id: m.id,
+    kind: m.kind.type,
+    content: m.content,
+    tags: [...m.tags],
+  }));
+  const review = await prompter.reviewMemories(reviewItems);
+  if (review.kind === 'cancelled') {
+    return err({ code: 'INVALID_INPUT', message: 'pack create: cancelled by user.' });
+  }
+  const kept = review.kept ?? [];
+  if (kept.length === 0) {
+    return err({
+      code: 'INVALID_INPUT',
+      message: 'pack create: no memories kept; a pack must include at least one.',
+    });
+  }
+
+  // Build the manifest directly via the engine so we can pass
+  // an explicit subset (the registry's pack.export takes a
+  // filter, not an id list).
+  const keptIdSet = new Set(kept.map((k) => k.id));
+  const keptMemories = memories.filter((m) => keptIdSet.has(m.id));
+  const outcome = buildManifestFromMemories(keptMemories, {
+    packId: id as never,
+    version: a.version as never,
+    title: a.title as string,
+    ...(a.description !== null ? { description: a.description } : {}),
+    ...(a.author !== null ? { author: a.author } : {}),
+    ...(a.license !== null ? { license: a.license } : {}),
+    ...(a.homepage !== null ? { homepage: a.homepage } : {}),
+  });
+  if (!outcome.ok) {
+    if (outcome.error.kind === 'MULTI_SCOPE') {
+      return err({
+        code: 'INVALID_INPUT',
+        message: `pack create: kept memories span ${outcome.error.scopeCount} scopes; pack manifests are single-scope. Cancel and re-run with a narrower selection.`,
+      });
+    }
+    if (outcome.error.kind === 'INVALID_MANIFEST') {
+      return err({
+        code: 'INVALID_INPUT',
+        message: `pack create: rendered manifest failed validation: ${outcome.error.issues.join('; ')}`,
+      });
+    }
+    // EMPTY case is covered above; this branch is exhaustive.
+    return err({
+      code: 'INVALID_INPUT',
+      message: 'pack create: nothing to write.',
+    });
+  }
+
+  const confirm = await prompter.confirmWrite({
+    keptCount: outcome.value.exported,
+    outPath: a.out as string,
+  });
+  if (confirm.kind === 'cancelled' || confirm.confirmed === false) {
+    return err({ code: 'INVALID_INPUT', message: 'pack create: cancelled by user.' });
+  }
+
+  prompter.outro?.(
+    `wrote ${outcome.value.exported} memor${outcome.value.exported === 1 ? 'y' : 'ies'} to ${a.out}`,
+  );
+
+  return await writeOrStdout(a.out, outcome.value.yaml, {
+    out: a.out,
+    packId: id,
+    version: a.version,
+    exported: outcome.value.exported,
+    warnings: [...outcome.value.warnings],
+  });
+}
+
+/**
+ * Write the rendered YAML to `out` (or stdout when `out === '-'`)
+ * and return the supplied snapshot wrapped in `ok`. Surface IO
+ * errors as `STORAGE_ERROR` rather than throwing.
+ */
+async function writeOrStdout(
+  out: string | null,
+  yaml: string,
+  snapshot: Record<string, unknown>,
+): Promise<Result<unknown>> {
+  if (out === '-') {
+    process.stdout.write(yaml);
+  } else if (out !== null) {
+    try {
+      await writeFile(out, yaml, 'utf8');
+    } catch (cause) {
+      return err({
+        code: 'STORAGE_ERROR',
+        message: `pack create: failed to write to '${out}': ${cause instanceof Error ? cause.message : String(cause)}`,
+      });
+    }
+  }
+  return ok(snapshot);
 }
 
 function buildSourceFromArgs(a: PackArgs): Result<unknown> {

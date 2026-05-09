@@ -53,6 +53,7 @@
   },
   "files": ["dist", "scripts", "skills", "README.md"],
   "dependencies": {
+    "@clack/prompts": "0.8.2",
     "@hono/node-server": "1.13.7",
     "open": "10.1.0",
     "@psraghuveer/memento-core": "workspace:^",

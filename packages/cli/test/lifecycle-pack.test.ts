@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { CliEnv } from '../src/argv.js';
 import type { CliIO } from '../src/io.js';
+import { type ScriptedAnswers, createScriptedPrompter } from '../src/lifecycle/pack-prompts.js';
 import { runPack } from '../src/lifecycle/pack.js';
 import type { LifecycleDeps } from '../src/lifecycle/types.js';
 import { rmTmp } from './_helpers/rm-tmp.js';
@@ -45,6 +46,15 @@ const NULL_IO: CliIO = {
     throw new Error(`unexpected exit ${code}`);
   }) as CliIO['exit'],
 };
+
+const TTY_IO: CliIO = { ...NULL_IO, isTTY: true };
+
+function depsWithPrompter(script: ScriptedAnswers): LifecycleDeps {
+  return {
+    ...baseDeps,
+    createPackPrompter: () => createScriptedPrompter(script),
+  };
+}
 
 const cliEnv = (overrides: Partial<CliEnv> = {}): CliEnv => ({
   dbPath: ':memory:',
@@ -401,5 +411,245 @@ describe('runPack: create', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('INVALID_INPUT');
+  });
+});
+
+describe('runPack: create (interactive review)', () => {
+  async function seedTwo(dbPath: string): Promise<void> {
+    const app = await createMementoApp({ dbPath });
+    try {
+      await app.memoryRepository.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: ['rust'],
+          pinned: false,
+          content: 'first memory',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor: { type: 'cli' } },
+      );
+      await app.memoryRepository.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'preference' },
+          tags: ['build'],
+          pinned: false,
+          content: 'second memory',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor: { type: 'cli' } },
+      );
+    } finally {
+      app.close();
+    }
+  }
+
+  it('triggers interactive review when isTTY=true and no filter flags are supplied', async () => {
+    const dir = await tmpDir();
+    const dbPath = join(dir, 'test.db');
+    await seedTwo(dbPath);
+    const outPath = join(dir, 'interactive.yaml');
+
+    const result = await runPack(depsWithPrompter({ review: ['keep', 'keep'], confirm: 'yes' }), {
+      env: cliEnv({ dbPath }),
+      subargs: ['create', 'my-pack', '--out', outPath, '--version', '0.1.0', '--title', 'My pack'],
+      io: TTY_IO,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { exported: number };
+    expect(value.exported).toBe(2);
+
+    const { readFile } = await import('node:fs/promises');
+    const written = await readFile(outPath, 'utf8');
+    expect(written).toContain('first memory');
+    expect(written).toContain('second memory');
+  });
+
+  it('drops memories the user marks `skip`', async () => {
+    const dir = await tmpDir();
+    const dbPath = join(dir, 'test.db');
+    await seedTwo(dbPath);
+    const outPath = join(dir, 'partial.yaml');
+
+    const result = await runPack(depsWithPrompter({ review: ['keep', 'skip'], confirm: 'yes' }), {
+      env: cliEnv({ dbPath }),
+      subargs: [
+        'create',
+        'partial-pack',
+        '--out',
+        outPath,
+        '--version',
+        '0.1.0',
+        '--title',
+        'Partial',
+      ],
+      io: TTY_IO,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { exported: number };
+    expect(value.exported).toBe(1);
+
+    const { readFile } = await import('node:fs/promises');
+    const written = await readFile(outPath, 'utf8');
+    // The repo orders memories by `last_confirmed_at desc, id desc`,
+    // so the second-written memory ("second memory") appears first
+    // in the review and is the one we keep.
+    expect(written).toContain('second memory');
+    expect(written).not.toContain('first memory');
+  });
+
+  it('does NOT enter interactive mode when isTTY=true but filter flags are supplied', async () => {
+    const dir = await tmpDir();
+    const dbPath = join(dir, 'test.db');
+    await seedTwo(dbPath);
+    const outPath = join(dir, 'filter.yaml');
+
+    // Scripted prompter would throw if reached; passing it lets
+    // us assert the interactive path is bypassed.
+    const result = await runPack(depsWithPrompter({ review: ['keep'], confirm: 'yes' }), {
+      env: cliEnv({ dbPath }),
+      subargs: [
+        'create',
+        'filtered-pack',
+        '--out',
+        outPath,
+        '--version',
+        '0.1.0',
+        '--title',
+        'Filtered',
+        '--kind',
+        'preference',
+      ],
+      io: TTY_IO,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { exported: number };
+    expect(value.exported).toBe(1);
+  });
+
+  it('returns INVALID_INPUT when the user cancels mid-review', async () => {
+    const dir = await tmpDir();
+    const dbPath = join(dir, 'test.db');
+    await seedTwo(dbPath);
+    const result = await runPack(depsWithPrompter({ review: ['keep', 'cancel'] }), {
+      env: cliEnv({ dbPath }),
+      subargs: [
+        'create',
+        'cancelled-pack',
+        '--out',
+        join(dir, 'cancelled.yaml'),
+        '--version',
+        '0.1.0',
+        '--title',
+        'Cancelled',
+      ],
+      io: TTY_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/cancelled/);
+  });
+
+  it('returns INVALID_INPUT when the user declines the final confirmation', async () => {
+    const dir = await tmpDir();
+    const dbPath = join(dir, 'test.db');
+    await seedTwo(dbPath);
+    const outPath = join(dir, 'declined.yaml');
+
+    const result = await runPack(depsWithPrompter({ review: ['keep', 'keep'], confirm: 'no' }), {
+      env: cliEnv({ dbPath }),
+      subargs: [
+        'create',
+        'declined-pack',
+        '--out',
+        outPath,
+        '--version',
+        '0.1.0',
+        '--title',
+        'Declined',
+      ],
+      io: TTY_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/cancelled/);
+  });
+
+  it('returns INVALID_INPUT when no memories are kept', async () => {
+    const dir = await tmpDir();
+    const dbPath = join(dir, 'test.db');
+    await seedTwo(dbPath);
+    const result = await runPack(depsWithPrompter({ review: ['skip', 'skip'] }), {
+      env: cliEnv({ dbPath }),
+      subargs: [
+        'create',
+        'nothing',
+        '--out',
+        join(dir, 'nothing.yaml'),
+        '--version',
+        '0.1.0',
+        '--title',
+        'Nothing',
+      ],
+      io: TTY_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/at least one/);
+  });
+
+  it('returns INVALID_INPUT when the store is empty', async () => {
+    const dir = await tmpDir();
+    const dbPath = join(dir, 'test.db');
+
+    const result = await runPack(depsWithPrompter({}), {
+      env: cliEnv({ dbPath }),
+      subargs: [
+        'create',
+        'empty-store',
+        '--out',
+        join(dir, 'empty.yaml'),
+        '--version',
+        '0.1.0',
+        '--title',
+        'Empty',
+      ],
+      io: TTY_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/no active memories/);
+  });
+
+  it('returns INTERNAL when interactive mode is required but no prompter is wired', async () => {
+    const dir = await tmpDir();
+    const dbPath = join(dir, 'test.db');
+    await seedTwo(dbPath);
+    const result = await runPack(baseDeps, {
+      env: cliEnv({ dbPath }),
+      subargs: [
+        'create',
+        'no-prompter',
+        '--out',
+        join(dir, 'np.yaml'),
+        '--version',
+        '0.1.0',
+        '--title',
+        'NP',
+      ],
+      io: TTY_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INTERNAL');
+    expect(result.error.message).toMatch(/prompter factory/);
   });
 });
