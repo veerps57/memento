@@ -37,6 +37,9 @@
   },
   "private": false,
   "type": "module",
+  "engines": {
+    "node": ">=22.11.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
