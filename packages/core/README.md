@@ -216,6 +216,22 @@ const out = await executeCommand(registry.get("memory.write")!, rawInput, {
 });
 ```
 
+### Packs (ADR 0020)
+
+Curated YAML bundles of memories — `memento-pack/v1` format. Solves cold-start: a fresh install can `pack.install` a stack guide in one step.
+
+| Export | Purpose |
+| --- | --- |
+| `parsePackManifest(rawYaml)` | YAML → typed `PackManifest` with line-aware errors and forward-compat warnings for unknown top-level keys. |
+| `buildManifestFromMemories(memories, metadata)` | The dual: `Memory[] + metadata → PackManifest + YAML`. Pure; refuses on multi-scope spread; strips reserved-prefix tags. |
+| `translateManifestToWriteInputs(manifest, opts?)` | Pure: manifest → `MemoryWriteInput[]` shaped for `memory.write_many`. Stamps `pack:<id>:<version>`, deterministic content-aware `clientToken`. |
+| `checkInstallState(expectedTokens, existingTokens)` | Classifies an install attempt as `fresh` / `idempotent` / `drift` from the existing pack-tagged tokens in the install scope. |
+| `createDefaultPackSourceResolver(opts)` | The bundled / file / URL resolver. HTTPS-only URL fetch, gated by config keys (`packs.allowRemoteUrls`, `packs.urlFetchTimeoutMs`, `packs.maxPackSizeBytes`). |
+| `createPackCommands(deps)` | Factory that registers `pack.install`, `pack.preview`, `pack.uninstall`, `pack.list`, `pack.export` on the command registry (mcp + cli + dashboard surfaces). |
+| `derivePackClientToken`, `formatPackTag`, `parsePackTag`, `packTagPrefix` | Helpers re-exported from schema for adapters that need to format / parse pack provenance tags. |
+
+`packs/` is a peer to [`portability/`](./src/portability/) (export/import) — both bring memories into the store from outside, but they solve different problems: pack format is hand-authored YAML; portability format is machine round-trip JSONL ([ADR-0013](../../docs/adr/0013-portable-export-import.md)). Full design rationale and the format spec are in [ADR-0020](../../docs/adr/0020-memento-packs.md); the user-facing guide is [`docs/guides/packs.md`](../../docs/guides/packs.md).
+
 ## Design notes
 
 - **Schema-parsed everything.** Every row is parsed by the schema on the way out of the repository. Drift is impossible to observe from the public surface; failures surface at the parser, not deep in business logic.

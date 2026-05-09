@@ -38,7 +38,7 @@ interface Memory {
 
   // — Mutable taxonomy —
   kind: MemoryKind; // discriminated union; see below
-  tags: Tag[]; // free-form, lowercased, deduped
+  tags: Tag[]; // free-form, lowercased, deduped; the `pack:` prefix is reserved (ADR-0020)
   pinned: boolean; // pinned memories never decay below threshold
 
   // — Content —
@@ -86,6 +86,7 @@ interface OwnerRef {
 - `owner` is always populated, even when always `{type:'local',id:'self'}`. The model is multi-user-ready from day one.
 - `embedding` is present iff `retrieval.vector.enabled = true` **at the time the memory was written or last embedded**. Embedding model migration is explicit via `memento embedding rebuild`.
 - `embeddingStatus` is a **wire-only projection field** computed at the command-output boundary. Storage and the repository layer do not produce it. Single-memory command responses (`write`, `read`, `update`, `confirm`, `forget`, `archive`, `restore`, `supersede`, `set_embedding`) and the list / search / context views all set it to `'present'` (vector exists), `'pending'` (`retrieval.vector.enabled = true` but the async embedder hasn't caught up yet — common right after a write), or `'disabled'` (vector retrieval is off). The field replaces the previous ambiguity where `embedding: null` could mean any of three different states.
+- The `pack:` tag prefix is **reserved** ([ADR-0020](../adr/0020-memento-packs.md)). Only the `pack.install` path may stamp the canonical `pack:<id>:<version>` provenance tag; user-authored writes (`memory.write`, `memory.write_many`, `memory.extract`) reject any tag matching `^pack:` with `INVALID_INPUT`. The tag *is* the entire pack provenance — no new event variant or column is needed; querying `pack:<id>:<version>` returns exactly the memories a pack contributed, and uninstalling forgets them.
 
 ### Why `kind` is a discriminated union
 

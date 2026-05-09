@@ -1,6 +1,6 @@
 # ADR-0020: Memento packs — curated YAML bundles for cold-start seeding
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-09
 - **Deciders:** Memento Authors
 - **Tags:** adoption, lifecycle, distribution, authoring

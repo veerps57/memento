@@ -29,7 +29,7 @@ The template is at [`template.md`](template.md). Use it.
 | 0017 | [Async Extraction, Batched Embeddings, and Bulk Repository Operations](0017-async-extraction-batched-embeddings-bulk-ops.md) | Accepted |
 | 0018 | [Memento Dashboard as a sibling package](0018-dashboard-package.md) | Accepted |
 | 0019 | [Import re-stamp policy](0019-import-re-stamp-policy.md) | Accepted |
-| 0020 | [Memento packs — curated YAML bundles for cold-start seeding](0020-memento-packs.md) | Proposed |
+| 0020 | [Memento packs — curated YAML bundles for cold-start seeding](0020-memento-packs.md) | Accepted |
 
 ## When an ADR is required
 

@@ -62,6 +62,8 @@ When a caller writes a memory, the scope is part of the call. There is no implic
 
 There is no workspace-scaffolding command. Callers pass `scope` explicitly on every write, or set a workspace default in their MCP client config (see [KNOWN_LIMITATIONS.md](../../KNOWN_LIMITATIONS.md)).
 
+`pack.install` ([ADR-0020](../adr/0020-memento-packs.md)) is a special case of this: the manifest declares a `defaults.scope` that applies to every memory in the pack, and the install caller may override it via the `scope` input. A pack manifest is single-scope by construction — `PackMemoryItem` has no per-item scope field — so installing a pack into the wrong scope is an explicit override at install time, not a per-memory accident.
+
 ## Read-time scope is layered
 
 When a caller reads (`memory.search`, `memory.list`), they specify a `scopeFilter` that is one of:
