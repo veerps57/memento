@@ -76,7 +76,7 @@ The relevant config keys (full list in [`docs/reference/config-keys.md`](../refe
 
 - `conflict.enabled` — master switch (default `true`). When `false` the post-write hook is skipped entirely.
 - `conflict.scopeStrategy` — `'same'` (default) or `'effective'`. Controls which candidate set the post-write hook compares the new memory against: `same` checks only the new memory's own scope; `effective` widens to the layered effective scope set.
-- `conflict.timeoutMs` — per-write detection budget. Hook runs that exceed this are dropped with a `conflict.timeout` warning; recovery is via `conflict.scan`.
+- `conflict.timeoutMs` — per-write detection budget. Hook runs that exceed this are dropped with a timeout warning; recovery is via `conflict.scan`.
 - `conflict.fact.overlapThreshold` — minimum shared-token count for the fact policy's "stance flip" heuristic to fire (default 3).
 
 Conflicts are deliberately not auto-resolved. The detector finds them; the resolver runs only when invoked.

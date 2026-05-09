@@ -172,7 +172,7 @@ The canonical pre-push command mirrors the CI gate:
 pnpm verify
 ```
 
-`pnpm verify` runs, in order: `lint` → `typecheck` → `build` → `test` → `test:e2e` → `docs:lint` → `docs:reflow:check` → `docs:check` → `format:packs:check`. If it passes locally, CI on the same commit should pass too (modulo OS-specific surprises in the matrix).
+`pnpm verify` runs, in order: <!-- verify-chain:begin -->lint → typecheck → build → test → test:e2e → docs:lint → docs:reflow:check → docs:links → docs:check → format:packs:check<!-- verify-chain:end -->. If it passes locally, CI on the same commit should pass too (modulo OS-specific surprises in the matrix).
 
 The individual steps are also available for tighter loops while iterating:
 
@@ -217,7 +217,7 @@ CI must be green and the PR must have at least one approval before merge. Squash
 Conventional Commits. The type prefix matters because the changelog is generated from it.
 
 ```text
-feat(server): add memory.pin command
+feat(server): add memory.write_many command
 fix(core): preserve confidence on supersede when not provided
 docs(architecture): clarify decay function
 chore(deps): bump @modelcontextprotocol/sdk to 1.x

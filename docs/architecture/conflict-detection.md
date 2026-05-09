@@ -32,7 +32,7 @@ memory.write → commit → return to caller
                   └────────────────────┘
 ```
 
-The job is bounded: if it does not complete within `conflict.timeoutMs` (default `2000`), it is dropped and a `conflict.timeout` warning is logged. Dropping is safe — the next write or an explicit `memento conflict scan` will catch the missed check.
+The job is bounded: if it does not complete within `conflict.timeoutMs` (default `2000`), it is dropped and a timeout warning is logged. Dropping is safe — the next write or an explicit `memento conflict scan` will catch the missed check.
 
 The hook runs in the same process; there is no worker queue, no background daemon, no cross-process coordination. The simplicity is deliberate.
 

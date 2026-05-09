@@ -23,7 +23,7 @@ Applied first. The query specifies an optional `scopes: Scope[]` list. When omit
 
 ### FTS5 (always available)
 
-`memories_fts` is a contentless FTS5 table indexed over `(content, summary, tags)`. The default tokenizer is `unicode61` with diacritic folding; `porter` is available via `retrieval.fts.tokenizer`. The query string is sanitised to a term bag (FTS5 sigils stripped, tokens OR-ed) before it reaches `MATCH`; full FTS5 syntax (phrase, prefix, NEAR) is reserved for a future `retrieval.searchSyntax` knob.
+`memories_fts` is a contentless FTS5 table indexed over `(content, summary, tags)`. The default tokenizer is `unicode61` with diacritic folding; `porter` is available via `retrieval.fts.tokenizer`. The query string is sanitised to a term bag (FTS5 sigils stripped, tokens OR-ed) before it reaches `MATCH`; full FTS5 syntax (phrase, prefix, NEAR) is reserved for a future search-syntax extension under the `retrieval.fts.*` namespace.
 
 FTS5's BM25 score is the primary text-relevance signal. The `k1` and `b` parameters are baked into SQLite's FTS5 implementation and not exposed; tuning them requires a custom `retrieval.ranker.strategy`.
 
