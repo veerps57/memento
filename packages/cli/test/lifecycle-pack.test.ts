@@ -210,3 +210,196 @@ describe('runPack: list', () => {
     expect(value.packs).toEqual([]);
   });
 });
+
+describe('runPack: create', () => {
+  async function seed(dbPath: string): Promise<void> {
+    // Seed two memories in the global scope so pack.export has
+    // material to bundle. We round-trip through the CLI's own
+    // registry to keep the integration honest.
+    const app = await createMementoApp({ dbPath });
+    try {
+      await app.memoryRepository.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: ['rust'],
+          pinned: false,
+          content: 'Rust is the language we use here.',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor: { type: 'cli' } },
+      );
+      await app.memoryRepository.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'preference' },
+          tags: ['build'],
+          pinned: false,
+          content: 'Use pnpm for Node projects.',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor: { type: 'cli' } },
+      );
+    } finally {
+      app.close();
+    }
+  }
+
+  it('rejects when --out is missing', async () => {
+    const result = await runPack(baseDeps, {
+      env: cliEnv(),
+      subargs: ['create', 'my-pack', '--version', '0.1.0', '--title', 'My pack'],
+      io: NULL_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/--out/);
+  });
+
+  it('rejects when <id> / --id is missing', async () => {
+    const result = await runPack(baseDeps, {
+      env: cliEnv(),
+      subargs: ['create', '--out', '/tmp/x.yaml', '--version', '0.1.0', '--title', 'My pack'],
+      io: NULL_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/<id>|--id/);
+  });
+
+  it('rejects when --version is missing', async () => {
+    const result = await runPack(baseDeps, {
+      env: cliEnv(),
+      subargs: ['create', 'my-pack', '--out', '/tmp/x.yaml', '--title', 'My pack'],
+      io: NULL_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/--version/);
+  });
+
+  it('rejects when --title is missing', async () => {
+    const result = await runPack(baseDeps, {
+      env: cliEnv(),
+      subargs: ['create', 'my-pack', '--out', '/tmp/x.yaml', '--version', '0.1.0'],
+      io: NULL_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/--title/);
+  });
+
+  it('rejects when --scope-* flags are supplied more than once', async () => {
+    const result = await runPack(baseDeps, {
+      env: cliEnv(),
+      subargs: [
+        'create',
+        'my-pack',
+        '--out',
+        '/tmp/x.yaml',
+        '--version',
+        '0.1.0',
+        '--title',
+        't',
+        '--scope-global',
+        '--scope-repo=github.com/x/y',
+      ],
+      io: NULL_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/mutually exclusive/);
+  });
+
+  it('writes a YAML file at --out', async () => {
+    const dir = await tmpDir();
+    const dbPath = join(dir, 'test.db');
+    await seed(dbPath);
+
+    const outPath = join(dir, 'my-pack.yaml');
+    const result = await runPack(baseDeps, {
+      env: cliEnv({ dbPath }),
+      subargs: [
+        'create',
+        'my-pack',
+        '--out',
+        outPath,
+        '--version',
+        '0.1.0',
+        '--title',
+        'My pack',
+        '--scope-global',
+      ],
+      io: NULL_IO,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const { readFile } = await import('node:fs/promises');
+    const written = await readFile(outPath, 'utf8');
+    expect(written).toContain('memento-pack/v1');
+    expect(written).toContain('id: my-pack');
+    expect(written).toContain('Rust is the language');
+  });
+
+  it('plumbs --kind / --tag / --pinned filters into the export', async () => {
+    const dir = await tmpDir();
+    const dbPath = join(dir, 'test.db');
+    await seed(dbPath);
+
+    const outPath = join(dir, 'pref-only.yaml');
+    const result = await runPack(baseDeps, {
+      env: cliEnv({ dbPath }),
+      subargs: [
+        'create',
+        'pref-only',
+        '--out',
+        outPath,
+        '--version',
+        '0.1.0',
+        '--title',
+        'Preferences only',
+        '--scope-global',
+        '--kind',
+        'preference',
+        '--tag',
+        'build',
+      ],
+      io: NULL_IO,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const value = result.value as { exported: number };
+    expect(value.exported).toBe(1);
+  });
+
+  it('returns an INVALID_INPUT result when no memories match the filter', async () => {
+    const dir = await tmpDir();
+    const dbPath = join(dir, 'test.db');
+    await seed(dbPath);
+
+    const result = await runPack(baseDeps, {
+      env: cliEnv({ dbPath }),
+      subargs: [
+        'create',
+        'empty-pack',
+        '--out',
+        join(dir, 'empty.yaml'),
+        '--version',
+        '0.1.0',
+        '--title',
+        'Empty',
+        '--kind',
+        'todo',
+      ],
+      io: NULL_IO,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INVALID_INPUT');
+  });
+});

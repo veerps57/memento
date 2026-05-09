@@ -71,6 +71,8 @@ export {
 export {
   createPackCommands,
   type PackCommandDeps,
+  PackExportInputSchema,
+  PackExportOutputSchema,
   PackInstallInputSchema,
   PackInstallOutputSchema,
   PackListInputSchema,

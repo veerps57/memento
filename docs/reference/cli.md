@@ -111,7 +111,7 @@ Initialise the database and print MCP client setup snippets
 
 ### `memento pack`
 
-Install, preview, uninstall, or list memento packs (curated YAML bundles, ADR-0020).
+Install, preview, uninstall, list, or author memento packs (curated YAML bundles, ADR-0020).
 
 ### `memento ping`
 
@@ -139,7 +139,7 @@ Print teardown instructions (config paths and database location)
 
 ## Registry commands
 
-Total: 36 commands.
+Total: 37 commands.
 
 ### `memento compact run`
 
@@ -419,6 +419,12 @@ Atomically create multiple memories in a single transaction. Per-item clientToke
 Programmatic / operator surface — AI assistants typically do NOT reach for this. For multiple explicit user statements ("remember A, B, and C"), prefer N sequential `write_memory` calls so one bad item does not roll the others back. For end-of-session sweeps over things the user mentioned in passing, use `extract_memory` (server dedups + scrubs + lowers confidence). Use `write_many_memories` only when you genuinely need all-or-nothing transactional semantics — e.g. importing a curated batch from a doc.
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
+
+### `memento pack export`
+
+Build a memento pack manifest (YAML) from memories matching a filter. Read-only. The CLI lifecycle wraps this with `memento pack create` for file IO; assistants and the dashboard call it directly.
+
+- **Side-effect:** `read` — Pure read; safe to call freely.
 
 ### `memento pack install`
 

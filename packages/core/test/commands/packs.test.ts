@@ -389,6 +389,203 @@ describe('pack.list', () => {
   });
 });
 
+describe('pack.export', () => {
+  it('builds a manifest from memories matching a filter', async () => {
+    const { app } = await newAppWithBundledRoot();
+    // Seed a few memories
+    await executeCommand(
+      getCommand(app, 'memory.write'),
+      {
+        scope: { type: 'global' },
+        kind: { type: 'fact' },
+        tags: ['rust'],
+        content: 'Rust uses cargo',
+      },
+      ctx,
+    );
+    await executeCommand(
+      getCommand(app, 'memory.write'),
+      {
+        scope: { type: 'global' },
+        kind: { type: 'preference' },
+        tags: ['build'],
+        content: 'Use pnpm',
+      },
+      ctx,
+    );
+
+    const result = await executeCommand(
+      getCommand(app, 'pack.export'),
+      {
+        packId: 'my-pack',
+        version: '0.1.0',
+        title: 'My pack',
+        filter: { scope: { type: 'global' } },
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.exported).toBe(2);
+    expect(result.value.yaml).toContain('memento-pack/v1');
+    expect(result.value.yaml).toContain('id: my-pack');
+  });
+
+  it('refuses with INVALID_INPUT when no memories match the filter', async () => {
+    const { app } = await newAppWithBundledRoot();
+    const result = await executeCommand(
+      getCommand(app, 'pack.export'),
+      {
+        packId: 'empty-pack',
+        version: '0.1.0',
+        title: 'Empty',
+        filter: { kind: 'todo' },
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INVALID_INPUT');
+    expect(result.error.message).toMatch(/no memories matched/);
+  });
+
+  it('refuses when matched memories span multiple scopes', async () => {
+    const { app } = await newAppWithBundledRoot();
+    await executeCommand(
+      getCommand(app, 'memory.write'),
+      {
+        scope: { type: 'global' },
+        kind: { type: 'fact' },
+        tags: [],
+        content: 'g',
+      },
+      ctx,
+    );
+    await executeCommand(
+      getCommand(app, 'memory.write'),
+      {
+        scope: { type: 'workspace', path: '/repo/x' },
+        kind: { type: 'fact' },
+        tags: [],
+        content: 'w',
+      },
+      ctx,
+    );
+    const result = await executeCommand(
+      getCommand(app, 'pack.export'),
+      {
+        packId: 'multi-pack',
+        version: '0.1.0',
+        title: 'Multi',
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INVALID_INPUT');
+    expect(result.error.message).toMatch(/single-scope/);
+  });
+
+  it('round-trips: write → export → install → idempotent', async () => {
+    const { app, bundledRoot } = await newAppWithBundledRoot();
+    // Seed memories
+    await executeCommand(
+      getCommand(app, 'memory.write'),
+      {
+        scope: { type: 'global' },
+        kind: { type: 'fact' },
+        tags: ['rust'],
+        content: 'Rust fact A',
+      },
+      ctx,
+    );
+    await executeCommand(
+      getCommand(app, 'memory.write'),
+      {
+        scope: { type: 'global' },
+        kind: { type: 'preference' },
+        tags: ['build'],
+        content: 'Use pnpm',
+      },
+      ctx,
+    );
+
+    // Export
+    const exported = await executeCommand(
+      getCommand(app, 'pack.export'),
+      {
+        packId: 'roundtrip',
+        version: '0.1.0',
+        title: 'Round-trip',
+        filter: { scope: { type: 'global' } },
+      },
+      ctx,
+    );
+    expect(exported.ok).toBe(true);
+    if (!exported.ok) return;
+
+    // Write the exported YAML to the bundled directory and install it
+    await writeBundledPack(bundledRoot, 'roundtrip', '0.1.0', exported.value.yaml);
+    const installed = await executeCommand(
+      getCommand(app, 'pack.install'),
+      {
+        source: { type: 'bundled', id: 'roundtrip', version: '0.1.0' },
+        dryRun: false,
+      },
+      ctx,
+    );
+    expect(installed.ok).toBe(true);
+    if (!installed.ok) return;
+    expect(installed.value.state).toBe('fresh');
+    expect(installed.value.written).toHaveLength(2);
+
+    // Verify pack:roundtrip:0.1.0 tag is now stamped on two memories
+    const list = await executeCommand(
+      getCommand(app, 'memory.list'),
+      { tags: ['pack:roundtrip:0.1.0'] },
+      ctx,
+    );
+    expect(list.ok).toBe(true);
+    if (!list.ok) return;
+    expect(list.value).toHaveLength(2);
+  });
+
+  it('strips reserved-prefix tags from exported memories and reports the strip', async () => {
+    const { app, bundledRoot } = await newAppWithBundledRoot();
+    // Install a pack so we have a memory with a `pack:*` tag
+    await writeBundledPack(
+      bundledRoot,
+      'source-pack',
+      '1.0.0',
+      'format: memento-pack/v1\nid: source-pack\nversion: 1.0.0\ntitle: Source\nmemories:\n  - kind: fact\n    content: From a pack\n    tags: [rust]',
+    );
+    await executeCommand(
+      getCommand(app, 'pack.install'),
+      {
+        source: { type: 'bundled', id: 'source-pack', version: '1.0.0' },
+        dryRun: false,
+      },
+      ctx,
+    );
+
+    // Export again with a new pack id
+    const result = await executeCommand(
+      getCommand(app, 'pack.export'),
+      {
+        packId: 'derived-pack',
+        version: '0.1.0',
+        title: 'Derived',
+        filter: { scope: { type: 'global' } },
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.warnings.join('\n')).toMatch(/stripped/);
+    expect(result.value.yaml).not.toContain('pack:source-pack:1.0.0');
+  });
+});
+
 describe('reserved tag enforcement', () => {
   it('rejects user writes that try to claim the `pack:` namespace', async () => {
     const { app } = await newAppWithBundledRoot();

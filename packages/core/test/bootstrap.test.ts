@@ -101,6 +101,7 @@ describe('createMementoApp', () => {
         'pack.preview',
         'pack.uninstall',
         'pack.list',
+        'pack.export',
       ].sort(),
     );
   });

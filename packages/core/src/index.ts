@@ -169,6 +169,7 @@ export type {
 // CLI lifecycle wrappers compose these primitives downstream.
 export {
   buildAllVersionsUninstallTagPrefix,
+  buildManifestFromMemories,
   buildSingleVersionUninstallFilter,
   checkInstallState,
   createDefaultPackSourceResolver,
@@ -180,6 +181,10 @@ export {
 } from './packs/index.js';
 export type {
   DefaultResolverOptions,
+  PackExportError,
+  PackExportMetadata,
+  PackExportOutcome,
+  PackExportResult,
   PackInstallOptions,
   PackInstallState,
   PackInstallStateName,

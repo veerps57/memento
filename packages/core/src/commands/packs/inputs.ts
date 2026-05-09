@@ -122,6 +122,45 @@ export const PackListInputSchema = z
   .strict();
 export type PackListInput = z.infer<typeof PackListInputSchema>;
 
+// — `pack.export` —
+
+const PackExportFilterSchema = z
+  .object({
+    scope: ScopeSchema.optional(),
+    kind: z.enum(['fact', 'preference', 'decision', 'todo', 'snippet']).optional(),
+    tags: z.array(z.string()).optional(),
+    pinned: z.boolean().optional(),
+  })
+  .strict();
+export type PackExportFilter = z.infer<typeof PackExportFilterSchema>;
+
+export const PackExportInputSchema = z
+  .object({
+    packId: PackIdSchema,
+    version: PackVersionSchema,
+    title: z.string().min(1).max(200),
+    description: z.string().max(2000).optional(),
+    author: z.string().max(200).optional(),
+    license: z.string().max(64).optional(),
+    homepage: z.string().url().max(500).optional(),
+    /** Pack-discovery tags; not memory tags. */
+    tags: z.array(z.string()).max(20).optional(),
+    filter: PackExportFilterSchema.optional().default({}),
+  })
+  .strict();
+export type PackExportInput = z.infer<typeof PackExportInputSchema>;
+
+export const PackExportOutputSchema = z
+  .object({
+    yaml: z.string(),
+    /** The parsed manifest object. Useful for assistants that want structured output alongside the YAML rendering. */
+    manifest: z.object({}).passthrough(),
+    exported: z.number().int().nonnegative(),
+    warnings: z.array(z.string()),
+  })
+  .strict();
+export type PackExportOutput = z.infer<typeof PackExportOutputSchema>;
+
 // — Outputs —
 
 const PackPreviewItemSchema = z

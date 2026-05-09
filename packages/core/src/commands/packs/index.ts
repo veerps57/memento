@@ -8,6 +8,8 @@ export {
 } from './commands.js';
 
 export {
+  PackExportInputSchema,
+  PackExportOutputSchema,
   PackInstallInputSchema,
   PackInstallOutputSchema,
   PackListInputSchema,
@@ -17,6 +19,9 @@ export {
   PackSourceInputSchema,
   PackUninstallInputSchema,
   PackUninstallOutputSchema,
+  type PackExportFilter,
+  type PackExportInput,
+  type PackExportOutput,
   type PackInstallInput,
   type PackInstallOutput,
   type PackListInput,

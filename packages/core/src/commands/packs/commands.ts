@@ -15,6 +15,7 @@
 
 import {
   type MementoError,
+  type Memory,
   type MemoryId,
   type PackId,
   type PackVersion,
@@ -32,15 +33,20 @@ import {
   type PackInstallTranslation,
   type PackSource,
   type PackSourceResolver,
+  buildManifestFromMemories,
   checkInstallState,
   parsePackManifest,
   translateManifestToWriteInputs,
 } from '../../packs/index.js';
-import type { MemoryRepository } from '../../repository/memory-repository.js';
+import type { MemoryListFilter, MemoryRepository } from '../../repository/memory-repository.js';
 import { repoErrorToMementoError } from '../errors.js';
 import type { AnyCommand, Command } from '../types.js';
 
 import {
+  type PackExportInput,
+  PackExportInputSchema,
+  type PackExportOutput,
+  PackExportOutputSchema,
   type PackInstallInput,
   PackInstallInputSchema,
   type PackInstallOutput,
@@ -303,7 +309,50 @@ export function createPackCommands(deps: PackCommandDeps): readonly AnyCommand[]
     },
   };
 
-  return [installCommand, previewCommand, uninstallCommand, listCommand] as const;
+  const exportCommand: Command<typeof PackExportInputSchema, typeof PackExportOutputSchema> = {
+    name: 'pack.export',
+    sideEffect: 'read',
+    surfaces: SURFACES,
+    inputSchema: PackExportInputSchema,
+    outputSchema: PackExportOutputSchema,
+    metadata: {
+      description:
+        'Build a memento pack manifest (YAML) from memories matching a filter. Read-only. The CLI lifecycle wraps this with `memento pack create` for file IO; assistants and the dashboard call it directly.',
+      mcpName: 'export_pack',
+    },
+    handler: async (input) => {
+      const filter = exportFilterToListFilter(input.filter);
+      let memories: readonly Memory[];
+      try {
+        memories = await deps.memoryRepository.list(filter);
+      } catch (e) {
+        return err<MementoError>(repoErrorToMementoError(e, 'pack.export'));
+      }
+
+      const outcome = buildManifestFromMemories(memories, {
+        packId: input.packId,
+        version: input.version,
+        title: input.title,
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.author !== undefined ? { author: input.author } : {}),
+        ...(input.license !== undefined ? { license: input.license } : {}),
+        ...(input.homepage !== undefined ? { homepage: input.homepage } : {}),
+        ...(input.tags !== undefined ? { tags: [...input.tags] } : {}),
+      });
+      if (!outcome.ok) {
+        return err<MementoError>(exportErrorToMementoError(outcome.error));
+      }
+
+      return ok<PackExportOutput>({
+        yaml: outcome.value.yaml,
+        manifest: outcome.value.manifest as unknown as Record<string, unknown>,
+        exported: outcome.value.exported,
+        warnings: [...outcome.value.warnings],
+      });
+    },
+  };
+
+  return [installCommand, previewCommand, uninstallCommand, listCommand, exportCommand] as const;
 }
 
 // — Internals —
@@ -440,6 +489,42 @@ async function collectUninstallIds(
   }
 }
 
+function exportFilterToListFilter(filter: PackExportInput['filter']): MemoryListFilter {
+  return {
+    status: 'active',
+    ...(filter?.scope !== undefined ? { scope: filter.scope } : {}),
+    ...(filter?.kind !== undefined ? { kind: filter.kind } : {}),
+    ...(filter?.tags !== undefined ? { tags: filter.tags } : {}),
+    ...(filter?.pinned !== undefined ? { pinned: filter.pinned } : {}),
+  };
+}
+
+function exportErrorToMementoError(
+  error: import('../../packs/export.js').PackExportError,
+): MementoError {
+  switch (error.kind) {
+    case 'EMPTY':
+      return {
+        code: 'INVALID_INPUT',
+        message:
+          'pack.export: no memories matched the filter. A pack manifest must include at least one memory.',
+      };
+    case 'MULTI_SCOPE':
+      return {
+        code: 'INVALID_INPUT',
+        message: `pack.export: matched memories span ${error.scopeCount} scopes; pack manifests are single-scope. Narrow the filter (e.g. \`filter.scope: { type: 'global' }\`) or export each scope as its own pack.`,
+        details: { scopeCount: error.scopeCount, scopes: [...error.scopes] },
+      };
+    case 'INVALID_MANIFEST':
+      return {
+        code: 'INVALID_INPUT',
+        message: `pack.export: rendered manifest failed validation: ${error.issues.join('; ')}`,
+        details: { issues: [...error.issues] },
+      };
+  }
+}
+
 // Re-export for tests + adapters that need a single import.
+export type { PackExportInput, PackExportOutput };
 export type { PackInstallInput, PackInstallOutput, PackListInput, PackListOutput };
 export type { PackPreviewInput, PackPreviewOutput, PackUninstallInput, PackUninstallOutput };

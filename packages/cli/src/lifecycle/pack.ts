@@ -1,11 +1,15 @@
 // `memento pack <action>` — lifecycle wrapper around the
 // `pack.*` registered command set.
 //
-// Four actions:
+// Five actions:
 //   memento pack install <id-or-path> [--from-file=<path>] [--from-url=<url>] [--dry-run]
 //   memento pack preview <id-or-path> [--from-file=<path>] [--from-url=<url>]
 //   memento pack uninstall <id>       [--version=<v> | --all-versions] [--dry-run] [--confirm]
 //   memento pack list
+//   memento pack create --out <path> --id <id> --version <v> --title <t>
+//                       [--description <d>] [--author <a>] [--license <l>] [--homepage <u>]
+//                       [--scope-global | --scope-workspace=<path> | --scope-repo=<remote>]
+//                       [--kind <k>] [--tag <t> ...] [--pinned]
 //
 // `pack install` / `pack preview` accept either a bare bundled id
 // (looked up against `packs.bundledRegistryPath`) or one of
@@ -14,21 +18,23 @@
 // can pass `--from-file=./local.yaml` even if a directory in the
 // bundled registry shares a name).
 //
-// CLI scope override is intentionally not exposed in v1 — the
-// MCP and dashboard surfaces accept structured `Scope` inputs;
-// CLI users get the manifest's `defaults.scope` (typically
-// global). A future flag set (`--scope-global` /
-// `--scope-workspace` / `--scope-repo`) lands without breaking
-// existing callers.
+// `pack create` runs the read-only `pack.export` registry command
+// over a `MemoryListFilter` and writes the resulting YAML to
+// `--out` (or to stdout when `--out=-`). The CLI's scope/kind/tag/
+// pinned flags map to the same `MemoryListFilter` shape that
+// `memory.list` uses — assistants and dashboard callers pass the
+// structured `filter` object directly.
+
+import { writeFile } from 'node:fs/promises';
 
 import { executeCommand } from '@psraghuveer/memento-core';
-import { type Result, err, ok } from '@psraghuveer/memento-schema';
+import { type Result, type Scope, err, ok } from '@psraghuveer/memento-schema';
 
 import { resolveVersion } from '../version.js';
 
 import type { LifecycleCommand, LifecycleDeps, LifecycleInput } from './types.js';
 
-export type PackAction = 'install' | 'preview' | 'uninstall' | 'list';
+export type PackAction = 'install' | 'preview' | 'uninstall' | 'list' | 'create';
 
 interface PackArgs {
   readonly action: PackAction;
@@ -39,9 +45,21 @@ interface PackArgs {
   readonly allVersions: boolean;
   readonly dryRun: boolean;
   readonly confirm: boolean;
+  // create-specific
+  readonly out: string | null;
+  readonly id: string | null;
+  readonly title: string | null;
+  readonly description: string | null;
+  readonly author: string | null;
+  readonly license: string | null;
+  readonly homepage: string | null;
+  readonly filterKind: string | null;
+  readonly filterTags: readonly string[];
+  readonly filterPinned: boolean;
+  readonly filterScope: Scope | null;
 }
 
-const KNOWN_ACTIONS: readonly PackAction[] = ['install', 'preview', 'uninstall', 'list'];
+const KNOWN_ACTIONS: readonly PackAction[] = ['install', 'preview', 'uninstall', 'list', 'create'];
 
 function isPackAction(value: string): value is PackAction {
   return (KNOWN_ACTIONS as readonly string[]).includes(value);
@@ -50,7 +68,7 @@ function isPackAction(value: string): value is PackAction {
 export const packCommand: LifecycleCommand = {
   name: 'pack',
   description:
-    'Install, preview, uninstall, or list memento packs (curated YAML bundles, ADR-0020).',
+    'Install, preview, uninstall, list, or author memento packs (curated YAML bundles, ADR-0020).',
   run: runPack,
 };
 
@@ -77,6 +95,8 @@ export async function runPack(
         return await runUninstall(app, a);
       case 'list':
         return await runList(app);
+      case 'create':
+        return await runCreate(app, a);
     }
   } finally {
     app.close();
@@ -155,6 +175,85 @@ async function runList(
   return executeCommand(command, {}, { actor: { type: 'cli' } });
 }
 
+async function runCreate(
+  app: Awaited<ReturnType<LifecycleDeps['createApp']>>,
+  a: PackArgs,
+): Promise<Result<unknown>> {
+  const required: ReadonlyArray<readonly [keyof PackArgs, string]> = [
+    ['out', '--out'],
+    ['positional', '<id>'],
+    ['version', '--version'],
+    ['title', '--title'],
+  ];
+  // `id` is taken from positional for symmetry with install/preview;
+  // accept --id=<id> as an alternative for scriptability.
+  const id = a.id ?? a.positional;
+  if (id === null) {
+    return err({
+      code: 'INVALID_INPUT',
+      message: 'pack create requires <id> (positional) or --id=<id>',
+    });
+  }
+  for (const [key, flagName] of required) {
+    if (key === 'positional') continue;
+    if (a[key] === null) {
+      return err({
+        code: 'INVALID_INPUT',
+        message: `pack create requires ${flagName}=<value>`,
+      });
+    }
+  }
+
+  const command = app.registry.get('pack.export');
+  if (!command) {
+    return err({ code: 'INTERNAL', message: 'pack.export command is not registered' });
+  }
+
+  const exportInput = {
+    packId: id,
+    version: a.version,
+    title: a.title,
+    ...(a.description !== null ? { description: a.description } : {}),
+    ...(a.author !== null ? { author: a.author } : {}),
+    ...(a.license !== null ? { license: a.license } : {}),
+    ...(a.homepage !== null ? { homepage: a.homepage } : {}),
+    filter: {
+      ...(a.filterScope !== null ? { scope: a.filterScope } : {}),
+      ...(a.filterKind !== null ? { kind: a.filterKind } : {}),
+      ...(a.filterTags.length > 0 ? { tags: [...a.filterTags] } : {}),
+      ...(a.filterPinned ? { pinned: true } : {}),
+    },
+  };
+
+  const result = await executeCommand(command, exportInput, { actor: { type: 'cli' } });
+  if (!result.ok) return result;
+
+  const value = result.value as { yaml: string; exported: number; warnings: string[] };
+  // `--out=-` writes to stdout; otherwise write to the path. We
+  // never overwrite without the user's explicit path — `writeFile`
+  // here is intentional, not `appendFile`.
+  if (a.out === '-') {
+    process.stdout.write(value.yaml);
+  } else if (a.out !== null) {
+    try {
+      await writeFile(a.out, value.yaml, 'utf8');
+    } catch (cause) {
+      return err({
+        code: 'STORAGE_ERROR',
+        message: `pack create: failed to write to '${a.out}': ${cause instanceof Error ? cause.message : String(cause)}`,
+      });
+    }
+  }
+
+  return ok({
+    out: a.out,
+    packId: id,
+    version: a.version,
+    exported: value.exported,
+    warnings: value.warnings,
+  });
+}
+
 function buildSourceFromArgs(a: PackArgs): Result<unknown> {
   if (a.fromFile !== null) {
     return ok({ type: 'file', path: a.fromFile });
@@ -198,6 +297,17 @@ function parsePackArgs(subargs: readonly string[]): Result<PackArgs> {
   let allVersions = false;
   let dryRun = false;
   let confirm = false;
+  let out: string | null = null;
+  let id: string | null = null;
+  let title: string | null = null;
+  let description: string | null = null;
+  let author: string | null = null;
+  let license: string | null = null;
+  let homepage: string | null = null;
+  let filterKind: string | null = null;
+  const filterTags: string[] = [];
+  let filterPinned = false;
+  let filterScope: Scope | null = null;
 
   while (args.length > 0) {
     const arg = args.shift() as string;
@@ -211,6 +321,20 @@ function parsePackArgs(subargs: readonly string[]): Result<PackArgs> {
     }
     if (arg === '--all-versions') {
       allVersions = true;
+      continue;
+    }
+    if (arg === '--pinned') {
+      filterPinned = true;
+      continue;
+    }
+    if (arg === '--scope-global') {
+      if (filterScope !== null) {
+        return err({
+          code: 'INVALID_INPUT',
+          message: 'pack create: --scope-* flags are mutually exclusive',
+        });
+      }
+      filterScope = { type: 'global' };
       continue;
     }
 
@@ -243,6 +367,73 @@ function parsePackArgs(subargs: readonly string[]): Result<PackArgs> {
       version = versionValue;
       continue;
     }
+    const outValue = flagWithValue('out');
+    if (outValue !== null) {
+      out = outValue;
+      continue;
+    }
+    const idValue = flagWithValue('id');
+    if (idValue !== null) {
+      id = idValue;
+      continue;
+    }
+    const titleValue = flagWithValue('title');
+    if (titleValue !== null) {
+      title = titleValue;
+      continue;
+    }
+    const descriptionValue = flagWithValue('description');
+    if (descriptionValue !== null) {
+      description = descriptionValue;
+      continue;
+    }
+    const authorValue = flagWithValue('author');
+    if (authorValue !== null) {
+      author = authorValue;
+      continue;
+    }
+    const licenseValue = flagWithValue('license');
+    if (licenseValue !== null) {
+      license = licenseValue;
+      continue;
+    }
+    const homepageValue = flagWithValue('homepage');
+    if (homepageValue !== null) {
+      homepage = homepageValue;
+      continue;
+    }
+    const kindValue = flagWithValue('kind');
+    if (kindValue !== null) {
+      filterKind = kindValue;
+      continue;
+    }
+    const tagValue = flagWithValue('tag');
+    if (tagValue !== null) {
+      filterTags.push(tagValue);
+      continue;
+    }
+    const repoScope = flagWithValue('scope-repo');
+    if (repoScope !== null) {
+      if (filterScope !== null) {
+        return err({
+          code: 'INVALID_INPUT',
+          message: 'pack create: --scope-* flags are mutually exclusive',
+        });
+      }
+      filterScope = { type: 'repo', remote: repoScope as never };
+      continue;
+    }
+    const wsScope = flagWithValue('scope-workspace');
+    if (wsScope !== null) {
+      if (filterScope !== null) {
+        return err({
+          code: 'INVALID_INPUT',
+          message: 'pack create: --scope-* flags are mutually exclusive',
+        });
+      }
+      filterScope = { type: 'workspace', path: wsScope as never };
+      continue;
+    }
 
     if (arg.startsWith('--')) {
       return err({
@@ -268,5 +459,16 @@ function parsePackArgs(subargs: readonly string[]): Result<PackArgs> {
     allVersions,
     dryRun,
     confirm,
+    out,
+    id,
+    title,
+    description,
+    author,
+    license,
+    homepage,
+    filterKind,
+    filterTags,
+    filterPinned,
+    filterScope,
   });
 }

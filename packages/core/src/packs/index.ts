@@ -30,6 +30,14 @@ export {
 } from './install.js';
 
 export {
+  type PackExportError,
+  type PackExportMetadata,
+  type PackExportOutcome,
+  type PackExportResult,
+  buildManifestFromMemories,
+} from './export.js';
+
+export {
   buildAllVersionsUninstallTagPrefix,
   buildSingleVersionUninstallFilter,
   memoryHasAnyVersionOfPack,
