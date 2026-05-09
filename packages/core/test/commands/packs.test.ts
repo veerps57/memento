@@ -765,27 +765,28 @@ describe('pack.install afterWrite hook', () => {
     expect(fired).toHaveLength(0);
   });
 
-  it('end-to-end: pack-installed memories pick up auto-embed via the bootstrap-wired hook', async () => {
-    // Integration test that proves the fix in production
-    // wiring: bootstrap routes its conflict + auto-embed chain
-    // through createPackCommands, so installing a pack
-    // populates embeddings the same way memory.write_many does.
+  it('end-to-end: pack-installed memories have embeddings present by the time install resolves (sync)', async () => {
+    // The fix-PR contract (ADR-0021): when a host wires an
+    // embedder, `pack.install` must batch-embed all freshly-
+    // written memories before the handler resolves. No polling,
+    // no fire-and-forget — by the time `executeCommand`
+    // returns, every fresh memory is `embeddingStatus: present`
+    // and `provider.embedBatch`/`provider.embed` has been
+    // called for the full batch.
     const bundledRoot = await mkdtemp(join(tmpdir(), 'memento-pack-cmd-embed-'));
     tempDirs.push(bundledRoot);
-    // The manifest id ('test-pack') has to match the bundled
-    // dir name on disk. We reuse `yamlBasic` and write under
-    // 'test-pack' so the post-install tag filter below
-    // (`pack:test-pack:1.0.0`) matches what the install
-    // stamped.
     await writeBundledPack(bundledRoot, 'test-pack', '1.0.0', yamlBasic);
 
-    let embedCalls = 0;
+    let embedBatchCalls = 0;
+    let totalTextsEmbedded = 0;
     const fakeProvider = {
       model: 'fake-test-model',
       dimension: 3,
-      embed: async (_text: string) => {
-        embedCalls += 1;
-        return [0.1, 0.2, 0.3] as readonly number[];
+      embed: async (_text: string) => [0.1, 0.2, 0.3] as readonly number[],
+      embedBatch: async (texts: readonly string[]) => {
+        embedBatchCalls += 1;
+        totalTextsEmbedded += texts.length;
+        return texts.map(() => [0.1, 0.2, 0.3] as readonly number[]);
       },
     };
     const app = await createMementoApp({
@@ -793,6 +794,10 @@ describe('pack.install afterWrite hook', () => {
       configOverrides: {
         'packs.bundledRegistryPath': bundledRoot,
         'embedding.autoEmbed': true,
+        // Disable startup backfill — this test is about install-time
+        // sync behavior; backfill would mask a regression where the
+        // install path silently skipped embed.
+        'embedding.startupBackfill.enabled': false,
       },
       embeddingProvider: fakeProvider,
     });
@@ -811,17 +816,15 @@ describe('pack.install afterWrite hook', () => {
     expect(result.value.state).toBe('fresh');
     expect(result.value.written).toHaveLength(2);
 
-    // The auto-embed hook is fire-and-forget — writes complete
-    // before the embedding work resolves. Wait for the
-    // background `provider.embed` calls to land. Two memories →
-    // two embed calls.
-    const deadline = Date.now() + 2000;
-    while (embedCalls < 2 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 10));
-    }
-    expect(embedCalls).toBe(2);
+    // Sync contract: embed has happened before install
+    // resolved. Single batch call covering both memories — the
+    // helper uses embedBatch under the hood, not 2 sequential
+    // embed() calls.
+    expect(embedBatchCalls).toBe(1);
+    expect(totalTextsEmbedded).toBe(2);
 
-    // And confirm the embeddings actually landed on the memories.
+    // No polling needed — embeddings are present immediately
+    // after install resolves.
     const list = await executeCommand(
       getCommand(app, 'memory.list'),
       { tags: ['pack:test-pack:1.0.0'], includeEmbedding: true },
@@ -833,5 +836,98 @@ describe('pack.install afterWrite hook', () => {
     for (const m of list.value) {
       expect(m.embeddingStatus).toBe('present');
     }
+  });
+
+  it('install succeeds even when the embedder fails (best-effort embed)', async () => {
+    // Partial-failure policy: embed errors must not poison the
+    // install Result. The memories are still written with the
+    // canonical pack tag; embeddings are recoverable via
+    // `embedding.rebuild`.
+    const bundledRoot = await mkdtemp(join(tmpdir(), 'memento-pack-cmd-embed-fail-'));
+    tempDirs.push(bundledRoot);
+    await writeBundledPack(bundledRoot, 'test-pack', '1.0.0', yamlBasic);
+
+    const failingProvider = {
+      model: 'broken-test-model',
+      dimension: 3,
+      embed: async (_text: string): Promise<readonly number[]> => {
+        throw new Error('embed failure');
+      },
+      embedBatch: async (_texts: readonly string[]): Promise<readonly (readonly number[])[]> => {
+        throw new Error('batch failure');
+      },
+    };
+    const app = await createMementoApp({
+      dbPath: ':memory:',
+      configOverrides: {
+        'packs.bundledRegistryPath': bundledRoot,
+        'embedding.autoEmbed': true,
+        'embedding.startupBackfill.enabled': false,
+      },
+      embeddingProvider: failingProvider,
+    });
+    apps.push(app);
+
+    const result = await executeCommand(
+      getCommand(app, 'pack.install'),
+      {
+        source: { type: 'bundled', id: 'test-pack', version: '1.0.0' },
+        dryRun: false,
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.state).toBe('fresh');
+    expect(result.value.written).toHaveLength(2);
+
+    // Memories landed; embeddings did not.
+    const list = await executeCommand(
+      getCommand(app, 'memory.list'),
+      { tags: ['pack:test-pack:1.0.0'], includeEmbedding: true },
+      ctx,
+    );
+    expect(list.ok).toBe(true);
+    if (!list.ok) return;
+    expect(list.value).toHaveLength(2);
+    for (const m of list.value) {
+      // Embedding never wrote — status is whatever the
+      // store-default + missing-vector projection produces.
+      // The important assertion: the memory exists and is
+      // active.
+      expect(m.status).toBe('active');
+    }
+  });
+
+  it('install does not embed when host has not wired an embedder (no provider)', async () => {
+    // When `retrieval.vector.enabled` is false the host doesn't
+    // pass an `embeddingProvider` and bootstrap omits the
+    // `embedAndStore` callback entirely. Install must still
+    // succeed; memories land without vectors.
+    const bundledRoot = await mkdtemp(join(tmpdir(), 'memento-pack-cmd-novector-'));
+    tempDirs.push(bundledRoot);
+    await writeBundledPack(bundledRoot, 'test-pack', '1.0.0', yamlBasic);
+
+    const app = await createMementoApp({
+      dbPath: ':memory:',
+      configOverrides: {
+        'packs.bundledRegistryPath': bundledRoot,
+      },
+      // No embeddingProvider supplied — vector retrieval off.
+    });
+    apps.push(app);
+
+    const result = await executeCommand(
+      getCommand(app, 'pack.install'),
+      {
+        source: { type: 'bundled', id: 'test-pack', version: '1.0.0' },
+        dryRun: false,
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.state).toBe('fresh');
+    expect(result.value.written).toHaveLength(2);
   });
 });

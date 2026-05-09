@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 85 keys.
+Total: 87 keys.
 
 ## `decay.*`
 
@@ -44,6 +44,8 @@ Total: 85 keys.
 | `embedding.rebuild.defaultBatchSize` | `100` | yes | Default batch size for `embedding.rebuild` when no batchSize is supplied. |
 | `embedding.rebuild.maxBatchSize` | `1000` | yes | Hard upper bound on `embedding.rebuild` batch size. |
 | `embedding.autoEmbed` | `true` | yes | When true and an EmbeddingProvider is wired, newly-written memories are embedded immediately after write (fire-and-forget). Disable to defer embedding to manual `embedding rebuild` runs. |
+| `embedding.startupBackfill.enabled` | `true` | no | When true and an EmbeddingProvider is wired, the server runs a bounded re-embed pass at boot to drain memories whose stored vector is missing or stale. Off-thread (does not block the first request); bounded by `embedding.startupBackfill.maxRows`. Disable to require explicit `embedding rebuild` runs only. |
+| `embedding.startupBackfill.maxRows` | `1000` | no | Hard upper bound on the number of memories the startup-backfill pass scans per boot. The pass walks the active corpus newest-first and stops at this cap; remaining stale rows surface on the next boot or via `embedding rebuild`. |
 
 ## `compact.*`
 

@@ -63,6 +63,7 @@ import { createConfigRepository, createMutableConfigStore } from './config/index
 import type { ConflictHookConfig, ConflictRepository } from './conflict/index.js';
 import { createConflictRepository, runConflictHook } from './conflict/index.js';
 import type { EmbeddingProvider } from './embedding/index.js';
+import { embedAndStore, reembedAll } from './embedding/index.js';
 import { createDefaultPackSourceResolver } from './packs/index.js';
 import type { EventRepository, MemoryRepository } from './repository/index.js';
 import { createEventRepository, createMemoryRepository } from './repository/index.js';
@@ -113,6 +114,15 @@ export interface MementoApp {
   readonly eventRepository: EventRepository;
   readonly conflictRepository: ConflictRepository;
   readonly configRepository: ConfigRepository;
+  /**
+   * The wired embedding provider, when one was supplied. Hosts
+   * use this to compose post-write batch-embed operations that
+   * need to outlive the command's request scope (e.g. CLI
+   * `memento import`'s post-commit embed pass — see ADR-0021).
+   * `undefined` when the host opted out of vector retrieval
+   * (`retrieval.vector.enabled = false` or no provider passed).
+   */
+  readonly embeddingProvider?: EmbeddingProvider;
   /** Idempotent. Closes the database iff this app opened it. */
   close(): void;
 }
@@ -327,37 +337,33 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     memoryRepository,
     resolver: packResolver,
     configStore,
-    // Same fire-and-forget chain as `memory.write_many` and
-    // `memory.extract`: a pack install is just a batch of
-    // writes, and pack-installed memories should pick up
-    // conflict detection + auto-embed by the same path. Without
-    // this, `pack.install` would call `writeMany` on the repo
-    // directly and silently skip both hooks (the original
-    // launch shipped with this gap).
+    // afterWrite is conflict-only here. Auto-embed for pack
+    // installs is **synchronous** via `embedAndStore` below —
+    // see ADR-0021. Conflict detection stays fire-and-forget
+    // per ADR-0005.
     afterWrite: (memory, ctx) => {
       void runConflictHook(memory, { memoryRepository, conflictRepository }, hookConfig, {
         actor: ctx.actor,
         maxCandidates,
       });
-      if (embeddingProvider !== undefined && configStore.get('embedding.autoEmbed')) {
-        void (async () => {
-          try {
-            const vector = await embeddingProvider.embed(memory.content);
-            await memoryRepository.setEmbedding(
-              memory.id,
-              {
-                model: embeddingProvider.model,
-                dimension: embeddingProvider.dimension,
-                vector,
-              },
-              { actor: ctx.actor },
-            );
-          } catch {
-            // Best-effort: same as the main write path.
-          }
-        })();
-      }
     },
+    // Synchronous batch-embed for fresh pack installs. Closes
+    // the race that bit the 0.6.0 / 0.6.1 launches: fire-and-
+    // forget auto-embed got cut off when the one-shot CLI
+    // exited (or the MCP server restarted) before the async
+    // embed promises resolved. By the time `pack.install`
+    // returns, every fresh memory has its vector persisted.
+    // Skipped when no embedder is wired or `embedding.autoEmbed`
+    // is off — the caller can still recover via
+    // `embedding.rebuild`.
+    ...(embeddingProvider !== undefined
+      ? {
+          embedAndStore: async (memories, actor) => {
+            if (!configStore.get('embedding.autoEmbed')) return;
+            await embedAndStore(memories, embeddingProvider, memoryRepository, actor);
+          },
+        }
+      : {}),
   });
 
   let builder = createRegistry();
@@ -372,6 +378,34 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
   for (const cmd of systemCommands) builder = builder.register(cmd);
   for (const cmd of packCommands) builder = builder.register(cmd);
   const registry = builder.freeze();
+
+  // Startup embedding backfill (ADR-0021). Drains memories
+  // whose stored vector is missing or stale relative to the
+  // configured embedder — orphans from a prior session that
+  // got cut off mid-async-embed (server died, CLI exited),
+  // memories from a buggy install path, or rows that were
+  // written while `embedding.autoEmbed` was off and the
+  // operator has since flipped it on. Bounded by
+  // `embedding.startupBackfill.maxRows` so a pathological
+  // backlog cannot pin boot.
+  //
+  // Off-thread (does not block `createMementoApp`'s return),
+  // best-effort (failures swallowed and recoverable via
+  // `embedding.rebuild`), single-shot per boot.
+  if (embeddingProvider !== undefined && configStore.get('embedding.startupBackfill.enabled')) {
+    const maxRows = configStore.get('embedding.startupBackfill.maxRows');
+    void (async () => {
+      try {
+        await reembedAll(memoryRepository, embeddingProvider, {
+          actor: { type: 'cli' },
+          batchSize: maxRows,
+        });
+      } catch {
+        // Best-effort: see module header. The user's recovery
+        // path is the explicit `embedding.rebuild` command.
+      }
+    })();
+  }
 
   let closed = false;
   const close = (): void => {
@@ -390,6 +424,7 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     eventRepository,
     conflictRepository,
     configRepository,
+    ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
     close,
   };
 }

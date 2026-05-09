@@ -464,6 +464,35 @@ export const CONFIG_KEYS = {
       'When true and an EmbeddingProvider is wired, newly-written memories are embedded immediately after write (fire-and-forget). Disable to defer embedding to manual `embedding rebuild` runs.',
   }),
 
+  // — Startup backfill —
+  //
+  // At server boot, scan for active memories whose vector is
+  // missing or stale relative to the configured embedder, and
+  // batch-embed them. Recovers orphans from the prior session
+  // (server died mid-async-embed, prior buggy install path,
+  // user toggled `embedding.autoEmbed` from false to true,
+  // etc.) without requiring an explicit `embedding rebuild`.
+  // Bounded by `maxRows` so a pathological backlog cannot pin
+  // boot — anything past the cap is left for the next boot or
+  // the explicit rebuild command.
+  //
+  // Skipped entirely when no embedder is wired (vector
+  // retrieval disabled in the host).
+  'embedding.startupBackfill.enabled': defineKey({
+    schema: z.boolean(),
+    default: true,
+    mutable: false,
+    description:
+      'When true and an EmbeddingProvider is wired, the server runs a bounded re-embed pass at boot to drain memories whose stored vector is missing or stale. Off-thread (does not block the first request); bounded by `embedding.startupBackfill.maxRows`. Disable to require explicit `embedding rebuild` runs only.',
+  }),
+  'embedding.startupBackfill.maxRows': defineKey({
+    schema: z.number().int().min(1).max(10_000),
+    default: 1000,
+    mutable: false,
+    description:
+      'Hard upper bound on the number of memories the startup-backfill pass scans per boot. The pass walks the active corpus newest-first and stops at this cap; remaining stale rows surface on the next boot or via `embedding rebuild`.',
+  }),
+
   // — Scrubber —
   // Redaction is config-driven so operators can extend or
   // replace the default rule set without forking core. The

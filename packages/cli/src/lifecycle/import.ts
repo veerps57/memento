@@ -49,12 +49,14 @@ import { createInterface } from 'node:readline';
 import {
   type ImportConflictPolicy,
   type ImportSummary,
+  embedAndStore,
   importSnapshot,
 } from '@psraghuveer/memento-core';
 import { type Result, err, ok } from '@psraghuveer/memento-schema';
 
 import { resolveVersion } from '../version.js';
 
+import { openAppForSurface } from './open-app.js';
 import type { LifecycleCommand, LifecycleDeps, LifecycleInput } from './types.js';
 
 /** Operator-facing payload of `memento import`. */
@@ -89,10 +91,16 @@ export async function runImport(
   const args = parseImportArgs(input.subargs);
   if (!args.ok) return args;
 
-  const app = await deps.createApp({
+  // Use openAppForSurface so the import lifecycle gets a wired
+  // embedder when `retrieval.vector.enabled` is true. Without
+  // this, post-commit batch-embed (ADR-0021) would silently
+  // skip — the same gap we close for `pack.install`.
+  const opened = await openAppForSurface(deps, {
     dbPath: input.env.dbPath,
     appVersion: resolveVersion(),
   });
+  if (!opened.ok) return opened;
+  const app = opened.value;
 
   try {
     const maxBytes = app.configStore.get('import.maxBytes');
@@ -114,6 +122,11 @@ export async function runImport(
       });
     }
 
+    // Construct a synchronous batch-embed callback. Skipped
+    // (passed as undefined) when `retrieval.vector.enabled` is
+    // false — `openAppForSurface` only wires `embeddingProvider`
+    // in that case.
+    const provider = app.embeddingProvider;
     const result = await importSnapshot({
       db: app.db.db,
       source: streamLines(args.value.in),
@@ -126,6 +139,13 @@ export async function runImport(
         engineBudgetMs: app.configStore.get('scrubber.engineBudgetMs'),
       },
       actor: { type: 'cli' },
+      ...(provider !== undefined && app.configStore.get('embedding.autoEmbed')
+        ? {
+            embedAndStore: async (memories, actor) => {
+              await embedAndStore(memories, provider, app.memoryRepository, actor);
+            },
+          }
+        : {}),
     });
     if (!result.ok) return result;
 

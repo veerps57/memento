@@ -561,3 +561,159 @@ describe('importSnapshot — re-stamp policy (ADR-0019)', () => {
     expect(result.error.message).toMatch(/exceeds maxRecordBytes/u);
   });
 });
+
+// — embedAndStore (ADR-0021) ——————————————————————————————————
+//
+// `importSnapshot` writes memories via raw `trx.insertInto` so
+// the repository's `afterWrite` hook chain never fires. Before
+// ADR-0021, that meant imported memories silently shipped
+// without embeddings — recovery required a manual
+// `embedding.rebuild`. The fix adds a post-commit batch-embed
+// step gated by an `embedAndStore` callback. These tests pin
+// the new contract.
+
+describe('importSnapshot — post-commit embedAndStore (ADR-0021)', () => {
+  it('invokes embedAndStore with every freshly-inserted memory whose artefact had no embedding', async () => {
+    // Source: 2 memories, no exported embeddings.
+    const source = await fileBackedFixture();
+    await seed(source, 2);
+    const cap = makeWriter();
+    await exportSnapshot({
+      dbPath: source.path,
+      writer: cap.writer,
+      includeEmbeddings: false,
+      mementoVersion: '0.0.0-test',
+    });
+
+    const target = await fileBackedFixture();
+    const lines = cap.lines.map((l) => l.replace(/\n$/, ''));
+    const seen: { id: string; actorType: string }[] = [];
+    const result = await importSnapshot({
+      db: target.db,
+      source: lines,
+      onConflict: 'abort',
+      dryRun: false,
+      embedAndStore: async (memories, actorRef) => {
+        for (const m of memories) {
+          seen.push({ id: m.id, actorType: actorRef.type });
+        }
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.applied.memories).toBe(2);
+    // Both freshly-inserted memories were forwarded to the
+    // post-commit embed step.
+    expect(seen).toHaveLength(2);
+    // Actor is the importer's actor, not a synthesised one.
+    expect(seen.every((s) => s.actorType === 'cli')).toBe(true);
+  });
+
+  it('skips memories whose embedding the artefact already carried', async () => {
+    // Source: 1 memory WITH a pre-computed embedding.
+    const source = await fileBackedFixture();
+    const repo = createMemoryRepository(source.db);
+    const memory = await repo.write(baseInput, { actor });
+    await repo.setEmbedding(
+      memory.id,
+      { model: 'bge-small-en-v1.5', dimension: 4, vector: [0.1, 0.2, 0.3, 0.4] },
+      { actor },
+    );
+    const cap = makeWriter();
+    await exportSnapshot({
+      dbPath: source.path,
+      writer: cap.writer,
+      includeEmbeddings: true,
+      mementoVersion: '0.0.0-test',
+    });
+
+    const target = await fileBackedFixture();
+    const lines = cap.lines.map((l) => l.replace(/\n$/, ''));
+    const seen: { id: string }[] = [];
+    const result = await importSnapshot({
+      db: target.db,
+      source: lines,
+      onConflict: 'abort',
+      dryRun: false,
+      embedAndStore: async (memories) => {
+        for (const m of memories) seen.push({ id: m.id });
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.applied.memories).toBe(1);
+    expect(result.value.applied.embeddings).toBe(1);
+    // The artefact's embedding was applied inside the
+    // transaction, so the post-commit pass has nothing to do.
+    expect(seen).toHaveLength(0);
+  });
+
+  it('does not invoke embedAndStore when nothing was applied (idempotent re-import)', async () => {
+    // Seed source + pre-populate target with the same memory
+    // so the second import skips them all.
+    const source = await fileBackedFixture();
+    await seed(source, 1);
+    const cap = makeWriter();
+    await exportSnapshot({
+      dbPath: source.path,
+      writer: cap.writer,
+      includeEmbeddings: false,
+      mementoVersion: '0.0.0-test',
+    });
+    const lines = cap.lines.map((l) => l.replace(/\n$/, ''));
+
+    const target = await fileBackedFixture();
+    // First import lands the rows.
+    await importSnapshot({
+      db: target.db,
+      source: lines,
+      onConflict: 'skip',
+      dryRun: false,
+    });
+
+    // Second import — every row hits the existing-id skip path.
+    const seen: { id: string }[] = [];
+    const result = await importSnapshot({
+      db: target.db,
+      source: lines,
+      onConflict: 'skip',
+      dryRun: false,
+      embedAndStore: async (memories) => {
+        for (const m of memories) seen.push({ id: m.id });
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.applied.memories).toBe(0);
+    expect(result.value.skipped.memories).toBe(1);
+    // No new rows means nothing to embed.
+    expect(seen).toHaveLength(0);
+  });
+
+  it('embedAndStore is omitted entirely when the option is not supplied (vector retrieval off)', async () => {
+    // Reasserts the no-callback path: import should succeed
+    // without touching the embedder pipeline.
+    const source = await fileBackedFixture();
+    await seed(source, 2);
+    const cap = makeWriter();
+    await exportSnapshot({
+      dbPath: source.path,
+      writer: cap.writer,
+      includeEmbeddings: false,
+      mementoVersion: '0.0.0-test',
+    });
+
+    const target = await fileBackedFixture();
+    const lines = cap.lines.map((l) => l.replace(/\n$/, ''));
+    const result = await importSnapshot({
+      db: target.db,
+      source: lines,
+      onConflict: 'abort',
+      dryRun: false,
+      // No embedAndStore — simulates vector retrieval disabled.
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.applied.memories).toBe(2);
+  });
+});

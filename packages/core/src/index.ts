@@ -92,8 +92,9 @@ export type {
   DetectConflictsResult,
   PolicyResult,
 } from './conflict/index.js';
-export { reembedAll } from './embedding/index.js';
+export { embedAndStore, reembedAll } from './embedding/index.js';
 export type {
+  EmbedAndStoreResult,
   EmbeddingProvider,
   ReembedOptions,
   ReembedResult,
