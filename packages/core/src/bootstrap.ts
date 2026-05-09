@@ -327,6 +327,37 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     memoryRepository,
     resolver: packResolver,
     configStore,
+    // Same fire-and-forget chain as `memory.write_many` and
+    // `memory.extract`: a pack install is just a batch of
+    // writes, and pack-installed memories should pick up
+    // conflict detection + auto-embed by the same path. Without
+    // this, `pack.install` would call `writeMany` on the repo
+    // directly and silently skip both hooks (the original
+    // launch shipped with this gap).
+    afterWrite: (memory, ctx) => {
+      void runConflictHook(memory, { memoryRepository, conflictRepository }, hookConfig, {
+        actor: ctx.actor,
+        maxCandidates,
+      });
+      if (embeddingProvider !== undefined && configStore.get('embedding.autoEmbed')) {
+        void (async () => {
+          try {
+            const vector = await embeddingProvider.embed(memory.content);
+            await memoryRepository.setEmbedding(
+              memory.id,
+              {
+                model: embeddingProvider.model,
+                dimension: embeddingProvider.dimension,
+                vector,
+              },
+              { actor: ctx.actor },
+            );
+          } catch {
+            // Best-effort: same as the main write path.
+          }
+        })();
+      }
+    },
   });
 
   let builder = createRegistry();

@@ -11,7 +11,7 @@
 //   - list: groups installed memories by `pack:<id>:<version>` tag
 //   - reserved-tag enforcement: user writes can't claim `pack:*`
 
-import type { ActorRef } from '@psraghuveer/memento-schema';
+import type { ActorRef, Memory } from '@psraghuveer/memento-schema';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
@@ -19,6 +19,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type MementoApp, createMementoApp } from '../../src/bootstrap.js';
 import { executeCommand } from '../../src/commands/execute.js';
+import { createPackCommands } from '../../src/commands/packs/commands.js';
+import { createDefaultPackSourceResolver } from '../../src/packs/resolve.js';
 
 const ctx = { actor: { type: 'cli' } as ActorRef };
 
@@ -651,5 +653,185 @@ describe('reserved tag enforcement', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('INVALID_INPUT');
+  });
+});
+
+// — afterWrite hook coverage —
+//
+// Regression tests for the "pack.install bypasses post-write
+// hooks" defect. The original implementation called
+// `memoryRepository.writeMany` directly, going around the
+// command-level afterWrite hook chain wired in bootstrap.ts.
+// Result: pack-installed memories silently skipped both
+// conflict detection and auto-embed, leaving every
+// pack-installed memory at `embeddingStatus: pending` until the
+// user manually ran `embedding.rebuild`. These tests pin the
+// fix: install fires `afterWrite` once per fresh memory and
+// zero times for idempotent re-installs.
+
+describe('pack.install afterWrite hook', () => {
+  it('fires afterWrite once per freshly-written memory on a fresh install', async () => {
+    const { app, bundledRoot } = await newAppWithBundledRoot();
+    await writeBundledPack(bundledRoot, 'test-pack', '1.0.0', yamlBasic);
+
+    const fired: Memory[] = [];
+    // Build a parallel command set with a spy hook. We use the
+    // same MemoryRepository as the app so the existing pack-tag
+    // assertions stay valid; only the afterWrite path differs.
+    const spyCommands = createPackCommands({
+      memoryRepository: app.memoryRepository,
+      resolver: createDefaultPackSourceResolver({
+        bundledRoot,
+        allowRemoteUrls: false,
+        urlFetchTimeoutMs: 1000,
+        maxPackSizeBytes: 1024 * 1024,
+      }),
+      configStore: app.configStore,
+      afterWrite: (memory) => {
+        fired.push(memory);
+      },
+    });
+    const installCommand = spyCommands.find((c) => c.name === 'pack.install');
+    if (!installCommand) throw new Error('pack.install command missing');
+
+    const result = await executeCommand(
+      installCommand,
+      {
+        source: { type: 'bundled', id: 'test-pack', version: '1.0.0' },
+        dryRun: false,
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.state).toBe('fresh');
+    // yamlBasic has 2 memories — both should fire the hook.
+    expect(fired).toHaveLength(2);
+    // Each fired memory carries the canonical pack tag.
+    for (const m of fired) {
+      expect(m.tags).toContain('pack:test-pack:1.0.0');
+    }
+  });
+
+  it('does NOT fire afterWrite for idempotent re-installs', async () => {
+    const { app, bundledRoot } = await newAppWithBundledRoot();
+    await writeBundledPack(bundledRoot, 'test-pack', '1.0.0', yamlBasic);
+
+    // First install via the app (no spy, just to populate the
+    // store) so the second invocation is the idempotent path.
+    const first = await executeCommand(
+      getCommand(app, 'pack.install'),
+      {
+        source: { type: 'bundled', id: 'test-pack', version: '1.0.0' },
+        dryRun: false,
+      },
+      ctx,
+    );
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.value.state).toBe('fresh');
+
+    // Second install — same content, same version → idempotent.
+    const fired: Memory[] = [];
+    const spyCommands = createPackCommands({
+      memoryRepository: app.memoryRepository,
+      resolver: createDefaultPackSourceResolver({
+        bundledRoot,
+        allowRemoteUrls: false,
+        urlFetchTimeoutMs: 1000,
+        maxPackSizeBytes: 1024 * 1024,
+      }),
+      configStore: app.configStore,
+      afterWrite: (memory) => {
+        fired.push(memory);
+      },
+    });
+    const installCommand = spyCommands.find((c) => c.name === 'pack.install');
+    if (!installCommand) throw new Error('pack.install command missing');
+
+    const second = await executeCommand(
+      installCommand,
+      {
+        source: { type: 'bundled', id: 'test-pack', version: '1.0.0' },
+        dryRun: false,
+      },
+      ctx,
+    );
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.value.state).toBe('idempotent');
+    // The hook never fires for items resolved by clientToken
+    // idempotency — same skip rule as memory.write_many.
+    expect(fired).toHaveLength(0);
+  });
+
+  it('end-to-end: pack-installed memories pick up auto-embed via the bootstrap-wired hook', async () => {
+    // Integration test that proves the fix in production
+    // wiring: bootstrap routes its conflict + auto-embed chain
+    // through createPackCommands, so installing a pack
+    // populates embeddings the same way memory.write_many does.
+    const bundledRoot = await mkdtemp(join(tmpdir(), 'memento-pack-cmd-embed-'));
+    tempDirs.push(bundledRoot);
+    // The manifest id ('test-pack') has to match the bundled
+    // dir name on disk. We reuse `yamlBasic` and write under
+    // 'test-pack' so the post-install tag filter below
+    // (`pack:test-pack:1.0.0`) matches what the install
+    // stamped.
+    await writeBundledPack(bundledRoot, 'test-pack', '1.0.0', yamlBasic);
+
+    let embedCalls = 0;
+    const fakeProvider = {
+      model: 'fake-test-model',
+      dimension: 3,
+      embed: async (_text: string) => {
+        embedCalls += 1;
+        return [0.1, 0.2, 0.3] as readonly number[];
+      },
+    };
+    const app = await createMementoApp({
+      dbPath: ':memory:',
+      configOverrides: {
+        'packs.bundledRegistryPath': bundledRoot,
+        'embedding.autoEmbed': true,
+      },
+      embeddingProvider: fakeProvider,
+    });
+    apps.push(app);
+
+    const result = await executeCommand(
+      getCommand(app, 'pack.install'),
+      {
+        source: { type: 'bundled', id: 'test-pack', version: '1.0.0' },
+        dryRun: false,
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.state).toBe('fresh');
+    expect(result.value.written).toHaveLength(2);
+
+    // The auto-embed hook is fire-and-forget — writes complete
+    // before the embedding work resolves. Wait for the
+    // background `provider.embed` calls to land. Two memories →
+    // two embed calls.
+    const deadline = Date.now() + 2000;
+    while (embedCalls < 2 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(embedCalls).toBe(2);
+
+    // And confirm the embeddings actually landed on the memories.
+    const list = await executeCommand(
+      getCommand(app, 'memory.list'),
+      { tags: ['pack:test-pack:1.0.0'], includeEmbedding: true },
+      ctx,
+    );
+    expect(list.ok).toBe(true);
+    if (!list.ok) return;
+    expect(list.value).toHaveLength(2);
+    for (const m of list.value) {
+      expect(m.embeddingStatus).toBe('present');
+    }
   });
 });
