@@ -34,7 +34,7 @@ import type { MemoryRepository } from '../../repository/memory-repository.js';
 import { ulid } from '../../repository/ulid.js';
 import type { MementoSchema } from '../../storage/schema.js';
 import type { Command, CommandContext } from '../types.js';
-import { enforceSafetyCaps } from './safety-caps.js';
+import { assertNoReservedTags, enforceSafetyCaps } from './safety-caps.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
 
@@ -182,6 +182,15 @@ export function createMemoryExtractCommand(
         });
       }
 
+      // Reserved-prefix tag check (ADR-0020). Reserved namespaces
+      // are owned by system commands; user-extracted memories must
+      // not claim them.
+      for (let i = 0; i < input.candidates.length; i += 1) {
+        const candidate = input.candidates[i];
+        if (candidate === undefined) continue;
+        const reservedCheck = assertNoReservedTags('memory.extract', candidate.tags ?? [], i);
+        if (!reservedCheck.ok) return reservedCheck;
+      }
       // Per-candidate content/summary/tag/rationale caps.
       for (let i = 0; i < input.candidates.length; i += 1) {
         const candidate = input.candidates[i];

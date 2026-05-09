@@ -301,6 +301,82 @@ describe('createMemoryRepository', () => {
     });
   });
 
+  describe('listClientTokensForFilter', () => {
+    it('returns clientTokens for memories matching the filter, skipping NULL tokens', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      await repo.write({ ...baseInput, content: 'one', clientToken: 'pack-aaaa' }, { actor });
+      await repo.write({ ...baseInput, content: 'two', clientToken: 'pack-bbbb' }, { actor });
+      // No clientToken — should be skipped from the result.
+      await repo.write({ ...baseInput, content: 'three' }, { actor });
+
+      const tokens = await repo.listClientTokensForFilter({ status: 'active' });
+      expect(tokens.slice().sort()).toEqual(['pack-aaaa', 'pack-bbbb']);
+    });
+
+    it('honours tag, scope, and status filters', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      await repo.write(
+        {
+          ...baseInput,
+          content: 'global-tagged',
+          tags: ['pack:foo:1.0.0'],
+          clientToken: 'pack-T1',
+        },
+        { actor },
+      );
+      await repo.write(
+        {
+          ...baseInput,
+          content: 'global-untagged',
+          clientToken: 'pack-T2',
+        },
+        { actor },
+      );
+      await repo.write(
+        {
+          ...baseInput,
+          scope: { type: 'workspace', path: '/repo/x' as never },
+          tags: ['pack:foo:1.0.0'],
+          content: 'workspace-tagged',
+          clientToken: 'pack-T3',
+        },
+        { actor },
+      );
+
+      const onlyGlobalAndTagged = await repo.listClientTokensForFilter({
+        status: 'active',
+        tags: ['pack:foo:1.0.0'],
+        scope: { type: 'global' },
+      });
+      expect(onlyGlobalAndTagged).toEqual(['pack-T1']);
+    });
+
+    it('returns an empty array when no memories match', async () => {
+      const handle = await fixture();
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      await repo.write({ ...baseInput, clientToken: 'pack-X' }, { actor });
+      const tokens = await repo.listClientTokensForFilter({
+        status: 'active',
+        tags: ['nonexistent'],
+      });
+      expect(tokens).toEqual([]);
+    });
+  });
+
   describe('supersede', () => {
     it('flips the old memory and links both directions atomically', async () => {
       const handle = await fixture();

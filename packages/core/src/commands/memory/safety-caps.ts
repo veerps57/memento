@@ -16,7 +16,15 @@
 // UTF-8). For mostly-ASCII content the two are identical; the
 // difference matters only for content with high-codepoint chars.
 
-import { type MementoError, type Result, type Scope, err, ok } from '@psraghuveer/memento-schema';
+import {
+  type MementoError,
+  RESERVED_TAG_PREFIXES,
+  type Result,
+  type Scope,
+  err,
+  isReservedTag,
+  ok,
+} from '@psraghuveer/memento-schema';
 import type { ConfigStore } from '../../config/index.js';
 
 export interface SafetyCheckInput {
@@ -93,6 +101,34 @@ export function enforceSafetyCaps(
       code: 'INVALID_INPUT',
       message: `${op}: ${input.tags.length} tags${at} exceeds safety.tagMaxCount (${tagMax})`,
       details: { limit: tagMax, received: input.tags.length, field: 'tags' },
+    });
+  }
+  return ok(undefined);
+}
+
+/**
+ * Reject any tag starting with a reserved system prefix
+ * (`pack:`, etc — see {@link RESERVED_TAG_PREFIXES}). Called
+ * from every user-write handler (`memory.write`,
+ * `memory.write_many`, `memory.extract`); the pack-install path
+ * deliberately bypasses this check because it owns the reserved
+ * `pack:` namespace. Without this guard, a caller could forge a
+ * pack-installed memory by adding a `pack:foo:1.0.0` tag on a
+ * normal write — that would pollute the provenance model
+ * ADR-0020 promises.
+ */
+export function assertNoReservedTags(
+  op: string,
+  tags: readonly string[],
+  index?: number,
+): Result<undefined> {
+  const reserved = tags.filter(isReservedTag);
+  if (reserved.length > 0) {
+    const at = index !== undefined ? ` at items[${index}]` : '';
+    return err<MementoError>({
+      code: 'INVALID_INPUT',
+      message: `${op}: tag${at} uses a reserved prefix (${RESERVED_TAG_PREFIXES.join(', ')}). Reserved prefixes are owned by system commands; user writes must not use them.`,
+      details: { reservedPrefixes: [...RESERVED_TAG_PREFIXES], offending: reserved },
     });
   }
   return ok(undefined);

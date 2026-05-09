@@ -55,7 +55,7 @@ import {
   MemoryWriteInputSchema,
   MemoryWriteManyInputSchema,
 } from './inputs.js';
-import { enforceSafetyCaps, rationaleFromKind } from './safety-caps.js';
+import { assertNoReservedTags, enforceSafetyCaps, rationaleFromKind } from './safety-caps.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
 // Dashboard opt-in. The dashboard's UI today consumes
@@ -254,6 +254,8 @@ export function createMemoryCommands(
         'Create a new memory in the given scope.\n\nWorkflow: search first to avoid duplicates. If a similar memory exists, use memory.supersede to update it instead. Use memory.update for non-content changes (tags, kind, pinned, sensitive).\n\nFor `preference` and `decision` kinds, start the content with a single `topic: value` line followed by free prose. Conflict detection parses that first line — without it two contradictory preferences silently coexist. Example: `node-package-manager: pnpm\\n\\nRaghu prefers pnpm over npm for Node projects.`\n\nMinimal example (pinned, storedConfidence, summary, owner all have defaults):\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"content":"Memento uses SQLite for storage."}\n```\n\nFull example:\n\n```json\n{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["project:memento"],"pinned":false,"content":"Memento uses SQLite for storage.","summary":"Storage engine choice","storedConfidence":0.95}\n```',
     },
     handler: async (input, ctx) => {
+      const reservedCheck = assertNoReservedTags('memory.write', input.tags);
+      if (!reservedCheck.ok) return reservedCheck;
       if (deps?.configStore !== undefined) {
         const cap = enforceSafetyCaps(
           'memory.write',
@@ -324,6 +326,15 @@ export function createMemoryCommands(
           message: `memory.write_many: batch size ${input.items.length} exceeds safety.batchWriteLimit (${limit})`,
           details: { limit, received: input.items.length },
         });
+      }
+      // Reserved-prefix tag check applies to every item regardless
+      // of whether the configStore is wired — the rule is
+      // structural (Rule 12), not policy.
+      for (let i = 0; i < input.items.length; i += 1) {
+        const item = input.items[i];
+        if (item === undefined) continue;
+        const reservedCheck = assertNoReservedTags('memory.write_many', item.tags, i);
+        if (!reservedCheck.ok) return reservedCheck;
       }
       // Per-item content/summary/tag caps. We check every item up
       // front so the whole batch fails fast on the first violation

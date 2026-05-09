@@ -109,6 +109,10 @@ Import a `memento-export/v1` JSONL artefact into the configured database (ADR-00
 
 Initialise the database and print MCP client setup snippets
 
+### `memento pack`
+
+Install, preview, uninstall, or list memento packs (curated YAML bundles, ADR-0020).
+
 ### `memento ping`
 
 Spawn `memento serve`, list tools over MCP stdio, exit
@@ -135,7 +139,7 @@ Print teardown instructions (config paths and database location)
 
 ## Registry commands
 
-Total: 32 commands.
+Total: 36 commands.
 
 ### `memento compact run`
 
@@ -415,6 +419,30 @@ Atomically create multiple memories in a single transaction. Per-item clientToke
 Programmatic / operator surface — AI assistants typically do NOT reach for this. For multiple explicit user statements ("remember A, B, and C"), prefer N sequential `write_memory` calls so one bad item does not roll the others back. For end-of-session sweeps over things the user mentioned in passing, use `extract_memory` (server dedups + scrubs + lowers confidence). Use `write_many_memories` only when you genuinely need all-or-nothing transactional semantics — e.g. importing a curated batch from a doc.
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
+
+### `memento pack install`
+
+Install a memento pack — a curated YAML bundle of memories — from the bundled registry, a local file, or an HTTPS URL. Stamps `pack:<id>:<version>` provenance on every memory; idempotent on unchanged content; refuses with PACK_VERSION_REUSED on content drift without a version bump (ADR-0020).
+
+- **Side-effect:** `write` — Mutates state and emits an audit-log event.
+
+### `memento pack list`
+
+List installed packs — every active memory's `pack:<id>:<version>` tag is grouped, returning the pack id, version, scope, and memory count.
+
+- **Side-effect:** `read` — Pure read; safe to call freely.
+
+### `memento pack preview`
+
+Preview what `pack.install` would write. Resolves the manifest, classifies the install state (fresh / idempotent / drift), and returns the items without persisting. Read-only.
+
+- **Side-effect:** `read` — Pure read; safe to call freely.
+
+### `memento pack uninstall`
+
+Forget every active memory installed by a pack — single version (default) or `allVersions: true`. Composes with the bulk-destructive contract from ADR-0014: dry-run defaults true, `confirm: true` is required, the `safety.bulkDestructiveLimit` cap applies on apply.
+
+- **Side-effect:** `destructive` — Bulk or irreversible; the CLI requires `--confirm` to execute.
 
 ### `memento system info`
 

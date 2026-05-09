@@ -175,6 +175,21 @@ export interface MemoryRepository {
    */
   listIdsForBulk(filter: MemoryListFilter): Promise<MemoryId[]>;
   /**
+   * Pack-engine helper (ADR-0020). Returns the `clientToken` of
+   * every memory matching the filter, in the order
+   * `last_confirmed_at desc, id desc`. Memories with a NULL
+   * `client_token` (writes that did not supply one — most user-
+   * authored writes) are skipped. Used by the pack-install
+   * drift-detection pre-flight: the engine compares the manifest's
+   * expected tokens against the existing tokens in the install
+   * scope to classify the install as fresh / idempotent / drift.
+   *
+   * Not exposed on the public read surface; `clientToken` is an
+   * internal idempotency primitive (ADR-0012 §2), not user-
+   * visible memory metadata.
+   */
+  listClientTokensForFilter(filter: MemoryListFilter): Promise<readonly string[]>;
+  /**
    * Replace `oldId` with a new memory in a single transaction.
    *
    * Pre-conditions:
@@ -812,6 +827,58 @@ export function createMemoryRepository(
       }
       const rows = await query.execute();
       return rows.map((r) => r.id as MemoryId);
+    },
+
+    async listClientTokensForFilter(filter) {
+      let query = db
+        .selectFrom('memories')
+        .select('client_token')
+        .where('client_token', 'is not', null)
+        .orderBy('last_confirmed_at', 'desc')
+        .orderBy('id', 'desc');
+      if (filter.status !== undefined) {
+        query = query.where('status', '=', filter.status);
+      }
+      if (filter.kind !== undefined) {
+        query = query.where('kind_type', '=', filter.kind);
+      }
+      if (filter.pinned !== undefined) {
+        query = query.where('pinned', '=', filter.pinned ? 1 : 0);
+      }
+      if (filter.createdAtGte !== undefined) {
+        query = query.where('created_at', '>=', filter.createdAtGte as unknown as string);
+      }
+      if (filter.createdAtLte !== undefined) {
+        query = query.where('created_at', '<=', filter.createdAtLte as unknown as string);
+      }
+      if (filter.scope !== undefined) {
+        const scopes = Array.isArray(filter.scope)
+          ? (filter.scope as readonly Scope[])
+          : [filter.scope as Scope];
+        if (scopes.length === 0) {
+          return [];
+        }
+        query = query.where((eb) =>
+          eb.or(
+            scopes.map((scope) =>
+              eb.and([
+                eb('scope_type', '=', scope.type),
+                eb('scope_json', '=', JSON.stringify(scope)),
+              ]),
+            ),
+          ),
+        );
+      }
+      if (filter.tags !== undefined && filter.tags.length > 0) {
+        for (const tag of filter.tags) {
+          const normalised = tag.trim().toLowerCase();
+          query = query.where(
+            sql<SqlBool>`exists (select 1 from json_each(${sql.ref('tags_json')}) where value = ${normalised})`,
+          );
+        }
+      }
+      const rows = await query.execute();
+      return rows.map((r) => r.client_token).filter((t): t is string => t !== null);
     },
 
     async supersede(oldId, newInput, ctx) {

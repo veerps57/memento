@@ -68,3 +68,16 @@ export {
   SystemListScopesInputSchema,
   SystemListTagsInputSchema,
 } from './system/index.js';
+export {
+  createPackCommands,
+  type PackCommandDeps,
+  PackInstallInputSchema,
+  PackInstallOutputSchema,
+  PackListInputSchema,
+  PackListOutputSchema,
+  PackPreviewInputSchema,
+  PackPreviewOutputSchema,
+  PackSourceInputSchema,
+  PackUninstallInputSchema,
+  PackUninstallOutputSchema,
+} from './packs/index.js';
