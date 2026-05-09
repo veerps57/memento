@@ -97,6 +97,11 @@ describe('createMementoApp', () => {
         'system.info',
         'system.list_scopes',
         'system.list_tags',
+        'pack.install',
+        'pack.preview',
+        'pack.uninstall',
+        'pack.list',
+        'pack.export',
       ].sort(),
     );
   });

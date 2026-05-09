@@ -100,6 +100,14 @@ export interface LifecycleDeps {
    * `dashboard` never call it. `runDashboard` requires it.
    */
   readonly launchDashboard?: (options: LaunchDashboardOptions) => Promise<LaunchDashboardResult>;
+  /**
+   * Factory for the `memento pack create` interactive review
+   * prompter (ADR-0020 §Authoring). Production wires the
+   * `@clack/prompts`-backed implementation; tests pass a scripted
+   * fake. Optional only because lifecycle commands other than
+   * `pack` never call it.
+   */
+  readonly createPackPrompter?: () => import('./pack-prompts.js').PackCreatePrompter;
 }
 
 /**

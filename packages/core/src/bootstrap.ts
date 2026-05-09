@@ -53,6 +53,7 @@ import {
   createMemoryContextCommand,
   createMemoryExtractCommand,
   createMemorySearchCommand,
+  createPackCommands,
   createRegistry,
   createSystemCommands,
 } from './commands/index.js';
@@ -62,6 +63,7 @@ import { createConfigRepository, createMutableConfigStore } from './config/index
 import type { ConflictHookConfig, ConflictRepository } from './conflict/index.js';
 import { createConflictRepository, runConflictHook } from './conflict/index.js';
 import type { EmbeddingProvider } from './embedding/index.js';
+import { createDefaultPackSourceResolver } from './packs/index.js';
 import type { EventRepository, MemoryRepository } from './repository/index.js';
 import { createEventRepository, createMemoryRepository } from './repository/index.js';
 import type { MementoDatabase } from './storage/index.js';
@@ -311,6 +313,22 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     schemaVersion: MEMORY_SCHEMA_VERSION,
   });
 
+  // `pack.*` install/preview/uninstall/list (ADR-0020). The
+  // resolver is built from `packs.*` config; bundled lookups
+  // need an explicit version (the command/CLI scans the
+  // bundled directory if needed).
+  const packResolver = createDefaultPackSourceResolver({
+    bundledRoot: configStore.get('packs.bundledRegistryPath'),
+    allowRemoteUrls: configStore.get('packs.allowRemoteUrls'),
+    urlFetchTimeoutMs: configStore.get('packs.urlFetchTimeoutMs'),
+    maxPackSizeBytes: configStore.get('packs.maxPackSizeBytes'),
+  });
+  const packCommands = createPackCommands({
+    memoryRepository,
+    resolver: packResolver,
+    configStore,
+  });
+
   let builder = createRegistry();
   for (const cmd of memoryCommands) builder = builder.register(cmd);
   builder = builder.register(searchCommand);
@@ -321,6 +339,7 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
   for (const cmd of configCommands) builder = builder.register(cmd);
   for (const cmd of embeddingCommands) builder = builder.register(cmd);
   for (const cmd of systemCommands) builder = builder.register(cmd);
+  for (const cmd of packCommands) builder = builder.register(cmd);
   const registry = builder.freeze();
 
   let closed = false;

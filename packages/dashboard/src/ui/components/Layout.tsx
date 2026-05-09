@@ -27,6 +27,7 @@ import { cn } from '../lib/cn.js';
 const NAV_ITEMS: ReadonlyArray<{ readonly to: string; readonly label: string }> = [
   { to: '/', label: 'overview' },
   { to: '/memory', label: 'memory' },
+  { to: '/packs', label: 'packs' },
   { to: '/conflicts', label: 'conflicts' },
   { to: '/audit', label: 'audit' },
   { to: '/config', label: 'config' },

@@ -79,7 +79,8 @@ export type LifecycleName =
   | 'completions'
   | 'explain'
   | 'dashboard'
-  | 'skill-path';
+  | 'skill-path'
+  | 'pack';
 
 export type ParsedCommand =
   | { kind: 'version' }
@@ -244,6 +245,14 @@ export function parseArgv({ argv, env }: ParseArgvOptions): ParsedCommand {
     return {
       kind: 'lifecycle',
       name: 'init',
+      env: cliEnv,
+      subargs: positionals.slice(1),
+    };
+  }
+  if (head === 'pack') {
+    return {
+      kind: 'lifecycle',
+      name: 'pack',
       env: cliEnv,
       subargs: positionals.slice(1),
     };

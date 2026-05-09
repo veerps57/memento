@@ -16,6 +16,7 @@ import { explainCommand } from './explain.js';
 import { exportCommand } from './export.js';
 import { importCommand } from './import.js';
 import { initCommand } from './init.js';
+import { packCommand } from './pack.js';
 import { pingCommand } from './ping.js';
 import { serveCommand } from './serve.js';
 import { skillPathCommand } from './skill-path.js';
@@ -40,6 +41,7 @@ export const LIFECYCLE_COMMANDS: Record<LifecycleName, LifecycleCommand> = {
   explain: explainCommand,
   dashboard: dashboardCommand,
   'skill-path': skillPathCommand,
+  pack: packCommand,
 };
 
 export type {
@@ -123,4 +125,5 @@ export {
   runSkillPath,
   type SkillPathSnapshot,
 } from './skill-path.js';
+export { packCommand, runPack, type PackAction } from './pack.js';
 export { openAppForSurface, type OpenAppOptions } from './open-app.js';

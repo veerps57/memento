@@ -6,7 +6,11 @@
 // implementation contract.
 
 import { describe, expect, it } from 'vitest';
-import { enforceSafetyCaps, rationaleFromKind } from '../../src/commands/memory/safety-caps.js';
+import {
+  assertNoReservedTags,
+  enforceSafetyCaps,
+  rationaleFromKind,
+} from '../../src/commands/memory/safety-caps.js';
 import { createConfigStore } from '../../src/config/index.js';
 
 const baseInput = {
@@ -104,6 +108,40 @@ describe('enforceSafetyCaps', () => {
       store,
     );
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('assertNoReservedTags', () => {
+  it('passes through tag arrays without any reserved-prefix entries', () => {
+    expect(assertNoReservedTags('memory.write', []).ok).toBe(true);
+    expect(assertNoReservedTags('memory.write', ['rust', 'auth']).ok).toBe(true);
+    expect(assertNoReservedTags('memory.write', ['source:extracted']).ok).toBe(true);
+  });
+
+  it('rejects any tag starting with `pack:`', () => {
+    const result = assertNoReservedTags('memory.write', ['pack:rust-axum:1.0.0']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/reserved prefix/);
+    }
+  });
+
+  it('rejects when even one tag in the array uses the reserved prefix', () => {
+    const result = assertNoReservedTags('memory.write_many', ['rust', 'pack:forged:0.1.0', 'auth']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const details = result.error.details as { offending?: readonly string[] };
+      expect(details.offending).toEqual(['pack:forged:0.1.0']);
+    }
+  });
+
+  it('weaves the batch index into the message when supplied', () => {
+    const result = assertNoReservedTags('memory.write_many', ['pack:foo:1.0.0'], 3);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toMatch(/items\[3\]/);
+    }
   });
 });
 

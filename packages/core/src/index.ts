@@ -163,6 +163,41 @@ export type {
   ImportSummary,
 } from './portability/index.js';
 
+// Memento packs (ADR-0020). Curated YAML bundles that seed a
+// fresh store. The engine layer is pure: parser, resolvers
+// (bundled / file / URL), translator, drift check. Commands and
+// CLI lifecycle wrappers compose these primitives downstream.
+export {
+  buildAllVersionsUninstallTagPrefix,
+  buildManifestFromMemories,
+  buildSingleVersionUninstallFilter,
+  checkInstallState,
+  createDefaultPackSourceResolver,
+  derivePackClientToken,
+  memoryHasAnyVersionOfPack,
+  parsePackManifest,
+  translateManifestToWriteInputs,
+  uninstallListFilter,
+} from './packs/index.js';
+export type {
+  DefaultResolverOptions,
+  PackExportError,
+  PackExportMetadata,
+  PackExportOutcome,
+  PackExportResult,
+  PackInstallOptions,
+  PackInstallState,
+  PackInstallStateName,
+  PackInstallTranslation,
+  PackParseFailure,
+  PackParseOutcome,
+  PackParseSuccess,
+  PackResolveErrorCode,
+  PackResolveResult,
+  PackSource,
+  PackSourceResolver,
+} from './packs/index.js';
+
 // Reference-doc renderers (consumed by the repo's `pnpm
 // docs:generate` / `docs:check` scripts; pure functions over
 // the registries, no I/O).

@@ -317,11 +317,34 @@ describe('createDashboardServer', () => {
       expect(names.has('memory.read')).toBe(true);
       expect(names.has('config.list')).toBe(true);
       expect(names.has('conflict.list')).toBe(true);
+      // Pack commands surface on the dashboard (ADR-0020 §Surface map).
+      expect(names.has('pack.install')).toBe(true);
+      expect(names.has('pack.preview')).toBe(true);
+      expect(names.has('pack.uninstall')).toBe(true);
+      expect(names.has('pack.list')).toBe(true);
+      expect(names.has('pack.export')).toBe(true);
       // Non-dashboard commands are absent.
       expect(names.has('memory.write')).toBe(false);
       expect(names.has('memory.supersede')).toBe(false);
       expect(names.has('memory.set_embedding')).toBe(false);
       expect(names.has('compact.run')).toBe(false);
+    });
+
+    it('admits a pack.list call through the dashboard API and returns an empty store', async () => {
+      const res = await serverApp.fetch(
+        authedRequest('http://localhost/api/commands/pack.list', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', origin: ALLOWED_ORIGIN },
+          body: '{}',
+        }),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        ok: boolean;
+        value: { packs: readonly unknown[] };
+      };
+      expect(body.ok).toBe(true);
+      expect(body.value.packs).toEqual([]);
     });
   });
 

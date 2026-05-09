@@ -773,6 +773,53 @@ export const CONFIG_KEYS = {
       'Maximum byte length of an artefact accepted by `memento import`. Files exceeding this are rejected before any read begins. Default is 256 MiB.',
   }),
 
+  // — Packs —
+  // Per ADR-0020. Memento-packs are curated YAML bundles that seed
+  // a fresh store. The five knobs below cap network/IO behaviour and
+  // constrain the bundled-registry path. Integrity rules (re-stamp
+  // owner local-self, re-scrub on install, refuse-on-content-drift,
+  // reserved `pack:` tag prefix, deterministic clientToken) are
+  // hardcoded invariants per Rule 12, not config.
+  'packs.bundledRegistryPath': defineKey({
+    schema: z.string().min(1).nullable(),
+    default: null,
+    mutable: false,
+    description:
+      'Filesystem path to the directory containing bundled official packs. `null` defers to the runtime default (the bundled `packs/` directory shipped with the package). Pinned at server start so it cannot be flipped at runtime to point at attacker-controlled paths.',
+  }),
+  'packs.allowRemoteUrls': defineKey({
+    schema: z.boolean(),
+    default: true,
+    mutable: true,
+    description:
+      'Master switch for `pack install --from-url`. Operators in restricted environments flip to `false` to disable HTTPS-fetch packs entirely.',
+  }),
+  'packs.urlFetchTimeoutMs': defineKey({
+    schema: PositiveInt,
+    default: 10_000,
+    mutable: true,
+    description:
+      'Per-request timeout for `pack install --from-url`, in milliseconds. Fetches that exceed this are aborted.',
+  }),
+  'packs.maxPackSizeBytes': defineKey({
+    schema: z
+      .number()
+      .int()
+      .min(1024)
+      .max(64 * 1024 * 1024),
+    default: 1 * 1024 * 1024,
+    mutable: true,
+    description:
+      'Maximum byte length of a pack manifest accepted by `pack install`. Applies to local files and URL fetches alike. Default is 1 MiB.',
+  }),
+  'packs.maxMemoriesPerPack': defineKey({
+    schema: z.number().int().min(1).max(10_000),
+    default: 200,
+    mutable: true,
+    description:
+      'Per-pack ceiling on the number of memories in a manifest. Manifests over this cap are rejected with `INVALID_INPUT`.',
+  }),
+
   // — User —
   // Single-user-mode identity. The data model is multi-user-ready
   // (`OwnerRef` exists from day one, AGENTS.md rule 4) but v1

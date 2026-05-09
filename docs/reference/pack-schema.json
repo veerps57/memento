@@ -1,0 +1,510 @@
+{
+  "$ref": "#/definitions/MementoPackManifest",
+  "definitions": {
+    "MementoPackManifest": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string",
+          "const": "memento-pack/v1"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,31}$",
+          "description": "Pack identifier. Example: \"ts-monorepo-pnpm\"."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[a-z0-9.-]+)?$",
+          "maxLength": 24,
+          "description": "Pack semver version. Examples: \"1.0.0\", \"0.2.1-rc.1\"."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "homepage": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 500
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "type": "string",
+                "description": "A tag string (1–64 chars). Trimmed and lowercased on ingest. Allowed characters: a-z, 0-9, \"-\", \"_\", \"/\", \".\", \":\". Examples: \"project:memento\", \"lang-typescript\", \"config\"."
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+              }
+            ]
+          },
+          "maxItems": 20
+        },
+        "defaults": {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "global"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Global scope — memory applies everywhere. Example: {\"type\":\"global\"}"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "workspace"
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "An absolute filesystem path (POSIX or Windows). Examples: \"/home/user/project\", \"C:\\Users\\user\\project\"."
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "path"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Workspace scope — pinned to a filesystem path. Example: {\"type\":\"workspace\",\"path\":\"/home/user/project\"}"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "repo"
+                    },
+                    "remote": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9.-]+\\/[a-z0-9._-]+\\/[a-z0-9._-]+$",
+                      "description": "Canonical lowercased \"host/owner/name\" form of a git remote. Example: \"github.com/acme/my-repo\"."
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "remote"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Repo scope — pinned to a git remote. Example: {\"type\":\"repo\",\"remote\":\"github.com/acme/my-repo\"}"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "branch"
+                    },
+                    "remote": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9.-]+\\/[a-z0-9._-]+\\/[a-z0-9._-]+$",
+                      "description": "Canonical lowercased \"host/owner/name\" form of a git remote. Example: \"github.com/acme/my-repo\"."
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "remote",
+                    "branch"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Branch scope — pinned to a remote/branch pair. Example: {\"type\":\"branch\",\"remote\":\"github.com/acme/my-repo\",\"branch\":\"feat/foo\"}"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "session"
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                      "description": "A 26-character ULID string identifying a session."
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Session scope — ephemeral, pinned to a single MCP session. Example: {\"type\":\"session\",\"id\":\"01HYXZ1A2B3C4D5E6F7G8H9J0K\"}"
+                }
+              ]
+            },
+            "pinned": {
+              "type": "boolean"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  {
+                    "type": "string",
+                    "description": "A tag string (1–64 chars). Trimmed and lowercased on ingest. Allowed characters: a-z, 0-9, \"-\", \"_\", \"/\", \".\", \":\". Examples: \"project:memento\", \"lang-typescript\", \"config\"."
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+                  }
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "memories": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "fact"
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "summary": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "allOf": [
+                        {
+                          "type": "string",
+                          "description": "A tag string (1–64 chars). Trimmed and lowercased on ingest. Allowed characters: a-z, 0-9, \"-\", \"_\", \"/\", \".\", \":\". Examples: \"project:memento\", \"lang-typescript\", \"config\"."
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+                        }
+                      ]
+                    }
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  },
+                  "sensitive": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "preference"
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "summary": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "allOf": [
+                        {
+                          "type": "string",
+                          "description": "A tag string (1–64 chars). Trimmed and lowercased on ingest. Allowed characters: a-z, 0-9, \"-\", \"_\", \"/\", \".\", \":\". Examples: \"project:memento\", \"lang-typescript\", \"config\"."
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+                        }
+                      ]
+                    }
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  },
+                  "sensitive": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "decision"
+                  },
+                  "rationale": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "summary": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "allOf": [
+                        {
+                          "type": "string",
+                          "description": "A tag string (1–64 chars). Trimmed and lowercased on ingest. Allowed characters: a-z, 0-9, \"-\", \"_\", \"/\", \".\", \":\". Examples: \"project:memento\", \"lang-typescript\", \"config\"."
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+                        }
+                      ]
+                    }
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  },
+                  "sensitive": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "todo"
+                  },
+                  "due": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                        "description": "ISO-8601 UTC timestamp with millisecond precision. Example: \"2025-01-15T09:30:00.000Z\"."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "ISO-8601 UTC timestamp with millisecond precision. Example: \"2025-01-15T09:30:00.000Z\"."
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "summary": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "allOf": [
+                        {
+                          "type": "string",
+                          "description": "A tag string (1–64 chars). Trimmed and lowercased on ingest. Allowed characters: a-z, 0-9, \"-\", \"_\", \"/\", \".\", \":\". Examples: \"project:memento\", \"lang-typescript\", \"config\"."
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+                        }
+                      ]
+                    }
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  },
+                  "sensitive": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "snippet"
+                  },
+                  "language": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "summary": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "allOf": [
+                        {
+                          "type": "string",
+                          "description": "A tag string (1–64 chars). Trimmed and lowercased on ingest. Allowed characters: a-z, 0-9, \"-\", \"_\", \"/\", \".\", \":\". Examples: \"project:memento\", \"lang-typescript\", \"config\"."
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9][a-z0-9._:/-]*$"
+                        }
+                      ]
+                    }
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  },
+                  "sensitive": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "format",
+        "id",
+        "version",
+        "title",
+        "memories"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Memento Pack Manifest (memento-pack/v1)",
+  "description": "JSON Schema for the `memento-pack/v1` pack format. Generated from `PackManifestSchema` (packages/schema/src/pack.ts) via `pnpm docs:generate`. Do not edit by hand."
+}

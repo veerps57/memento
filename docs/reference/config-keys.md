@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 80 keys.
+Total: 85 keys.
 
 ## `decay.*`
 
@@ -178,6 +178,16 @@ Total: 80 keys.
 | Key | Default | Mutable | Description |
 | --- | --- | --- | --- |
 | `import.maxBytes` | `268435456` | yes | Maximum byte length of an artefact accepted by `memento import`. Files exceeding this are rejected before any read begins. Default is 256 MiB. |
+
+## `packs.*`
+
+| Key | Default | Mutable | Description |
+| --- | --- | --- | --- |
+| `packs.bundledRegistryPath` | `null` | no | Filesystem path to the directory containing bundled official packs. `null` defers to the runtime default (the bundled `packs/` directory shipped with the package). Pinned at server start so it cannot be flipped at runtime to point at attacker-controlled paths. |
+| `packs.allowRemoteUrls` | `true` | yes | Master switch for `pack install --from-url`. Operators in restricted environments flip to `false` to disable HTTPS-fetch packs entirely. |
+| `packs.urlFetchTimeoutMs` | `10000` | yes | Per-request timeout for `pack install --from-url`, in milliseconds. Fetches that exceed this are aborted. |
+| `packs.maxPackSizeBytes` | `1048576` | yes | Maximum byte length of a pack manifest accepted by `pack install`. Applies to local files and URL fetches alike. Default is 1 MiB. |
+| `packs.maxMemoriesPerPack` | `200` | yes | Per-pack ceiling on the number of memories in a manifest. Manifests over this cap are rejected with `INVALID_INPUT`. |
 
 ## `user.*`
 

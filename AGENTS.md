@@ -55,6 +55,7 @@ Each of these is a short checklist; the canonical reference is the listed file o
 - **Add a config key:** add a `defineKey` entry to `packages/schema/src/config-keys.ts` following the comment block at the top of that file, then run `pnpm docs:generate` to refresh `docs/reference/config-keys.md`. Per-key Zod schemas validate every write; immutable keys must be flagged.
 - **Add a migration:** add the next-numbered migration under `packages/core/src/storage/migrations/` with a matching test under `packages/core/test/storage/migrations/`. Migrations are forward-only ([ADR-0001](docs/adr/0001-sqlite-as-storage-engine.md)).
 - **Stress-test the engine:** run `node scripts/stress-test.mjs` (modes: `quick` / `standard` / `full`) to exercise correctness, write throughput, search/list latency, recall, and `compact` end-to-end against a fresh `/tmp` database. Useful before tagging a release or after large engine changes. The runner emits a markdown report you can diff across runs. See [`docs/guides/stress-test.md`](docs/guides/stress-test.md) for flags, thresholds, and how to read the output.
+- **Add a memento pack:** drop the YAML file under the path named by `packs.bundledRegistryPath` (layout: `<root>/<id>/v<version>.yaml`). The format is `memento-pack/v1`; full spec and authoring flow in [`docs/guides/packs.md`](docs/guides/packs.md). The contract is [ADR-0020](docs/adr/0020-memento-packs.md). Bundled packs are data, not code — adding one does not change the engine.
 
 When editing files under `packages/core/src/commands/**`, `packages/core/src/storage/migrations/**`, `**/*.test.ts`, or `docs/**`, the architectural rules and the pre-PR verification steps below still apply.
 
@@ -83,6 +84,7 @@ This list grows over time. If you trip over something that should have been on i
 - **Do not add hardcoded behavioral constants.** If you find yourself typing a magic number, ask: should this be a `ConfigKey`? The answer is almost always yes.
 - **Do not invent APIs that don't exist.** Always verify imports and method signatures against the actual codebase. Hallucinated APIs are the #1 failure mode in AI-authored PRs.
 - **Do not bypass `assertNever` exhaustiveness checks.** They exist precisely to catch missed cases when adding new variants.
+- **Do not write `pack:*` tags from non-pack-install code paths.** `pack:` is a reserved tag prefix ([ADR-0020](docs/adr/0020-memento-packs.md)); user-authored writes (`memory.write`, `memory.write_many`, `memory.extract`) reject any tag starting with it. Only the `pack.install` path may stamp the canonical `pack:<id>:<version>` provenance tag.
 
 ## Out of scope — do not implement
 

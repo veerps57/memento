@@ -15,7 +15,8 @@
       "**/node_modules/**",
       "**/*.tsbuildinfo",
       "pnpm-lock.yaml",
-      "docs/reference/**"
+      "docs/reference/**",
+      "packages/landing/public/schemas/**"
     ]
   },
   "formatter": {

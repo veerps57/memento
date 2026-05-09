@@ -28,6 +28,7 @@
   "dependencies": {
     "better-sqlite3": "12.9.0",
     "kysely": "0.28.16",
+    "yaml": "2.6.1",
     "zod": "3.25.76",
     "@psraghuveer/memento-schema": "workspace:^"
   },

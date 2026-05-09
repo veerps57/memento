@@ -191,3 +191,13 @@ If the timestamp does not change after a memory-related interaction, double-chec
 3. The `MEMENTO_DB` directory is writable by the user the client runs as.
 
 For deeper troubleshooting (build errors, permission errors, `STORAGE_ERROR`s), see [`docs/guides/troubleshooting.md`](troubleshooting.md).
+
+## Next: seed your store with a pack
+
+A fresh Memento install is empty. The fastest way to get value from your assistant on day one is to install a pack — a curated YAML file of memories (typically a stack guide or a personal set of conventions) that you can install in one step:
+
+```bash
+memento pack install <id-or-path>
+```
+
+See [`packs.md`](packs.md) for the full guide: installing, authoring (`memento pack create`), the format spec, and the dashboard's Packs tab.

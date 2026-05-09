@@ -135,6 +135,42 @@ describe('CONFIG_KEYS registry', () => {
     expect(CONFIG_KEYS['scrubber.rules'].mutable).toBe(false);
   });
 
+  it('exposes the packs.* knobs ADR-0020 promises', () => {
+    // Pin the defaults referenced from `bootstrap.ts` and the
+    // resolver so a silent edit on either side trips this test.
+    expect(CONFIG_KEYS['packs.bundledRegistryPath'].default).toBeNull();
+    expect(CONFIG_KEYS['packs.bundledRegistryPath'].mutable).toBe(false);
+    expect(CONFIG_KEYS['packs.allowRemoteUrls'].default).toBe(true);
+    expect(CONFIG_KEYS['packs.allowRemoteUrls'].mutable).toBe(true);
+    expect(CONFIG_KEYS['packs.urlFetchTimeoutMs'].default).toBe(10_000);
+    expect(CONFIG_KEYS['packs.maxPackSizeBytes'].default).toBe(1 * 1024 * 1024);
+    expect(CONFIG_KEYS['packs.maxMemoriesPerPack'].default).toBe(200);
+  });
+
+  it('packs.maxPackSizeBytes rejects values below 1 KiB and above 64 MiB', () => {
+    const schema = CONFIG_KEYS['packs.maxPackSizeBytes'].schema;
+    expect(schema.safeParse(512).success).toBe(false);
+    expect(schema.safeParse(1024).success).toBe(true);
+    expect(schema.safeParse(64 * 1024 * 1024).success).toBe(true);
+    expect(schema.safeParse(64 * 1024 * 1024 + 1).success).toBe(false);
+    expect(schema.safeParse(1.5).success).toBe(false);
+  });
+
+  it('packs.maxMemoriesPerPack rejects non-positive and >10_000 values', () => {
+    const schema = CONFIG_KEYS['packs.maxMemoriesPerPack'].schema;
+    expect(schema.safeParse(0).success).toBe(false);
+    expect(schema.safeParse(1).success).toBe(true);
+    expect(schema.safeParse(10_000).success).toBe(true);
+    expect(schema.safeParse(10_001).success).toBe(false);
+  });
+
+  it('packs.bundledRegistryPath accepts non-empty string or null', () => {
+    const schema = CONFIG_KEYS['packs.bundledRegistryPath'].schema;
+    expect(schema.safeParse(null).success).toBe(true);
+    expect(schema.safeParse('/var/packs').success).toBe(true);
+    expect(schema.safeParse('').success).toBe(false);
+  });
+
   it('scrubber.rules schema rejects an array with duplicate ids', () => {
     const dup = [
       {

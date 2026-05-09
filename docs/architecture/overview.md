@@ -103,6 +103,16 @@ Detail: [`scrubber.md`](scrubber.md).
 
 A `memory.search` follows the same path, minus the writes. A `memory.supersede` is two writes in one transaction (the superseded memory's status flips, the new memory is written, both audit events are emitted).
 
+## Bootstrap mechanisms
+
+A fresh Memento install is empty. Three mechanisms move memories into the store, each solving a different problem:
+
+- **`memento pack install`** ([ADR-0020](../adr/0020-memento-packs.md), [`packs.md`](../guides/packs.md)) — install a curated YAML bundle of memories in one step. Designed for "I just installed Memento, give me a useful starting point": a stack guide (Rust + Axum, TypeScript + pnpm…) or a personal set of conventions you authored on another machine.
+- **`memento import`** ([ADR-0013](../adr/0013-portable-export-import.md)) — restore a `memento-export/v1` JSONL artefact produced by `memento export`. Designed for cross-machine restore: preserves the source's audit history (under `--trust-source`) and re-stamps owner / re-scrubs content otherwise.
+- **`memory.extract`** ([ADR-0016](../adr/0016-assisted-extraction-and-context-injection.md)) — the assistant dumps "here's what seemed worth remembering" at the end of a session. Compounds with use; needs an existing seed to anchor against, which `pack install` typically provides.
+
+The three are complementary: install a pack to seed your store, let extraction grow it organically, use export/import for cross-machine moves.
+
 ## Where to go next
 
 - For the data model in detail: [`data-model.md`](data-model.md).
@@ -112,3 +122,4 @@ A `memory.search` follows the same path, minus the writes. A `memory.supersede` 
 - For how conflicts are surfaced without blocking writes: [`conflict-detection.md`](conflict-detection.md).
 - For the config surface and validation: [`config.md`](config.md).
 - For the scrubber's rule format and defaults: [`scrubber.md`](scrubber.md).
+- For installing curated YAML bundles of memories: [`../guides/packs.md`](../guides/packs.md).

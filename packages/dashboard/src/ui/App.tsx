@@ -27,6 +27,7 @@ import { ConflictsPage } from './routes/conflicts.js';
 import { LandingPage } from './routes/landing.js';
 import { MemoryDetailPage } from './routes/memory-detail.js';
 import { MemoryListPage } from './routes/memory.js';
+import { PacksPage } from './routes/packs.js';
 import { SystemPage } from './routes/system.js';
 
 const queryClient = createQueryClient();
@@ -120,6 +121,12 @@ const systemRoute = createRoute({
   component: SystemPage,
 });
 
+const packsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/packs',
+  component: PacksPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   memoryRoute,
@@ -128,6 +135,7 @@ const routeTree = rootRoute.addChildren([
   auditRoute,
   configRoute,
   systemRoute,
+  packsRoute,
 ]);
 
 const router = createRouter({ routeTree });

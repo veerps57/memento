@@ -52,6 +52,7 @@ import { formatScope, relativeTime } from '../lib/format.js';
 const NAV_TARGETS: ReadonlyArray<{ readonly path: string; readonly label: string }> = [
   { path: '/', label: '~/overview' },
   { path: '/memory', label: '~/memory' },
+  { path: '/packs', label: '~/packs' },
   { path: '/conflicts', label: '~/conflicts' },
   { path: '/audit', label: '~/audit' },
   { path: '/config', label: '~/config' },

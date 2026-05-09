@@ -95,6 +95,18 @@ describe('parseArgv: lifecycle', () => {
       expect(parsed.message).toContain("'store nuke'");
     }
   });
+
+  it('parses pack as a lifecycle command and forwards the remaining argv', () => {
+    const parsed = parseArgv({
+      argv: ['pack', 'install', 'rust-axum', '--from-file', '/tmp/x.yaml'],
+      env: { XDG_DATA_HOME: '/tmp/xdg-data' },
+    });
+    expect(parsed.kind).toBe('lifecycle');
+    if (parsed.kind === 'lifecycle') {
+      expect(parsed.name).toBe('pack');
+      expect(parsed.subargs).toEqual(['install', 'rust-axum', '--from-file', '/tmp/x.yaml']);
+    }
+  });
 });
 
 describe('parseArgv: registry', () => {

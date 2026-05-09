@@ -4,10 +4,13 @@ import {
   AbsolutePathSchema,
   EventIdSchema,
   MemoryIdSchema,
+  NonReservedTagSchema,
+  RESERVED_TAG_PREFIXES,
   RepoRemoteSchema,
   SessionIdSchema,
   TagSchema,
   TimestampSchema,
+  isReservedTag,
 } from '../src/primitives.js';
 
 const ULID_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -142,5 +145,30 @@ describe('RepoRemoteSchema', () => {
     expect(() => RepoRemoteSchema.parse('https://github.com/acme/widgets')).toThrow();
     expect(() => RepoRemoteSchema.parse('GitHub.com/acme/widgets')).toThrow();
     expect(() => RepoRemoteSchema.parse('github.com/acme')).toThrow();
+  });
+});
+
+describe('reserved tag prefixes', () => {
+  it('RESERVED_TAG_PREFIXES contains the pack provenance prefix', () => {
+    expect(RESERVED_TAG_PREFIXES).toContain('pack:');
+  });
+
+  it('isReservedTag detects reserved-prefix tags', () => {
+    expect(isReservedTag('pack:rust-axum:1.0.0')).toBe(true);
+    expect(isReservedTag('pack:foo')).toBe(true);
+    expect(isReservedTag('rust')).toBe(false);
+    expect(isReservedTag('source:extracted')).toBe(false);
+    expect(isReservedTag('packs')).toBe(false);
+  });
+
+  it('NonReservedTagSchema accepts ordinary tags', () => {
+    expect(NonReservedTagSchema.parse('rust')).toBe('rust');
+    expect(NonReservedTagSchema.parse('source:extracted')).toBe('source:extracted');
+    expect(NonReservedTagSchema.parse('Project:Memento')).toBe('project:memento');
+  });
+
+  it('NonReservedTagSchema rejects reserved-prefix tags', () => {
+    expect(() => NonReservedTagSchema.parse('pack:rust-axum:1.0.0')).toThrow();
+    expect(() => NonReservedTagSchema.parse('pack:foo')).toThrow();
   });
 });
