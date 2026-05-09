@@ -32,7 +32,7 @@ memory.write → commit → return to caller
                   └────────────────────┘
 ```
 
-The job is bounded: if it does not complete within `conflict.timeoutMs` (default `2000`), it is dropped and a `conflict.timeout` warning is logged. Dropping is safe — the next write or an explicit `memento conflict scan` will catch the missed check.
+The job is bounded: if it does not complete within `conflict.timeoutMs` (default `2000`), it is dropped and a timeout warning is logged. Dropping is safe — the next write or an explicit `memento conflict scan` will catch the missed check.
 
 The hook runs in the same process; there is no worker queue, no background daemon, no cross-process coordination. The simplicity is deliberate.
 
@@ -53,7 +53,7 @@ Conflict semantics differ by kind:
 | `fact`       | Same subject, contradictory predicate (heuristic: high text overlap + opposite stance) |
 | `preference` | Same preference key, different value                                                   |
 | `decision`   | Same decision context, different choice                                                |
-| `todo`       | Identical action, different `done` state                                               |
+| `todo`       | Identical action, different `due` timestamp                                            |
 | `snippet`    | Same identifier in same language, different body                                       |
 
 Each policy is implemented as a function that takes `(newMemory, candidate, config)` and returns `{ conflict: true, evidence } | { conflict: false }`. Policies are registered at module load; the structural test asserts that every `MemoryKind` has a policy. Adding a new kind without adding a policy fails the build.

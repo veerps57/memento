@@ -146,7 +146,7 @@ export const CONFIG_KEYS = {
     default: 2_000,
     mutable: true,
     description:
-      'Per-write detection budget in milliseconds. Hook runs that exceed this are dropped with a `conflict.timeout` warning; recovery is via `conflict.scan`.',
+      'Per-write detection budget in milliseconds. Hook runs that exceed this are dropped with a timeout warning; recovery is via `conflict.scan`.',
   }),
   'conflict.scopeStrategy': defineKey({
     schema: z.enum(['same', 'effective']),

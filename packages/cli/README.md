@@ -52,15 +52,14 @@ If your client doesn't load skills, paste the [persona snippet](https://github.c
 
 ## What Memento gives you
 
-- **Local-first** — single SQLite file under your home directory, no cloud, no telemetry, no outbound network calls by default.
-- **LLM-agnostic** — no model dependencies, no proprietary APIs. Works with whatever LLM your AI client talks to.
-- **MCP-native** — standard MCP server over stdio, so any MCP-capable client plugs in without code changes.
-- **Typed memory model** — `fact`, `preference`, `decision`, `todo`, `snippet`. The assistant can reason about what's still true rather than just retrieve text blobs.
-- **Append-only audit log** — every write produces an event. Answer "why is this here?" any time.
-- **Privacy-conscious** — built-in regex scrubber strips secrets before persistence; patterns are user-configurable.
-- **Conflict detection** — a post-write hook flags contradictory memories so they get triaged, not silently coexisting.
-- **Vector retrieval** — optional, runs on a local embeddings model (no cloud calls).
-- **Portable** — JSONL `export` / `import` for backup, migration, or carrying memory between machines.
+Four pillars: **Local. Typed. Audited. Yours.**
+
+- **Local** — single SQLite file under your home directory. No cloud, no telemetry, no outbound network calls by default. Fully offline. Built-in regex scrubber strips secrets before persistence; patterns are user-configurable.
+- **Typed** — five memory kinds (`fact`, `preference`, `decision`, `todo`, `snippet`) with kind-specific fields. The assistant can reason about what's still true, not just retrieve text blobs.
+- **Audited** — every write produces an event in an append-only log. A post-write hook surfaces conflicts for triage. Memories decay if you don't confirm them. Answer "why is this here?" and "when did it change?" at any time.
+- **Yours** — every retrieval weight, decay half-life, and scrubber rule is configurable. JSONL `export` / `import` for backup, migration, or carrying memory between machines. Apache-2.0. Leave any time.
+
+Plus: **MCP-native** (standard MCP server over stdio — Claude Desktop, Claude Code, Cursor, Copilot, Cline, OpenCode, Aider, custom agents — works without code changes), **LLM-agnostic** (no model dependencies; works with whatever LLM your client talks to), **vector retrieval** (optional, runs on a local embeddings model — no cloud calls), and **packs** — curated YAML bundles of memories you can install in one step. Author your own with `memento pack create`, share as a file, an HTTPS URL, or a community contribution. Bundled `engineering-simplicity` ships out of the box; install with `memento pack install engineering-simplicity`. Full guide: [packs.md](https://github.com/veerps57/memento/blob/main/docs/guides/packs.md).
 
 ## Documentation
 
@@ -73,6 +72,6 @@ If your client doesn't load skills, paste the [persona snippet](https://github.c
 
 ## About this package
 
-The package is `@psraghuveer/memento`; the binary it installs is `memento`. The CLI is a structural mirror of [`@psraghuveer/memento-server`](https://www.npmjs.com/package/@psraghuveer/memento-server) — both are adapters over the [`@psraghuveer/memento-core`](https://www.npmjs.com/package/@psraghuveer/memento-core) command registry; see [ADR-0003](https://github.com/veerps57/memento/blob/main/docs/adr/0003-single-command-registry.md). Lifecycle commands (`init`, `serve`, `doctor`, `context`, `store migrate`, `export`, `import`) sit alongside a generic projection of the registry surface (`memento <namespace> <verb>`); the full surface is documented in the [CLI reference](https://github.com/veerps57/memento/blob/main/docs/reference/cli.md).
+The package is `@psraghuveer/memento`; the binary it installs is `memento`. The CLI is a structural mirror of [`@psraghuveer/memento-server`](https://www.npmjs.com/package/@psraghuveer/memento-server) — both are adapters over the [`@psraghuveer/memento-core`](https://www.npmjs.com/package/@psraghuveer/memento-core) command registry; see [ADR-0003](https://github.com/veerps57/memento/blob/main/docs/adr/0003-single-command-registry.md). Lifecycle commands (`init`, `serve`, `dashboard`, `context`, `doctor`, `status`, `ping`, `backup`, `export`, `import`, `pack`, `store migrate`, `completions`, `explain`, `skill-path`, `uninstall`) sit alongside a generic projection of the registry surface (`memento <namespace> <verb>`); the full surface is documented in the [CLI reference](https://github.com/veerps57/memento/blob/main/docs/reference/cli.md).
 
 Apache-2.0 licensed. Contributions welcome — see [CONTRIBUTING.md](https://github.com/veerps57/memento/blob/main/CONTRIBUTING.md).

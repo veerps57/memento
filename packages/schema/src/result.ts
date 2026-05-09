@@ -18,7 +18,8 @@ import { z } from 'zod';
  *                          race; the caller should re-read.
  * - `IMMUTABLE`          — attempt to mutate a field or config key
  *                          that is fixed after server start
- *                          (e.g. `server.transport`, `storage.path`).
+ *                          (e.g. `embedder.local.model`,
+ *                          `scrubber.rules`).
  * - `CONFIG_ERROR`       — config write rejected by the per-key
  *                          schema; distinct from `INVALID_INPUT`
  *                          so config callers can render history.
@@ -63,7 +64,7 @@ export const ERROR_CODE_DESCRIPTIONS: Record<ErrorCode, string> = {
   CONFLICT:
     'An optimistic-concurrency or supersedence race was detected. The caller should re-read state and try again.',
   IMMUTABLE:
-    'The targeted field or config key is fixed for the lifetime of the server (for example `server.transport`). Restart with new configuration to change it.',
+    'The targeted field or config key is fixed for the lifetime of the server (for example `embedder.local.model`). Restart with new configuration to change it.',
   CONFIG_ERROR:
     'A config write failed its per-key schema. The previous value remains in effect; correct the value and retry.',
   SCRUBBED:

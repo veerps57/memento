@@ -22,13 +22,27 @@ New memories are automatically embedded on write when `embedding.autoEmbed` is `
 
 Vector search is dominated by **query embedding** wall-clock — the time to embed the user's query string before any vector comparison happens. On the default `bge-base-en-v1.5` model, expect roughly **200–500 ms per query on a modern CPU** (Apple Silicon laptops sit at the low end of that range; older x86 servers at the higher end). The vector scan over stored memories is comparatively cheap once the query embedding is in hand — even 20k 768-dim vectors compare in tens of milliseconds.
 
-If query latency matters more than recall on paraphrase, the smaller `bge-small-en-v1.5` (384d) cuts query-embed time by roughly a third at a modest recall cost:
+If query latency matters more than recall on paraphrase, the smaller `bge-small-en-v1.5` (384d) cuts query-embed time by roughly a third at a modest recall cost. The trade-off is operator-only: `embedder.local.model` and `embedder.local.dimension` are immutable at runtime (Rule 14 — model migration must be deliberate), so `memento config set` rejects either with `IMMUTABLE`. Library hosts switch the model by passing `configOverrides` to `createMementoApp`:
 
-```bash
-memento config set embedder.local.model bge-small-en-v1.5
-memento config set embedder.local.dimension 384
-memento embedding rebuild --confirm   # re-embed existing memories under the new model
+```ts
+import { createMementoApp } from "@psraghuveer/memento-core";
+
+const app = await createMementoApp({
+  dbPath: "/abs/path/to/memento.db",
+  configOverrides: {
+    "embedder.local.model": "bge-small-en-v1.5",
+    "embedder.local.dimension": 384,
+  },
+});
+
+await executeCommand(
+  app.registry.commands["embedding.rebuild"],
+  { confirm: true },
+  ctx,
+); // re-embed every active memory under the new model
 ```
+
+CLI users who want to experiment with a different model run a one-shot `memento store migrate` followed by an `embedding.rebuild` against a programmatic app instance — the CLI surface itself does not expose a way to override the model without library code. The cost of running a different model in production should be paid deliberately.
 
 Query embeddings are not cached today — every search call pays the full embedding cost. If your workload runs the same query string repeatedly within a session, consider opening a design proposal to add a small LRU cache.
 

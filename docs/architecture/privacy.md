@@ -43,7 +43,7 @@ The FTS5 index is populated from `content` on write. Sensitive rows are indexed 
 
 ### Audit events
 
-`MemoryEvent` rows record state transitions for sensitive memories with the same shape as for non-sensitive memories. Event metadata may include the field-level `sensitive` value itself (so you can audit who flipped the flag and when), but event rows do not duplicate `content`. The audit trail is content-free by construction (ADR-0008).
+`MemoryEvent` rows record state transitions for sensitive memories with the same shape as for non-sensitive memories. Event metadata may include the field-level `sensitive` value itself (so you can audit who flipped the flag and when), but event rows do not duplicate `content`. The audit trail is content-free by construction — a structural property of the `MemoryEventPayload` shape, not a configuration.
 
 ### Conflict detection
 

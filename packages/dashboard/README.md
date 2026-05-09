@@ -2,7 +2,7 @@
 
 Local-first web dashboard for [Memento](https://github.com/veerps57/memento). Browse memories, audit history, triage conflicts, tune config — in your browser, against your local SQLite store. Mobile-responsive.
 
-> **Status:** v0 (under active development). See [ADR-0018](../../docs/adr/0018-dashboard-package.md) for the architectural decision, scope, and the user-stories driving the v1 surface.
+> **Status:** pre-1.0, under active development. The current shipped version is in [`package.json`](package.json). See [ADR-0018](../../docs/adr/0018-dashboard-package.md) for the architectural decision, the scope, and the user-stories driving the v1 surface.
 
 ## Usage
 

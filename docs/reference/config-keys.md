@@ -28,7 +28,7 @@ Total: 87 keys.
 | Key | Default | Mutable | Description |
 | --- | --- | --- | --- |
 | `conflict.enabled` | `true` | yes | Master toggle for conflict detection. When false, the post-write hook is a no-op and `conflict.scan` becomes the only source of new conflicts. |
-| `conflict.timeoutMs` | `2000` | yes | Per-write detection budget in milliseconds. Hook runs that exceed this are dropped with a `conflict.timeout` warning; recovery is via `conflict.scan`. |
+| `conflict.timeoutMs` | `2000` | yes | Per-write detection budget in milliseconds. Hook runs that exceed this are dropped with a timeout warning; recovery is via `conflict.scan`. |
 | `conflict.scopeStrategy` | `"same"` | yes | Candidate scope strategy for the post-write hook. `'same'` checks only the new memory's own scope; `'effective'` widens to the layered effective scope set. |
 | `conflict.surfaceInSearch` | `true` | yes | Whether `memory.search` annotates results that participate in an open conflict. Off disables the read-side surfacing without affecting detection. |
 | `conflict.maxOpenBeforeWarning` | `50` | yes | Open-conflict count above which `memento doctor` raises a triage-backlog warning. |

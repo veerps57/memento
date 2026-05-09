@@ -20,7 +20,7 @@ If you are looking for a low-friction first contribution, these are good entry p
 - **Add a config recipe.** [`docs/architecture/config.md`](docs/architecture/config.md) and [`docs/reference/config-keys.md`](docs/reference/config-keys.md) describe the surface; concrete recipes for tuning a specific behavior (decay aggressively, surface conflicts in search, broaden scrubber rules) are always welcome.
 - **Improve an error message.** Find a `ResultErr` in `packages/core/src/` whose message is terse or unhelpful and tighten it. Errors are the contract surface for AI assistants — clarity here compounds across every client.
 - **Expand [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md).** If you tripped over a limitation that was not documented, add it. Distinguish "not yet" from "intentionally not."
-- **Add a missing test case.** Coverage is gated at 90% lines + 90% branches, but specific edge cases (empty input, scope edge cases, conflict ties) are good targeted contributions.
+- **Add a missing test case.** Coverage is gated at 90/90/90/90 (lines, branches, functions, statements) per [`vitest.config.ts`](vitest.config.ts), but specific edge cases (empty input, scope edge cases, conflict ties) are good targeted contributions.
 
 For larger changes, open a [design proposal issue](.github/ISSUE_TEMPLATE/design_proposal.yml) first — it is faster than rewriting after review.
 
@@ -69,12 +69,12 @@ If `pnpm install` fails on `better-sqlite3`, you are missing the C toolchain.
 pnpm dev:server
 ```
 
-`pnpm dev:server` builds the four packages the CLI needs (`@psraghuveer/memento-schema`, `@psraghuveer/memento-core`, `@psraghuveer/memento-server`, `memento`) and then runs `node packages/cli/dist/cli.js serve`. Pass `--db <path>` after the script name (e.g. `pnpm dev:server --db ./tmp.db`) or set `MEMENTO_DB` in the environment to point at a different database file. With neither set, Memento uses the XDG default (e.g. `~/.local/share/memento/memento.db`).
+`pnpm dev:server` builds the four packages the CLI needs (`@psraghuveer/memento-schema`, `@psraghuveer/memento-core`, `@psraghuveer/memento-server`, `@psraghuveer/memento`) and then runs `node packages/cli/dist/cli.js serve`. Pass `--db <path>` after the script name (e.g. `pnpm dev:server --db ./tmp.db`) or set `MEMENTO_DB` in the environment to point at a different database file. With neither set, Memento uses the XDG default (e.g. `~/.local/share/memento/memento.db`).
 
 If you'd rather run the build and the server in two steps — for example, to leave a long-running server attached to a particular database file — the underlying invocation is:
 
 ```bash
-pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F memento build
+pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build
 node packages/cli/dist/cli.js serve --db ./memento.db
 ```
 
@@ -172,7 +172,7 @@ The canonical pre-push command mirrors the CI gate:
 pnpm verify
 ```
 
-`pnpm verify` runs, in order: `lint` → `typecheck` → `build` → `test` → `test:e2e` → `docs:lint` → `docs:reflow:check` → `docs:check`. If it passes locally, CI on the same commit should pass too (modulo OS-specific surprises in the matrix).
+`pnpm verify` runs, in order: <!-- verify-chain:begin -->lint → typecheck → build → test → test:e2e → docs:lint → docs:reflow:check → docs:links → docs:check → format:packs:check<!-- verify-chain:end -->. If it passes locally, CI on the same commit should pass too (modulo OS-specific surprises in the matrix).
 
 The individual steps are also available for tighter loops while iterating:
 
@@ -217,7 +217,7 @@ CI must be green and the PR must have at least one approval before merge. Squash
 Conventional Commits. The type prefix matters because the changelog is generated from it.
 
 ```text
-feat(server): add memory.pin command
+feat(server): add memory.write_many command
 fix(core): preserve confidence on supersede when not provided
 docs(architecture): clarify decay function
 chore(deps): bump @modelcontextprotocol/sdk to 1.x
@@ -266,17 +266,6 @@ The pipeline is [`.github/workflows/release.yml`](.github/workflows/release.yml)
 
 - `NPM_TOKEN` secret: an npm **automation** token for `psraghuveer` with publish access to `@psraghuveer/*`. Automation tokens bypass 2FA, which is what makes the publish step run unattended.
 - `id-token: write` permission on the workflow (already set) — enables npm provenance via OIDC.
-
-### One-time bootstrap (0.1.0 only)
-
-The initial `0.1.0` release predates this workflow being exercised end-to-end. It is published manually once, after which every subsequent release flows through the automation above:
-
-```bash
-pnpm -r --filter "./packages/*" publish --access public --no-git-checks --otp <CODE>
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-From `0.1.1` onward, this section is for context only — the workflow does it.
 
 ## Architecture Decision Records
 

@@ -93,7 +93,7 @@ pnpm -F @psraghuveer/memento-dashboard dev
 
 Open `http://localhost:5173` in your browser. Vite proxies `/api/*` to `:4747`. UI edits hot-reload instantly; backend edits (anything under `packages/dashboard/src/server/` or `packages/cli/src/lifecycle/dashboard.ts`) require a Terminal A restart.
 
-If you change the proxy port, change both sides — `vite.config.ts`'s `server.proxy['/api'].target` must match what you pass to `--port`. The Vite-flow port (`4747`) and the convenience-script port (`3004`) are intentionally different so both can run side-by-side.
+If you change the proxy port, change both sides — Vite's `/api` proxy target in `vite.config.ts` must match what you pass to `--port`. The Vite-flow port (`4747`) and the convenience-script port (`3004`) are intentionally different so both can run side-by-side.
 
 ## Architecture (just enough)
 

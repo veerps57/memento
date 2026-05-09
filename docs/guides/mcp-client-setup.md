@@ -122,7 +122,7 @@ After saving, restart Cursor. The MCP panel should list `memento` as connected; 
 
 ## Cline (VS Code extension)
 
-Open the Cline panel in VS Code, click the **MCP Servers** icon, and choose **Edit MCP settings**. Cline stores the result in `~/.config/Cline/mcp_servers.json` (Linux/macOS) or `%APPDATA%\Cline\mcp_servers.json` (Windows). The `memento` entry is the same JSON object as above.
+Cline is **manual-config only** today — `memento init` does not emit a Cline snippet, and `memento doctor --mcp` does not scan its config files. You configure it by hand: open the Cline panel in VS Code, click the **MCP Servers** icon, and choose **Edit MCP settings**. Cline stores the result in `~/.config/Cline/mcp_servers.json` (Linux/macOS) or `%APPDATA%\Cline\mcp_servers.json` (Windows). The `memento` entry is the same JSON object as the Claude-Desktop snippet above.
 
 ## VS Code Agent mode
 

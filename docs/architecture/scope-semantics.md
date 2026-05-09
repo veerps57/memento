@@ -66,13 +66,12 @@ There is no workspace-scaffolding command. Callers pass `scope` explicitly on ev
 
 ## Read-time scope is layered
 
-When a caller reads (`memory.search`, `memory.list`), they specify a `scopeFilter` that is one of:
+When a caller reads (`memory.search`, `memory.list`), they pass an optional `scopes: Scope[]` filter:
 
-- `'all'` — every scope visible to the resolver.
-- `'effective'` — the layered set: session ⊕ branch ⊕ repo ⊕ workspace ⊕ global.
-- An explicit array of scopes.
+- **Omit it** — the read targets the layered effective set (session ⊕ branch ⊕ repo ⊕ workspace ⊕ global) computed by the resolver from the current cwd, git state, and session id. This is the common case.
+- **Pass an explicit array** — only those scopes contribute candidates.
 
-The default is `'effective'`. Layering means a `repo` memory and a `global` memory both surface for the same query, with the more-specific scope ranked slightly higher (configurable: `retrieval.scopeBoost`).
+Layering means a `repo` memory and a `global` memory both surface for the same query, with the more-specific scope ranked slightly higher (configurable per-level via `retrieval.scopeBoost`).
 
 ### Why layered, not strict
 

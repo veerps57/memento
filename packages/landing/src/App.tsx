@@ -21,6 +21,7 @@ export default function App(): JSX.Element {
         <Pain />
         <HowItWorks />
         <Quickstart />
+        <Packs />
         <DashboardPreview />
         <Features />
         <Comparison />
@@ -77,6 +78,9 @@ function Hero(): JSX.Element {
           server over a single SQLite file on your machine, so any MCP-capable AI assistant — Claude
           Desktop, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, a custom agent — can
           read and write durable, structured memory about you, your work, and your decisions.
+        </p>
+        <p className="mt-4 max-w-prose font-mono text-sm uppercase tracking-widish text-accent">
+          Local. Typed. Audited. Yours.
         </p>
         <div className="mt-10 grid max-w-2xl gap-3">
           <CodeBlock command="npx @psraghuveer/memento init" />
@@ -405,6 +409,79 @@ function PersonaSnippet(): JSX.Element {
   );
 }
 
+function Packs(): JSX.Element {
+  const cards = [
+    {
+      label: 'install',
+      title: "Don't start from empty.",
+      body: 'One command installs a curated bundle. Bundled ids, local files, or HTTPS URLs all route through the same install path. `pack preview` rehearses without writing.',
+    },
+    {
+      label: 'author',
+      title: 'Bundle what you already have.',
+      body: '`memento pack create` builds a YAML from memories already in your store. Filter by scope, kind, or tag — or pick interactively. The output is human-readable and `git diff`-friendly.',
+    },
+    {
+      label: 'share',
+      title: 'Distribute a stack guide in one file.',
+      body: 'Email a YAML, drop a GitHub raw URL, or contribute to the community registry. Recipients install with one command. Reserved `pack:<id>:<version>` tags keep provenance honest.',
+    },
+    {
+      label: 'audit',
+      title: "It's still your store.",
+      body: 'Pack-installed memories are normal memories — they decay, conflict-detect, and supersede like any other. Uninstall is dry-run by default. Re-install is idempotent.',
+    },
+  ];
+
+  return (
+    <section id="packs" aria-labelledby="packs-h2" className="scroll-mt-20 border-b border-border">
+      <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
+        <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/packs</p>
+        <h2 id="packs-h2" className="max-w-3xl text-3xl font-medium tracking-tight md:text-4xl">
+          Seed your store with a pack.
+        </h2>
+        <p className="mt-6 max-w-prose text-muted">
+          A fresh Memento install is empty. Packs are curated YAML bundles of memories you can
+          install in one step — a stack guide (Rust + Axum, TypeScript + pnpm, Python + uv…), a
+          team's conventions, or a personal set you authored on another machine.
+        </p>
+        <div className="mt-10 grid max-w-2xl gap-3">
+          <CodeBlock command="memento pack install engineering-simplicity" />
+          <p className="font-mono text-xs text-muted">
+            installs eleven memories distilled from John Maeda's <em>The Laws of Simplicity</em>
+          </p>
+        </div>
+        <ul className="mt-12 grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
+          {cards.map((c) => (
+            <li
+              key={c.label}
+              className="flex flex-col gap-3 rounded-md border border-border bg-bg/60 p-5"
+            >
+              <p className="font-mono text-xs uppercase tracking-widish text-accent">{c.label}</p>
+              <h3 className="text-lg font-medium text-fg">{c.title}</h3>
+              <p className="text-sm text-muted">{c.body}</p>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <a
+            href={`${GITHUB_URL}/blob/main/docs/guides/packs.md`}
+            className="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm text-fg transition-colors hover:border-fg"
+          >
+            Packs guide
+          </a>
+          <a
+            href={`${GITHUB_URL}/blob/main/docs/adr/0020-memento-packs.md`}
+            className="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm text-fg transition-colors hover:border-fg"
+          >
+            ADR-0020
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function DashboardPreview(): JSX.Element {
   const cards = [
     {
@@ -479,30 +556,34 @@ function DashboardPreview(): JSX.Element {
 }
 
 function Features(): JSX.Element {
+  // Four pillars + Packs + a universal-compatibility chip. The
+  // pillars (Local / Typed / Audited / Yours) are the moat; the
+  // last two cards are the "and also" supporting facts. Order is
+  // deliberate — pillars first.
   const items = [
     {
-      title: 'Local-first',
-      body: 'One SQLite file under your home directory. No outbound network calls by default.',
+      title: 'Local',
+      body: 'One SQLite file under your home directory. No cloud, no telemetry, no outbound network calls by default. Fully offline.',
     },
     {
-      title: 'LLM-agnostic',
-      body: 'No model dependencies. No proprietary APIs. Works with whatever LLM your tools use.',
+      title: 'Typed',
+      body: "Five memory kinds — fact, preference, decision, todo, snippet — with kind-specific fields. Reason about what's still true, not just retrieve text blobs.",
     },
     {
-      title: 'MCP-native',
-      body: 'Plugs into Claude Desktop, Claude Code, Cursor, Copilot, Cline, OpenCode, and any MCP client.',
+      title: 'Audited',
+      body: "Every write produces an event in an append-only log. Conflicts surface for triage. Memories decay if you don't confirm them.",
     },
     {
-      title: 'Privacy-conscious',
-      body: 'A regex-based scrubber strips secrets before they are persisted. Patterns are user-configurable.',
+      title: 'Yours',
+      body: 'Configurable behavior, JSONL export, Apache-2.0. Carry your memory between machines, leave any time. No vendor lock-in.',
     },
     {
-      title: 'Auditable',
-      body: 'Every write produces an event in an append-only log. Answer "why is this here?" any time.',
+      title: 'Packs',
+      body: 'Curated YAML bundles of memories. Install with one command; share by file, URL, or community registry. Provenance tagged automatically.',
     },
     {
-      title: 'Portable',
-      body: 'JSONL export / import. Carry your memory between machines. Leave at any time.',
+      title: 'Universal',
+      body: 'MCP-native and LLM-agnostic. Plugs into Claude Desktop, Claude Code, Cursor, Copilot, Cline, OpenCode, Aider, custom agents — works with whatever model your client talks to.',
     },
   ];
   return (
@@ -512,6 +593,9 @@ function Features(): JSX.Element {
         <h2 id="features-h2" className="text-3xl font-medium tracking-tight md:text-4xl">
           What Memento is.
         </h2>
+        <p className="mt-4 font-mono text-sm uppercase tracking-widish text-accent">
+          Local. Typed. Audited. Yours.
+        </p>
         <ul className="mt-12 grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2 lg:grid-cols-3">
           {items.map((it) => (
             <li key={it.title} className="rounded-md border border-border bg-bg/60 p-5">

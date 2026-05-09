@@ -57,13 +57,15 @@ The CLI's `postinstall` script attempts this automatically on install; this comm
 
 ## Compact
 
-Memento accumulates two kinds of historical data: archived/forgotten memory rows, and audit events. The `compact` command runs the decay engine, archives memories whose decayed score has fallen below the active threshold, and prunes audit events older than `storage.auditRetentionDays` (default 365).
+Memento accumulates archived and forgotten memory rows over time. The `compact run` command sweeps the active corpus, applies decay, and transitions any memory whose effective confidence has fallen below `decay.archiveThreshold` to `archived` status. Archived memories remain in the database — `memento memory read <id>` still returns them — they just stop competing in retrieval and stop bumping `lastConfirmedAt`.
 
 ```bash
-memento compact
+memento compact run
 ```
 
-Compaction is non-destructive in the sense that archived memories remain in the database (you can still read them by id); only the audit-event prune is irreversible. There is no required cadence — running `compact` weekly is fine for stores in the low thousands of memories. The half-life and retention windows are tunable; see [`docs/reference/config-keys.md`](../reference/config-keys.md) under `decay.*` and `storage.auditRetentionDays`.
+There is no required cadence — running it weekly is fine for stores in the low thousands of memories. The half-life and archive threshold are tunable; see [`docs/reference/config-keys.md`](../reference/config-keys.md) under `decay.*` and `compact.*`.
+
+`compact run` does **not** prune audit events. The `memory_events` log is append-only by design; a separate retention knob doesn't exist today. See [KNOWN_LIMITATIONS.md](../../KNOWN_LIMITATIONS.md) under "No audit-event retention pruning."
 
 ## Backup
 
@@ -90,7 +92,7 @@ Compaction and backups are the two things worth scheduling. A minimal `crontab(5
 
 ```cron
 # weekly compact, Sunday 03:00 local
-0 3 * * 0 /usr/local/bin/memento compact >> ~/.local/state/memento-compact.log 2>&1
+0 3 * * 0 /usr/local/bin/memento compact run >> ~/.local/state/memento-compact.log 2>&1
 
 # daily backup, 03:30 local, with a 14-day rolling retention
 30 3 * * * /usr/local/bin/memento backup ~/memento-backups/$(date +\%Y-\%m-\%d).db && find ~/memento-backups -type f -name '*.db' -mtime +14 -delete

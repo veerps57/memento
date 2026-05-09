@@ -35,6 +35,18 @@ Memento exposes the MCP tools, but the assistant still needs to know *when* to c
 
 That's it. Verify with `npx @psraghuveer/memento doctor --mcp` (scans known client configs and flags shape mismatches) and try a fresh session: *"Remember that I prefer pnpm over npm for Node projects."* In the next session, ask *"What's my preferred package manager?"* and the assistant should recall it without you re-explaining.
 
+## Seed your store with a pack
+
+A fresh Memento install is empty. Packs are curated YAML bundles of memories you can install in one step — a stack guide (Rust + Axum, TypeScript + pnpm, Python + uv…), a team's conventions, or a personal set you authored on another machine.
+
+```bash
+memento pack install engineering-simplicity
+```
+
+That command installs the bundled `engineering-simplicity` pack — eleven memories distilled from John Maeda's *The Laws of Simplicity*. Preview before installing with `memento pack preview <id-or-path>`; list what's installed with `memento pack list`; remove any time with `memento pack uninstall <id> --confirm` (dry-run by default).
+
+Packs are also how you share. Author one from your existing memories with `memento pack create`, then distribute it as a file, an HTTPS URL, or a community contribution. The reserved `pack:<id>:<version>` tag stamps every pack-installed memory so provenance never drifts. Full guide: [docs/guides/packs.md](docs/guides/packs.md). Design rationale: [ADR-0020](docs/adr/0020-memento-packs.md).
+
 ## Getting started
 
 **Prerequisites.** Node.js ≥ 22.11, and a C/C++ toolchain so `better-sqlite3` can compile on platforms without a prebuild (Xcode command-line tools on macOS, `build-essential` on Debian/Ubuntu).
@@ -71,8 +83,6 @@ You can also point at an existing database with the `MEMENTO_DB` environment var
 
 **See and curate your store in a browser.** `npx @psraghuveer/memento dashboard` launches a local-first web UI that reads against your `MEMENTO_DB`: memory counts by kind and scope, audit trail, conflict triage, config inspection, installed packs. Localhost-only, gated by a per-launch random token in the URL the launcher hands the browser, no telemetry. The dashboard is a sibling package ([`@psraghuveer/memento-dashboard`](packages/dashboard/)) shipped under [ADR-0018](docs/adr/0018-dashboard-package.md); see [docs/guides/dashboard.md](docs/guides/dashboard.md) for the full walkthrough.
 
-**Seed your store with a pack.** Packs are curated YAML files of memories — typically a stack guide (Rust + Axum, TypeScript + pnpm…) or a personal set of conventions — that you can install in one step. Author one with `memento pack create`, install one with `memento pack install <id-or-path>`. The full guide is in [docs/guides/packs.md](docs/guides/packs.md); the design rationale is in [ADR-0020](docs/adr/0020-memento-packs.md).
-
 **Stuck?** Common failure modes (better-sqlite3 build errors, `command not found: memento`, `STORAGE_ERROR`s, missing embedder dependency) are covered in [docs/guides/troubleshooting.md](docs/guides/troubleshooting.md).
 
 For the contributor workflow (branching, commit conventions, PR checklist) see [CONTRIBUTING.md](CONTRIBUTING.md). AI agents working on the codebase **must** also read [AGENTS.md](AGENTS.md).
@@ -88,12 +98,14 @@ These are the four principles every design decision is judged against. They are 
 
 ## What Memento is
 
-- **Local-first.** Your memory lives in a single SQLite file under your home directory. No outbound network calls by default.
-- **LLM-agnostic.** No model dependencies. No proprietary APIs. Works with whatever LLM your tools use.
-- **Tool-agnostic.** Exposes its full surface over both MCP (for AI agents) and a CLI (for humans and scripts). The two are kept in lockstep by a single command registry.
-- **Privacy-conscious.** A built-in regex-based scrubber strips secrets before they are persisted. Patterns are user-configurable.
-- **Auditable.** Every write produces an event in an append-only log. You can answer "why is this memory here?" and "when did this change?" at any time.
-- **Versioned.** Schema migrations are append-only. Memories are typed, validated at the boundary, and have explicit lifecycles (active, superseded, forgotten, archived).
+Four pillars. Same four words used everywhere else this is described.
+
+- **Local.** One SQLite file under your home directory. No cloud, no telemetry, no outbound network calls by default. Fully offline.
+- **Typed.** Five memory kinds — `fact`, `preference`, `decision`, `todo`, `snippet` — with kind-specific fields (a decision carries its rationale, a todo its due date, a snippet its language). The assistant can reason about what's still true, not just retrieve text blobs.
+- **Audited.** Every write produces an event in an append-only log. Conflicts surface for triage instead of silently coexisting. Memories decay if you don't confirm them. You can answer "why is this here?" and "when did it change?" at any time.
+- **Yours.** Configurable behavior (every retrieval weight, every decay half-life, every scrubber rule), JSONL export and import, Apache-2.0. Carry your memory between machines, leave any time. No vendor lock-in.
+
+Plus: LLM-agnostic (works with whatever model your client talks to), MCP-native (Claude Desktop, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, custom agents), privacy-conscious (regex scrubber strips secrets before persistence; patterns are user-configurable).
 
 ## What Memento is not
 
@@ -153,6 +165,6 @@ Memento is a small workspace of focused packages. The architecture is documented
 | [`@psraghuveer/memento-core`](packages/core)                     | Storage and migrations, memory + event repositories, scope resolver, scrubber, decay engine with `compact` archival pass, conflict detection + supersession workflow, embedding hook + bulk re-embed driver, `EmbeddingProvider` interface, FTS + brute-force vector retrieval pipeline + ranker, and the command registry with validating execute path (ADR 0003).    |
 | [`@psraghuveer/memento-server`](packages/server)                 | MCP adapter — `buildMementoServer` projects the `@psraghuveer/memento-core` command registry as MCP tools; `serveStdio` wires it to stdio. Used by `memento serve`.                                                                                                                                                                                                                |
 | [`@psraghuveer/memento-embedder-local`](packages/embedder-local) | Local `EmbeddingProvider` backed by transformers.js + `bge-base-en-v1.5`. Ships as a regular dependency; lazy single-flight init downloads the model on first use. See ADR [0006](docs/adr/0006-local-embeddings-only-in-v1.md).                                                                                                             |
-| [`@psraghuveer/memento`](packages/cli) (CLI)         | The published `memento` binary (`npx @psraghuveer/memento` or `npm i -g @psraghuveer/memento`). Lifecycle commands (`init`, `serve`, `dashboard`, `context`, `doctor`, `status`, `ping`, `backup`, `export`, `import`, `store migrate`, `completions`, `explain`, `uninstall`) plus a generic projection of the registry surface (`memento <namespace> <verb>`). See [docs/reference/cli.md](docs/reference/cli.md).                                                                              |
+| [`@psraghuveer/memento`](packages/cli) (CLI)         | The published `memento` binary (`npx @psraghuveer/memento` or `npm i -g @psraghuveer/memento`). Lifecycle commands (`init`, `serve`, `dashboard`, `context`, `doctor`, `status`, `ping`, `backup`, `export`, `import`, `pack`, `store migrate`, `completions`, `explain`, `skill-path`, `uninstall`) plus a generic projection of the registry surface (`memento <namespace> <verb>`). See [docs/reference/cli.md](docs/reference/cli.md).                                                                              |
 | [`@psraghuveer/memento-dashboard`](packages/dashboard) | Local-first web dashboard. Hono server in-process with the engine + Vite-built React SPA. Launched by `memento dashboard`; binds `127.0.0.1` only. See [ADR-0018](docs/adr/0018-dashboard-package.md) and [docs/guides/dashboard.md](docs/guides/dashboard.md). |
 | [`@psraghuveer/memento-landing`](packages/landing) | Marketing landing page. Static SPA, deployed to GitHub Pages on every push to main that touches `packages/landing/**`. Mirrors the dashboard's design tokens; light/dark toggle. Private (not published to npm). |

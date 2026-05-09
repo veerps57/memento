@@ -39,7 +39,8 @@ packages/
 │                     plus the npx entry point and lifecycle commands
 │                     (`init`, `serve`, `dashboard`, `context`, `doctor`,
 │                     `status`, `ping`, `backup`, `export`, `import`,
-│                     `store migrate`, `completions`, `explain`, `uninstall`)
+│                     `pack`, `store migrate`, `completions`, `explain`,
+│                     `skill-path`, `uninstall`)
 ├── embedder-local/   transformers.js + bge-base-en-v1.5
 │                     Regular dep; lazy-loaded on first embed()
 ├── dashboard/        Web dashboard adapter (ADR-0018); Hono server

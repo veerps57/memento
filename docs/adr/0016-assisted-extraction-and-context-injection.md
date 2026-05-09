@@ -33,7 +33,7 @@ The assistant is the LLM — it already understands the conversation and can jud
 
 ### Negative
 
-- ~13 new config keys to document and maintain.
+- 16 new config keys to document and maintain (`extraction.*` × 7 and `context.*` × 9).
 - Embedding provider required for full dedup quality (falls back to exact-match without it).
 - Persona snippets must be updated for existing users.
 

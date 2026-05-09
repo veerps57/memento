@@ -3,6 +3,8 @@ name: memento-dev
 description: How to contribute changes to the Memento codebase — the local-first MCP memory layer at github.com/veerps57/memento. Trigger this skill whenever the user is working in a checkout of the Memento repo (look for AGENTS.md and packages/{schema,core,server,cli,dashboard,embedder-local,landing} at the repo root) and any of the following holds — the user is editing source under packages/, the user is adding or changing a command / config key / migration / ADR, the user mentions "the Memento repo" or "this repo" while inside a Memento checkout, the user is debugging a failing pnpm verify run, or the user asks "how do I contribute" / "where does X go" / "what are the rules". Do NOT trigger this skill when Memento is merely a dependency of another project (look for a memento entry in package.json dependencies, not at the repo root) — that is an end-user context where the `memento` skill applies. Do NOT trigger for unrelated TypeScript work, even if a Memento checkout happens to be open elsewhere.
 ---
 
+<!-- doc-links: resolve-from-repo-root -->
+
 # Memento Dev
 
 You are working on the Memento codebase. This skill encodes the rules every change must follow, the verification steps that must pass, and the cadence (ADRs, changesets, docs:generate) that keeps the project coherent across human and AI contributors.

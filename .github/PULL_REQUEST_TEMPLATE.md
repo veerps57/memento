@@ -44,7 +44,7 @@ Required reading before opening this PR:
 
 <!-- Confirm you have run, locally and successfully: -->
 
-- [ ] `pnpm verify` (mirrors the CI gate: lint, typecheck, build, test, test:e2e, docs:lint, docs:reflow:check, docs:check)
+- [ ] `pnpm verify` (<!-- verify-chain:begin -->lint → typecheck → build → test → test:e2e → docs:lint → docs:reflow:check → docs:links → docs:check → format:packs:check<!-- verify-chain:end -->)
 - [ ] `pnpm docs:generate` committed if generated docs changed
 
 ## ADR

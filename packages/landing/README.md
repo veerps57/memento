@@ -34,6 +34,6 @@ Push to `main` with changes under `packages/landing/**` triggers `.github/workfl
 
 When a custom domain is in place, set `VITE_BASE_PATH=/` in the workflow env (one-line change).
 
-## Adding screenshots
+## Static assets
 
-See [`public/screenshots/README.md`](public/screenshots/README.md). The `<Screenshot>` component shows a "screenshot pending" placeholder for any image that 404s, so the page renders cleanly even before screenshots are dropped in.
+Site assets ship from [`public/`](public/) verbatim — favicons, the OG image, the web app manifest, the schemas mirror, `llms.txt`, and `sitemap.xml`. Drop new files in directly; Vite picks them up at build time. There is currently no screenshots directory; if you need to add inline imagery, prefer co-locating SVG/PNG with the component and importing it as a module so Vite hashes the URL.

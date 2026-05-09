@@ -129,7 +129,7 @@ type MemoryEventType =
 
 - The audit log is **append-only**. There is no command that deletes or modifies a `MemoryEvent`. Hard-deleting historical events would destroy the ability to reconstruct state and is rejected at the repository layer.
 - For every `Memory`, there is at least one `created` event with `at = createdAt` and `actor = owner`.
-- The `lastConfirmedAt` field on `Memory` equals `MAX(at)` over events of type `created | confirmed | updated | superseded | restored | reembedded | imported` for that memory. `memento doctor` enforces this invariant.
+- The `lastConfirmedAt` field on `Memory` is a denormalized cache: it equals `MAX(at)` over the lifecycle events for that memory. Every state-changing event bumps it (`created`, `confirmed`, `updated`, `superseded`, `restored`, `reembedded`, `imported`, plus the terminal `forgotten` and `archived` transitions, so the cache always reflects the most recent audit timestamp). `memento doctor` enforces the cache against the audit log.
 
 ### What the audit log enables
 
@@ -153,14 +153,14 @@ interface ConfigEvent {
 
 type ConfigSource =
   | "default" // built-in compiled defaults
-  | "user-file" // ~/.memento/config.yaml
-  | "workspace-file" // <workspace>/.memento/config.yaml
-  | "env" // MEMENTO__<KEY> environment variables
-  | "cli" // --<key>=<value> on the invoking command
+  | "user-file" // reserved for a future user-config-file loader
+  | "workspace-file" // reserved for a future workspace-config-file loader
+  | "env" // reserved for a future env-var loader
+  | "cli" // programmatic `configOverrides` to `createMementoApp`, plus CLI `config.set`
   | "mcp"; // config.set during a server session
 ```
 
-The `ConfigSource` enum is precedence-ordered (lowest to highest); see [config.md](./config.md#layering) for the layering rules. Per-layer audit requires distinguishing user-file from workspace-file, hence the split.
+The `ConfigSource` enum is precedence-ordered (lowest to highest). Today only `default`, `cli`, and `mcp` are populated by the runtime; the file and env variants are reserved for future loaders and currently never emitted. The supported surface is documented in [config.md § What this deliberately omits](./config.md#what-this-deliberately-omits).
 
 Config changes are first-class events. Every change to `ConfigKey` writes one. This means "why did retrieval behavior change last Tuesday?" is answerable from the database, not from shell history.
 
@@ -217,7 +217,7 @@ Conflicts are not memories: they are observations about pairs of memories. Foldi
 
 ## Schema versioning
 
-`schemaVersion` is set at creation and never changes for that memory. Migrations transform older `schemaVersion` rows lazily on read or eagerly via `memento store migrate`. Migrations are append-only files in `packages/core/migrations/`. Editing a shipped migration is a code-review rejection.
+`schemaVersion` is set at creation and never changes for that memory. Migrations transform older `schemaVersion` rows lazily on read or eagerly via `memento store migrate`. Migrations are append-only files in `packages/core/src/storage/migrations/`. Editing a shipped migration is a code-review rejection.
 
 ## What is deliberately not in the model
 

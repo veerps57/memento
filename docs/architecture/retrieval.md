@@ -15,7 +15,7 @@ Each stage is replaceable by configuration. None contains hardcoded behavioral c
 
 ## Scope filter
 
-Applied first. The query specifies a `scopes` list of resolved [`Scope`](scope-semantics.md) values; the repository emits SQL that prunes by scope before any text matching runs. Resolution of caller-friendly modes (`'all'`, `'effective'`, an explicit list) lives in `@psraghuveer/memento-server`, which composes the resolvers from [scope-semantics.md](scope-semantics.md) before invoking the engine. The engine itself takes resolved scopes only — that keeps the engine pure and testable without simulating a workspace.
+Applied first. The query specifies an optional `scopes: Scope[]` list. When omitted, the host (CLI / MCP server / dashboard) composes the resolvers from [scope-semantics.md](scope-semantics.md) over the current cwd, git state, and session id and passes the resulting layered effective set to the engine. When present, only those scopes contribute candidates. The engine itself takes resolved scopes only — that keeps the engine pure and testable without simulating a workspace.
 
 `status` is also filtered here. By default, only `active` memories are searchable. Callers can opt into `superseded`, `forgotten`, or `archived` explicitly via `includeStatuses`, primarily for debugging and audit.
 
@@ -23,7 +23,7 @@ Applied first. The query specifies a `scopes` list of resolved [`Scope`](scope-s
 
 ### FTS5 (always available)
 
-`memories_fts` is a contentless FTS5 table indexed over `(content, summary, tags)`. The default tokenizer is `unicode61` with diacritic folding; `porter` is available via `retrieval.fts.tokenizer`. The query string is sanitised to a term bag (FTS5 sigils stripped, tokens OR-ed) before it reaches `MATCH`; full FTS5 syntax (phrase, prefix, NEAR) is reserved for a future `retrieval.searchSyntax` knob.
+`memories_fts` is a contentless FTS5 table indexed over `(content, summary, tags)`. The default tokenizer is `unicode61` with diacritic folding; `porter` is available via `retrieval.fts.tokenizer`. The query string is sanitised to a term bag (FTS5 sigils stripped, tokens OR-ed) before it reaches `MATCH`; full FTS5 syntax (phrase, prefix, NEAR) is reserved for a future search-syntax extension under the `retrieval.fts.*` namespace.
 
 FTS5's BM25 score is the primary text-relevance signal. The `k1` and `b` parameters are baked into SQLite's FTS5 implementation and not exposed; tuning them requires a custom `retrieval.ranker.strategy`.
 
@@ -54,9 +54,9 @@ score = w_fts        * normalize(ftsScore)
       + w_pinned     * (pinned ? 1 : 0)
 ```
 
-All weights are `ConfigKey`s under `retrieval.ranker.weights.*`. The default values are documented in [config.md](config.md) and chosen to produce reasonable results out of the box; serious users will tune them.
+All weights are `ConfigKey`s under `retrieval.ranker.weights.*`. The default values are documented in the auto-generated [`docs/reference/config-keys.md`](../reference/config-keys.md) and chosen to produce reasonable results out of the box; serious users will tune them.
 
-The ranker is selected by `retrieval.ranker.strategy` (default `'linear'`). Other strategies (`'reciprocal-rank-fusion'`, `'custom'`) can be added without modifying existing code; this is principle 3 (Extensible) in code.
+The ranker is selected by `retrieval.ranker.strategy`. Today the only registered value is `'linear'`; the schema is a one-element enum. The strategy field exists so additional rankers (reciprocal-rank fusion, a learned re-ranker, etc.) can be added by widening the enum without changing the call sites — this is principle 3 (Extensible) in code, not a claim that those strategies ship today.
 
 ### `effectiveConfidence`
 
