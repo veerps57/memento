@@ -22,6 +22,16 @@ pre-commit:
     typecheck:
       glob: '*.{ts,tsx}'
       run: pnpm exec tsc -b
+    format-packs:
+      # Re-runs the canonical YAML formatter when any pack manifest
+      # lands in a commit. The formatter operates on the whole
+      # `packs/` tree (not on `{staged_files}` individually) because
+      # key-order canonicalisation is per-file and doesn't benefit
+      # from staging context — and contributors expect a single
+      # canonical artefact, not partial fixes.
+      glob: 'packs/**/*.yaml'
+      run: pnpm format:packs
+      stage_fixed: true
 
 pre-push:
   commands:

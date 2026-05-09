@@ -40,6 +40,34 @@ Every pack has:
 
 Optional metadata fields: `description` (≤ 2000 chars), `author`, `license` (SPDX), `homepage` (HTTPS URL), `tags` (pack-discovery tags, ≤ 20), and `defaults` (`scope`, `pinned`, `tags` applied to every memory unless overridden per-item).
 
+## Schema-aware editing (optional)
+
+A JSON Schema for `memento-pack/v1` is generated from `PackManifestSchema` on every `pnpm docs:generate` and shipped at two locations: in-repo at [`docs/reference/pack-schema.json`](../reference/pack-schema.json) and on the landing site at `https://runmemento.com/schemas/memento-pack-v1.json`. Both files have identical content; `pnpm docs:check` keeps them in lockstep.
+
+To get inline validation as you type, add the `yaml-language-server` directive at the top of your YAML and configure your editor's YAML extension (VS Code's `redhat.vscode-yaml` is the canonical implementation):
+
+```yaml
+# yaml-language-server: $schema=https://runmemento.com/schemas/memento-pack-v1.json
+
+format: memento-pack/v1
+id: my-pack
+# …
+```
+
+For packs you're authoring inside this repo, point the directive at the local relative path instead so it works without a network round-trip:
+
+```yaml
+# yaml-language-server: $schema=../../docs/reference/pack-schema.json
+```
+
+Either form gives you autocomplete on `kind:`, hover docs on every field, and squiggles on unknown keys or bad regex matches. The same schema is what `pack.install` validates against — your editor sees what the engine sees.
+
+## Format enforcement
+
+Every YAML in `packs/<id>/v<version>.yaml` is canonicalised by `pnpm format:packs`. The script reorders top-level keys (`format`, `id`, `version`, `title`, `description`, `author`, `license`, `homepage`, `tags`, `defaults`, `memories`) and per-memory keys (`kind`, `content`, `summary`, `rationale`, `due`, `language`, `tags`, `pinned`, `sensitive`) into a stable order, emits multi-line content as block-literal scalars (`|`), and inserts a blank line between memory entries. A pre-commit hook runs the formatter on staged pack YAMLs; CI runs `pnpm format:packs:check` (in `pnpm verify`) and fails on any drift.
+
+In other words: edit the YAML however you like, run `pnpm format:packs` (or commit and let the hook do it), and the result is byte-equivalent to what every other contributor produces. No bikeshedding on key order.
+
 ## Installing
 
 Three ways to install, all routing through the same `pack.install` command:
@@ -156,6 +184,22 @@ Filter flags (`--scope-global` / `--scope-workspace=<path>` / `--scope-repo=<rem
 
 - Does not write to multiple scopes. Pack memories share one scope (`PackMemoryItem` has no per-item scope field). If your selection spans more than one, the command refuses with `INVALID_INPUT`. Narrow with `--scope-*` and run twice.
 - Does not include reserved-prefix tags. `pack:*` tags are stripped from per-memory tags on export (with a warning). The install path stamps a fresh `pack:<id>:<version>` tag on every memory; carrying old pack provenance into a new pack would be confusing and would conflict with the schema.
+
+### Editing an existing pack
+
+The drift check (`PACK_VERSION_REUSED`) refuses re-installing a published version with changed content — that refusal is the system telling you the change requires a version bump, not an in-place edit. Two paths cover every realistic edit:
+
+**Substantive change → bump the version.** Anything that affects what gets installed: memory `content`, `kind`, `summary`, `tags`, `pinned`, `sensitive`, kind-specific fields (`rationale` / `due` / `language`), or `defaults.{scope,pinned,tags}`. Copy `v<old>.yaml` to a new version file under the same `<id>/` directory, edit there, and leave the old version in place so existing installs aren't disrupted. The directory layout supports multiple versions side by side; users opt in to upgrades via `pack uninstall <id> --version <old>` then `pack install <id> --version <new>`.
+
+Pick the semver bump deliberately:
+
+- **patch** (`0.1.0` → `0.1.1`) — wording tweak in one memory, typo fix in `content`
+- **minor** (`0.1.0` → `0.2.0`) — added memories, expanded coverage, broader scope
+- **major** (`0.1.0` → `1.0.0`) — removed memories, structural rewrite, breaking change in what installing the pack does to a store
+
+**Cosmetic only → edit in place at the same version.** The drift hash excludes pack-level metadata: `title`, `description`, `author`, `license`, `homepage`, and the top-level pack-discovery `tags` array. You can edit those without bumping. The drift check sees the per-memory content hashes are unchanged and treats the edited file as identical to the old one.
+
+After either path, run `pnpm format:packs && pnpm test packages/core/test/packs/` and open a PR. CI runs `pnpm verify`, which includes `format:packs:check` and the bundled-pack schema test, so drift is caught at the gate.
 
 ## Provenance
 
