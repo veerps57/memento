@@ -399,6 +399,39 @@ export const CONFIG_KEYS = {
     description:
       'Maximum vector candidates fetched per query before ranking. Only consulted when `retrieval.vector.enabled` is true.',
   }),
+  // Per-arm minimum-score floors. The candidate union is built
+  // by `retrieval.candidate.ftsLimit` and
+  // `retrieval.candidate.vectorLimit` regardless of how strong
+  // each individual hit is. These two keys add a second gate:
+  // candidates whose every arm is below its configured floor
+  // are dropped before ranking. A candidate that matches BOTH
+  // arms survives if either is above its floor — the cut fires
+  // only when every signal the candidate contributed is weak.
+  //
+  // Defaults are no-ops:
+  //   - `ftsMinScore = 0` keeps every FTS hit (|bm25| is always
+  //     non-negative).
+  //   - `vectorMinCosine = -1` keeps every vector hit (cosine
+  //     is bounded in [-1, 1]).
+  //
+  // Operators raise these to suppress weak-arm candidates that
+  // pollute the top-K — typical paraphrase queries score every
+  // unrelated row at cosine 0.7-0.85, so a `vectorMinCosine`
+  // around 0.85 trims that tail without affecting strong hits.
+  'retrieval.candidate.ftsMinScore': defineKey({
+    schema: z.number().min(0).finite(),
+    default: 0,
+    mutable: true,
+    description:
+      'Minimum absolute BM25 score below which an FTS-only candidate is dropped from the union before ranking. SQLite FTS5 reports BM25 as a negative number where more-negative = more-relevant; this threshold compares against `|bm25|`. Candidates that also match the vector arm above its floor survive regardless. Default `0` preserves prior behaviour (no filtering).',
+  }),
+  'retrieval.candidate.vectorMinCosine': defineKey({
+    schema: z.number().min(-1).max(1),
+    default: -1,
+    mutable: true,
+    description:
+      'Minimum cosine similarity below which a vector-only candidate is dropped from the union before ranking. Cosine is bounded in `[-1, 1]`; raise to ~0.85 to suppress the paraphrase-noise floor that pollutes top-K on neutral queries. Candidates that also match the FTS arm above its floor survive regardless. Default `-1` preserves prior behaviour (no filtering).',
+  }),
 
   // — Embedder —
   // The local embedder defaults to `bge-small-en-v1.5` (the

@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 87 keys.
+Total: 89 keys.
 
 ## `decay.*`
 
@@ -100,6 +100,8 @@ Total: 87 keys.
 | `retrieval.search.maxLimit` | `200` | yes | Hard upper bound on `memory.search` result count. |
 | `retrieval.candidate.ftsLimit` | `500` | yes | Maximum FTS5 candidates fetched per query before ranking. Keeps the ranker fast at the cost of recall on very-frequent terms. Common-word queries (`the`, `is`, `and`, etc.) match many memories at low BM25 — the cap keeps p95 latency flat. Lower it (e.g. 200) for faster common-word queries; raise it (e.g. 1000+) for richer recall on broad searches at the cost of more ranker work per call. |
 | `retrieval.candidate.vectorLimit` | `200` | yes | Maximum vector candidates fetched per query before ranking. Only consulted when `retrieval.vector.enabled` is true. |
+| `retrieval.candidate.ftsMinScore` | `0` | yes | Minimum absolute BM25 score below which an FTS-only candidate is dropped from the union before ranking. SQLite FTS5 reports BM25 as a negative number where more-negative = more-relevant; this threshold compares against `\|bm25\|`. Candidates that also match the vector arm above its floor survive regardless. Default `0` preserves prior behaviour (no filtering). |
+| `retrieval.candidate.vectorMinCosine` | `-1` | yes | Minimum cosine similarity below which a vector-only candidate is dropped from the union before ranking. Cosine is bounded in `[-1, 1]`; raise to ~0.85 to suppress the paraphrase-noise floor that pollutes top-K on neutral queries. Candidates that also match the FTS arm above its floor survive regardless. Default `-1` preserves prior behaviour (no filtering). |
 
 ## `embedder.*`
 

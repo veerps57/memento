@@ -195,7 +195,22 @@ export async function searchMemories(
     }
   }
 
-  const candidates: RawCandidate[] = Array.from(candidatesById.values());
+  // Per-arm candidate thresholds. A candidate survives when at
+  // least one arm scores at or above its configured floor; a
+  // candidate whose every contributing arm is below is dropped
+  // before ranking. Defaults are no-ops (ftsMinScore = 0;
+  // vectorMinCosine = -1) so upgrading does not change ranking
+  // until an operator opts in.
+  const ftsMinScore = cfg.get('retrieval.candidate.ftsMinScore');
+  const vectorMinCosine = cfg.get('retrieval.candidate.vectorMinCosine');
+  const candidates: RawCandidate[] = [];
+  for (const cand of candidatesById.values()) {
+    const ftsKeep = cand.bm25 !== null && Math.abs(cand.bm25) >= ftsMinScore;
+    const vectorKeep = cand.cosine !== null && cand.cosine >= vectorMinCosine;
+    if (ftsKeep || vectorKeep) {
+      candidates.push(cand);
+    }
+  }
   if (candidates.length === 0) {
     return { results: [], nextCursor: null };
   }

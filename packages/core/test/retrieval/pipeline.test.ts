@@ -4,6 +4,7 @@ import { createConfigStore } from '../../src/config/index.js';
 import type { EmbeddingProvider } from '../../src/embedding/provider.js';
 import { createMemoryRepository } from '../../src/repository/memory-repository.js';
 import type { MemoryWriteInput } from '../../src/repository/memory-repository.js';
+import { searchFts } from '../../src/retrieval/fts.js';
 import { VectorRetrievalConfigError, searchMemories } from '../../src/retrieval/pipeline.js';
 import { openDatabase } from '../../src/storage/database.js';
 import { migrateToLatest } from '../../src/storage/migrate.js';
@@ -547,3 +548,229 @@ describe('searchMemories', () => {
 function pairwise(stamps: readonly string[]): string[] {
   return stamps.flatMap((s) => [s, s]);
 }
+
+describe('per-arm candidate thresholds', () => {
+  // Helper: drive a vector-on search whose provider returns the
+  // supplied query vector. Each memory's stored embedding decides
+  // its cosine; this lets tests construct strong-vector and
+  // weak-vector candidates by choosing the embedding direction.
+  function vectorProvider(queryVector: readonly number[]): EmbeddingProvider {
+    return {
+      model: 'test-model',
+      dimension: queryVector.length,
+      embed: async () => queryVector,
+    };
+  }
+
+  it('defaults (ftsMinScore=0, vectorMinCosine=-1) preserve prior ranking', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    const a = await repo.write({ ...baseInput, content: 'kafka kafka kafka' }, { actor });
+    await repo.write({ ...baseInput, content: 'unrelated' }, { actor });
+
+    // Reusable: no threshold overrides → registry defaults.
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka' },
+    );
+
+    expect(page.results).toHaveLength(1);
+    expect(page.results[0]?.memory.id).toBe(a.id);
+  });
+
+  it('drops vector-only candidates below vectorMinCosine', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    // Strong vector match (cosine 1.0) — no FTS overlap with the query.
+    const strong = await repo.write({ ...baseInput, content: 'lorem ipsum dolor' }, { actor });
+    await repo.setEmbedding(
+      strong.id,
+      { model: 'test-model', dimension: 3, vector: [1, 0, 0] },
+      { actor },
+    );
+    // Weak vector match (cosine 0.6 against query [1, 0, 0]) — no FTS overlap.
+    const weak = await repo.write({ ...baseInput, content: 'consectetur adipiscing' }, { actor });
+    await repo.setEmbedding(
+      weak.id,
+      { model: 'test-model', dimension: 3, vector: [0.6, 0.8, 0] },
+      { actor },
+    );
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({
+          'retrieval.vector.enabled': true,
+          'retrieval.candidate.vectorMinCosine': 0.9,
+        }),
+        embeddingProvider: vectorProvider([1, 0, 0]),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka' },
+    );
+
+    expect(page.results.map((r) => r.memory.id)).toEqual([strong.id]);
+    expect(page.results.find((r) => r.memory.id === weak.id)).toBeUndefined();
+  });
+
+  it('drops FTS-only candidates below ftsMinScore', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    const strong = await repo.write(
+      { ...baseInput, content: 'kafka kafka kafka kafka kafka' },
+      { actor },
+    );
+    const weak = await repo.write(
+      {
+        ...baseInput,
+        content:
+          'kafka mentioned exactly once among a lot of unrelated context such as the weather and breakfast and other miscellaneous tokens',
+      },
+      { actor },
+    );
+
+    // Pull raw |bm25| values directly from `searchFts` so the
+    // threshold can be set deterministically between the strong
+    // and weak hit regardless of how SQLite's BM25 reports the
+    // absolute magnitudes for this fixture.
+    const hits = await searchFts(handle.db, {
+      text: 'kafka',
+      limit: 10,
+      statuses: ['active'],
+    });
+    const ranked = hits.map((h) => ({ id: h.id, abs: Math.abs(h.bm25) }));
+    const strongAbs = ranked.find((h) => h.id === strong.id)?.abs ?? 0;
+    const weakAbs = ranked.find((h) => h.id === weak.id)?.abs ?? 0;
+    expect(strongAbs).toBeGreaterThan(weakAbs);
+    // Midpoint threshold cleanly separates the two candidates.
+    const midpoint = (strongAbs + weakAbs) / 2;
+
+    const filtered = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({
+          'retrieval.vector.enabled': false,
+          'retrieval.candidate.ftsMinScore': midpoint,
+        }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka' },
+    );
+    expect(filtered.results.map((r) => r.memory.id)).toEqual([strong.id]);
+
+    // And with a floor above both, the page is empty.
+    const aggressive = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({
+          'retrieval.vector.enabled': false,
+          'retrieval.candidate.ftsMinScore': strongAbs + 1,
+        }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka' },
+    );
+    expect(aggressive.results).toEqual([]);
+  });
+
+  it('keeps a candidate matching both arms when one arm is above its floor', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    // Single memory matching both arms: strong FTS hit AND a
+    // weak (below floor) cosine. With vectorMinCosine high, the
+    // vector arm would prune; the FTS arm being above its floor
+    // (default 0) rescues the candidate.
+    const both = await repo.write({ ...baseInput, content: 'kafka kafka kafka' }, { actor });
+    await repo.setEmbedding(
+      both.id,
+      { model: 'test-model', dimension: 3, vector: [0, 1, 0] },
+      { actor },
+    );
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({
+          'retrieval.vector.enabled': true,
+          'retrieval.candidate.vectorMinCosine': 0.9,
+        }),
+        embeddingProvider: vectorProvider([1, 0, 0]),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka' },
+    );
+
+    expect(page.results.map((r) => r.memory.id)).toEqual([both.id]);
+  });
+
+  it('drops a candidate when every arm is below its floor', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    // Strong reference candidate so the result set is non-empty
+    // and the drop is observable rather than masked by "no
+    // candidates ever existed".
+    const strong = await repo.write({ ...baseInput, content: 'kafka kafka kafka' }, { actor });
+    await repo.setEmbedding(
+      strong.id,
+      { model: 'test-model', dimension: 3, vector: [1, 0, 0] },
+      { actor },
+    );
+    // Doubly-weak candidate: weak FTS (|bm25| < 1.0) and weak
+    // cosine (0.6 against query [1, 0, 0]).
+    const weak = await repo.write(
+      { ...baseInput, content: 'kafka one of many words here today' },
+      { actor },
+    );
+    await repo.setEmbedding(
+      weak.id,
+      { model: 'test-model', dimension: 3, vector: [0.6, 0.8, 0] },
+      { actor },
+    );
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({
+          'retrieval.vector.enabled': true,
+          'retrieval.candidate.ftsMinScore': 1.0,
+          'retrieval.candidate.vectorMinCosine': 0.9,
+        }),
+        embeddingProvider: vectorProvider([1, 0, 0]),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka' },
+    );
+
+    expect(page.results.map((r) => r.memory.id)).toEqual([strong.id]);
+  });
+});

@@ -58,6 +58,17 @@ The vector backend is selected by `retrieval.vector.backend`, currently one of `
 
 FTS catches lexical matches that embeddings miss (proper nouns, identifiers, exact phrases). Embeddings catch paraphrases that FTS misses. The union is strictly larger than either alone. The ranker collapses the union and re-orders.
 
+### Per-arm candidate thresholds
+
+The candidate-generation caps (`retrieval.candidate.ftsLimit`, `retrieval.candidate.vectorLimit`) bound *how many* hits each arm contributes, not *how strong* those hits must be. Two additional knobs add a per-arm minimum-score floor that fires before ranking:
+
+- `retrieval.candidate.ftsMinScore` — minimum absolute BM25 magnitude. FTS5's BM25 is negative-better; the threshold compares against `|bm25|`. Default `0` (no filtering).
+- `retrieval.candidate.vectorMinCosine` — minimum cosine similarity. Cosine is bounded in `[-1, 1]`. Default `-1` (no filtering).
+
+A candidate survives when at least one arm scores at or above its configured floor. A candidate that contributed only an FTS hit is dropped if `|bm25|` is below `ftsMinScore`; a candidate that contributed only a vector hit is dropped if cosine is below `vectorMinCosine`; a candidate matching both arms survives if either is above. The cut fires only when every signal the candidate produced is weak.
+
+Operators raise these to suppress the noise floor that pollutes top-K on paraphrase queries — most unrelated rows score in a similar mid-range cosine band against neutral query embeddings, and a floor around 0.85 trims that tail without affecting strong hits. The defaults are no-ops so upgrading does not change ranking until an operator opts in.
+
 ## Ranker
 
 The ranker takes candidates and produces a final ordering. The default ranker is a configurable linear combination:
