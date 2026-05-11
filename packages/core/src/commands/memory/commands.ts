@@ -895,6 +895,8 @@ export function createMemoryCommands(
                 const filter = {
                   ...(input.types !== undefined ? { types: [...input.types] } : {}),
                   ...(input.limit !== undefined ? { limit: input.limit } : {}),
+                  ...(input.since !== undefined ? { since: input.since } : {}),
+                  ...(input.until !== undefined ? { until: input.until } : {}),
                 };
                 return input.id === undefined
                   ? eventRepo.listRecent(filter)

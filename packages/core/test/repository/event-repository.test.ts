@@ -147,6 +147,82 @@ describe('createEventRepository', () => {
     });
   });
 
+  describe('since / until temporal bounds', () => {
+    async function seedAtClocks(
+      handle: Awaited<ReturnType<typeof fixture>>,
+      clocks: readonly string[],
+    ) {
+      let i = 0;
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const ids = [];
+      for (let n = 0; n < clocks.length; n += 1) {
+        const m = await repo.write(baseInput, { actor });
+        ids.push(m.id);
+      }
+      return { ids };
+    }
+
+    it('listRecent: since filters events earlier than the bound', async () => {
+      const handle = await fixture();
+      await seedAtClocks(handle, [
+        '2025-01-01T00:00:00.000Z',
+        '2025-06-01T00:00:00.000Z',
+        '2025-12-01T00:00:00.000Z',
+      ]);
+      const events = await createEventRepository(handle.db).listRecent({
+        since: '2025-06-01T00:00:00.000Z' as never,
+      });
+      expect(events).toHaveLength(2);
+      for (const e of events) {
+        expect(String(e.at) >= '2025-06-01T00:00:00.000Z').toBe(true);
+      }
+    });
+
+    it('listRecent: until is exclusive', async () => {
+      const handle = await fixture();
+      await seedAtClocks(handle, [
+        '2025-01-01T00:00:00.000Z',
+        '2025-06-01T00:00:00.000Z',
+        '2025-12-01T00:00:00.000Z',
+      ]);
+      const events = await createEventRepository(handle.db).listRecent({
+        until: '2025-06-01T00:00:00.000Z' as never,
+      });
+      expect(events).toHaveLength(1);
+      expect(String(events[0]?.at)).toBe('2025-01-01T00:00:00.000Z');
+    });
+
+    it('listForMemory: half-open since/until window', async () => {
+      const handle = await fixture();
+      // One memory, three events on different clocks.
+      let i = 0;
+      const clocks = [
+        '2025-01-01T00:00:00.000Z',
+        '2025-06-01T00:00:00.000Z',
+        '2025-12-01T00:00:00.000Z',
+      ];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const m = await repo.write(baseInput, { actor });
+      await repo.confirm(m.id, { actor });
+      await repo.confirm(m.id, { actor });
+
+      const events = await createEventRepository(handle.db).listForMemory(m.id, {
+        since: '2025-06-01T00:00:00.000Z' as never,
+        until: '2025-12-01T00:00:00.000Z' as never,
+      });
+      expect(events).toHaveLength(1);
+      expect(String(events[0]?.at)).toBe('2025-06-01T00:00:00.000Z');
+    });
+  });
+
   describe('latestForMemory', () => {
     it('returns the most recent event', async () => {
       const handle = await fixture();

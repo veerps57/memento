@@ -160,6 +160,14 @@ export function createMemorySearchCommand(
             ...(input.limit !== undefined ? { limit: input.limit } : {}),
             ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
             ...(input.now !== undefined ? { now: input.now } : {}),
+            ...(input.createdAtAfter !== undefined ? { createdAtAfter: input.createdAtAfter } : {}),
+            ...(input.createdAtBefore !== undefined
+              ? { createdAtBefore: input.createdAtBefore }
+              : {}),
+            ...(input.confirmedAfter !== undefined ? { confirmedAfter: input.confirmedAfter } : {}),
+            ...(input.confirmedBefore !== undefined
+              ? { confirmedBefore: input.confirmedBefore }
+              : {}),
           },
           { actor: ctx.actor },
         );

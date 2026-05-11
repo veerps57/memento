@@ -1063,6 +1063,42 @@ describe('createMemoryCommands', () => {
         expect(result.error.code).toBe('INVALID_INPUT');
       }
     });
+
+    it('filters by since / until at the command boundary', async () => {
+      const handle = openDatabase({ path: ':memory:' });
+      handles.push(handle);
+      await migrateToLatest(handle.db, MIGRATIONS);
+      let i = 0;
+      const clocks = [
+        '2025-01-01T00:00:00.000Z',
+        '2025-06-01T00:00:00.000Z',
+        '2025-12-01T00:00:00.000Z',
+      ];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const eventRepository = createEventRepository(handle.db);
+      const commands = createMemoryCommands(repo, undefined, { eventRepository });
+      const byName = new Map(commands.map((c) => [c.name, c]));
+
+      await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      await executeCommand(get(byName, 'memory.write'), { ...writeInput, content: 'mid' }, ctx);
+      await executeCommand(get(byName, 'memory.write'), { ...writeInput, content: 'late' }, ctx);
+
+      const halfOpen = await executeCommand(
+        get(byName, 'memory.events'),
+        {
+          since: '2025-06-01T00:00:00.000Z',
+          until: '2025-12-01T00:00:00.000Z',
+        },
+        ctx,
+      );
+      if (!halfOpen.ok) throw new Error('expected ok');
+      expect(halfOpen.value).toHaveLength(1);
+      expect(String(halfOpen.value[0]?.at)).toBe('2025-06-01T00:00:00.000Z');
+    });
   });
 
   // Confirm-gate (ADR-0012). `memory.forget` and

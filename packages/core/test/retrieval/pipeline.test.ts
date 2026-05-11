@@ -376,4 +376,174 @@ describe('searchMemories', () => {
       ),
     ).rejects.toBeInstanceOf(VectorRetrievalConfigError);
   });
+
+  describe('temporal filters', () => {
+    it('filters out rows older than createdAtAfter', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = ['2025-01-01T00:00:00.000Z', '2025-12-01T00:00:00.000Z'];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      await repo.write({ ...baseInput, content: 'kafka old' }, { actor });
+      const newer = await repo.write({ ...baseInput, content: 'kafka new' }, { actor });
+
+      const page = await searchMemories(
+        {
+          db: handle.db,
+          memoryRepository: repo,
+          configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+          clock: () => fixedClock,
+        },
+        {
+          text: 'kafka',
+          createdAtAfter: '2025-06-01T00:00:00.000Z' as never,
+        },
+      );
+      expect(page.results.map((r) => r.memory.id)).toEqual([newer.id]);
+    });
+
+    it('createdAtBefore is exclusive', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = ['2025-01-01T00:00:00.000Z', '2025-06-01T00:00:00.000Z'];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const older = await repo.write({ ...baseInput, content: 'kafka older' }, { actor });
+      await repo.write({ ...baseInput, content: 'kafka cutoff' }, { actor });
+
+      const page = await searchMemories(
+        {
+          db: handle.db,
+          memoryRepository: repo,
+          configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+          clock: () => fixedClock,
+        },
+        {
+          text: 'kafka',
+          createdAtBefore: '2025-06-01T00:00:00.000Z' as never,
+        },
+      );
+      expect(page.results.map((r) => r.memory.id)).toEqual([older.id]);
+    });
+
+    it('confirmedAfter narrows by lastConfirmedAt', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = ['2025-01-01T00:00:00.000Z', '2025-12-01T00:00:00.000Z'];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      await repo.write({ ...baseInput, content: 'kafka old' }, { actor });
+      const newer = await repo.write({ ...baseInput, content: 'kafka new' }, { actor });
+
+      const page = await searchMemories(
+        {
+          db: handle.db,
+          memoryRepository: repo,
+          configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+          clock: () => fixedClock,
+        },
+        {
+          text: 'kafka',
+          confirmedAfter: '2025-06-01T00:00:00.000Z' as never,
+        },
+      );
+      expect(page.results.map((r) => r.memory.id)).toEqual([newer.id]);
+    });
+
+    it('confirmedBefore is exclusive', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = ['2025-01-01T00:00:00.000Z', '2025-06-01T00:00:00.000Z'];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const older = await repo.write({ ...baseInput, content: 'kafka older' }, { actor });
+      await repo.write({ ...baseInput, content: 'kafka cutoff' }, { actor });
+
+      const page = await searchMemories(
+        {
+          db: handle.db,
+          memoryRepository: repo,
+          configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+          clock: () => fixedClock,
+        },
+        {
+          text: 'kafka',
+          confirmedBefore: '2025-06-01T00:00:00.000Z' as never,
+        },
+      );
+      expect(page.results.map((r) => r.memory.id)).toEqual([older.id]);
+    });
+
+    it('threads all 4 temporal bounds through the vector arm', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = pairwise(['2025-01-01T00:00:00.000Z', '2025-12-01T00:00:00.000Z']);
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      // Write + embed both rows so the vector arm has candidates
+      // to filter on. Inline embedder produces a constant unit
+      // vector so cosine ranking is trivial.
+      const provider: EmbeddingProvider = {
+        model: 'test-model',
+        dimension: 3,
+        embed: async () => [1, 0, 0],
+      };
+      const a = await repo.write({ ...baseInput, content: 'kafka old' }, { actor });
+      await repo.setEmbedding(
+        a.id,
+        { model: provider.model, dimension: provider.dimension, vector: [1, 0, 0] },
+        { actor },
+      );
+      const newer = await repo.write({ ...baseInput, content: 'kafka new' }, { actor });
+      await repo.setEmbedding(
+        newer.id,
+        { model: provider.model, dimension: provider.dimension, vector: [1, 0, 0] },
+        { actor },
+      );
+
+      const page = await searchMemories(
+        {
+          db: handle.db,
+          memoryRepository: repo,
+          configStore: createConfigStore({ 'retrieval.vector.enabled': true }),
+          embeddingProvider: provider,
+          clock: () => fixedClock,
+        },
+        {
+          text: 'kafka',
+          // Composed half-open window on both axes. Exercises the
+          // four conditional spreads onto the vector candidate
+          // generator in one shot.
+          createdAtAfter: '2025-06-01T00:00:00.000Z' as never,
+          createdAtBefore: '2026-01-01T00:00:00.000Z' as never,
+          confirmedAfter: '2025-06-01T00:00:00.000Z' as never,
+          confirmedBefore: '2026-01-01T00:00:00.000Z' as never,
+        },
+      );
+      expect(page.results.map((r) => r.memory.id)).toEqual([newer.id]);
+    });
+  });
 });
+
+// Pair each timestamp with itself; a write-then-set-embedding
+// pair consumes two clock ticks per logical memory, so each
+// instant must repeat to land on the same createdAt /
+// lastConfirmedAt pair.
+function pairwise(stamps: readonly string[]): string[] {
+  return stamps.flatMap((s) => [s, s]);
+}

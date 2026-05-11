@@ -138,4 +138,90 @@ describe('searchFts', () => {
     });
     expect(hits).toHaveLength(2);
   });
+
+  describe('temporal filters', () => {
+    it('filters rows older than createdAtAfter', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = ['2025-01-01T00:00:00.000Z', '2025-12-01T00:00:00.000Z'];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      await repo.write({ ...baseInput, content: 'kafka old' }, { actor });
+      const newer = await repo.write({ ...baseInput, content: 'kafka new' }, { actor });
+
+      const hits = await searchFts(handle.db, {
+        text: 'kafka',
+        limit: 10,
+        statuses: ['active'],
+        createdAtAfter: '2025-06-01T00:00:00.000Z' as never,
+      });
+      expect(hits.map((h) => h.id)).toEqual([newer.id]);
+    });
+
+    it('createdAtBefore is exclusive', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = ['2025-01-01T00:00:00.000Z', '2025-06-01T00:00:00.000Z'];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const older = await repo.write({ ...baseInput, content: 'kafka older' }, { actor });
+      await repo.write({ ...baseInput, content: 'kafka cutoff' }, { actor });
+
+      const hits = await searchFts(handle.db, {
+        text: 'kafka',
+        limit: 10,
+        statuses: ['active'],
+        createdAtBefore: '2025-06-01T00:00:00.000Z' as never,
+      });
+      expect(hits.map((h) => h.id)).toEqual([older.id]);
+    });
+
+    it('confirmedAfter narrows by last_confirmed_at', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = ['2025-01-01T00:00:00.000Z', '2025-12-01T00:00:00.000Z'];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      await repo.write({ ...baseInput, content: 'kafka old' }, { actor });
+      const newer = await repo.write({ ...baseInput, content: 'kafka new' }, { actor });
+
+      const hits = await searchFts(handle.db, {
+        text: 'kafka',
+        limit: 10,
+        statuses: ['active'],
+        confirmedAfter: '2025-06-01T00:00:00.000Z' as never,
+      });
+      expect(hits.map((h) => h.id)).toEqual([newer.id]);
+    });
+
+    it('confirmedBefore is exclusive', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = ['2025-01-01T00:00:00.000Z', '2025-06-01T00:00:00.000Z'];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const older = await repo.write({ ...baseInput, content: 'kafka older' }, { actor });
+      await repo.write({ ...baseInput, content: 'kafka cutoff' }, { actor });
+
+      const hits = await searchFts(handle.db, {
+        text: 'kafka',
+        limit: 10,
+        statuses: ['active'],
+        confirmedBefore: '2025-06-01T00:00:00.000Z' as never,
+      });
+      expect(hits.map((h) => h.id)).toEqual([older.id]);
+    });
+  });
 });

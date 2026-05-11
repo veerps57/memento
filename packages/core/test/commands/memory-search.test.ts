@@ -706,4 +706,77 @@ describe('memory.search command', () => {
       expect(memory?.content).toBe('kafka secret');
     });
   });
+
+  describe('temporal filters', () => {
+    async function temporalFixture() {
+      const handle = openDatabase({ path: ':memory:' });
+      handles.push(handle);
+      await migrateToLatest(handle.db, MIGRATIONS);
+      let i = 0;
+      const clocks = ['2025-01-01T00:00:00.000Z', '2025-12-01T00:00:00.000Z'];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const command = createMemorySearchCommand({
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+        clock: () => fixedClock,
+      });
+      return { repo, command };
+    }
+
+    it('createdAtAfter filters older rows at the command boundary', async () => {
+      const { repo, command } = await temporalFixture();
+      await repo.write({ ...baseInput, content: 'kafka old' }, { actor });
+      const newer = await repo.write({ ...baseInput, content: 'kafka new' }, { actor });
+
+      const result = await executeCommand(
+        command,
+        { text: 'kafka', createdAtAfter: '2025-06-01T00:00:00.000Z' },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.results.map((r) => r.memory.id)).toEqual([newer.id]);
+    });
+
+    it('createdAtBefore returns only memories created before the cutoff', async () => {
+      const { repo, command } = await temporalFixture();
+      const older = await repo.write({ ...baseInput, content: 'kafka older' }, { actor });
+      await repo.write({ ...baseInput, content: 'kafka cutoff' }, { actor });
+
+      const result = await executeCommand(
+        command,
+        { text: 'kafka', createdAtBefore: '2025-06-01T00:00:00.000Z' },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.results.map((r) => r.memory.id)).toEqual([older.id]);
+    });
+
+    it('confirmedAfter / confirmedBefore compose into a half-open window', async () => {
+      const { repo, command } = await temporalFixture();
+      await repo.write({ ...baseInput, content: 'kafka one' }, { actor });
+      await repo.write({ ...baseInput, content: 'kafka two' }, { actor });
+
+      const result = await executeCommand(
+        command,
+        {
+          text: 'kafka',
+          confirmedAfter: '2025-01-01T00:00:00.000Z',
+          confirmedBefore: '2025-06-01T00:00:00.000Z',
+        },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Only the first memory (2025-01-01) falls inside [Jan-1, Jun-1).
+      expect(result.value.results).toHaveLength(1);
+      expect(result.value.results[0]?.memory.content).toBe('kafka one');
+    });
+  });
 });

@@ -52,6 +52,7 @@ Encoded as tests and CI gates where possible. Do not bypass them.
 - **Bypassing `assertNever` exhaustiveness checks.** They exist precisely to catch missed cases when adding new variants.
 - **Touching one postinstall without the other.** `scripts/ensure-better-sqlite3.mjs` (root) and `packages/cli/scripts/postinstall.mjs` (CLI) cooperate to prevent the "Could not locate the bindings file" trap. The CLI hook early-exits via `isWorkspaceCheckout()` so it doesn't fight the root heal in dev. Edit them together — editing one in isolation re-introduces the trap for every fresh contributor.
 - **Adding a `preference` or `decision` feature that authors content as freeform prose.** The conflict detector's `preference` and `decision` policies parse the **first line** of `content` as `topic: value` (or `topic = value`) — that's the structural anchor that makes "I use bun" vs "I use npm" surface as a conflict. Free-prose content silently bypasses detection. New surfaces that auto-write preferences must include the first-line anchor; the assistant skill (`skills/memento/SKILL.md`) teaches the same pattern. See [`docs/architecture/conflict-detection.md`](docs/architecture/conflict-detection.md) for the rationale.
+- **Referencing working notes in committed artefacts.** Exploratory drafts, eval reports, dogfood journals, audit prompts, and any `DO NOT COMMIT` file are private working memory. Code, tests, comments, commit messages, and committed docs must not cite, quote, or link them. Rationale lives in the code, the ADR, and the commit message — not in a sidecar. → AGENTS.md §Common pitfalls.
 
 ## How to do common tasks
 
@@ -106,7 +107,7 @@ pnpm verify
 
 If `docs:reflow:check` fails, run `pnpm docs:reflow` to apply the fix. If `docs:check` fails, run `pnpm docs:generate` and commit the regenerated `docs/reference/`.
 
-Coverage gate is 90% lines + 90% branches (enforced in `vitest.config.ts`).
+Coverage gate is 90% lines + 90% branches (enforced in `vitest.config.ts`). **Coverage trend:** also run `pnpm test:coverage` and confirm the `All files` row (lines / branches / functions / statements) does not drop vs your starting commit. Per-file drops on a touched file mean missing tests, not a relaxed rule. → AGENTS.md §Verification.
 
 ## Markdown convention
 
@@ -166,3 +167,12 @@ If you believe one of these belongs in the product, open a [design proposal issu
 If you are an AI agent, the [PR template](.github/PULL_REQUEST_TEMPLATE.md) has a section for disclosing AI involvement. Use it. AI-authored PRs are welcome; opaque ones are not.
 
 The same gates apply equally to human and AI contributors. "It looked right" is not verification — `pnpm verify` is.
+
+## Interactive collaboration
+
+When the user is reviewing each commit (pair-programming, multi-PR session, interactive agent mode in any tool):
+
+- **Do not auto-commit.** When the work for a commit is complete, run `pnpm verify` and `pnpm test:coverage`, then pause and present a review summary (files changed, tests added, coverage delta, docs touched). Wait for explicit go-ahead before `git commit`.
+- **Docs sweep per commit.** Before asking for review, scan `docs/architecture/`, `docs/guides/`, `docs/adr/`, and package READMEs for prose that should reflect the change. Update what drifted; do not punt to a follow-up commit.
+
+Autonomous batch sessions skip these — they only fire when a human is reviewing commit-by-commit. → AGENTS.md §For AI agents specifically.

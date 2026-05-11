@@ -125,6 +125,10 @@ export async function searchMemories(
     statuses,
     ...(query.kinds !== undefined ? { kinds: query.kinds } : {}),
     ...(query.scopes !== undefined ? { scopes: query.scopes } : {}),
+    ...(query.createdAtAfter !== undefined ? { createdAtAfter: query.createdAtAfter } : {}),
+    ...(query.createdAtBefore !== undefined ? { createdAtBefore: query.createdAtBefore } : {}),
+    ...(query.confirmedAfter !== undefined ? { confirmedAfter: query.confirmedAfter } : {}),
+    ...(query.confirmedBefore !== undefined ? { confirmedBefore: query.confirmedBefore } : {}),
   });
 
   // Build the candidate set as a union by id of FTS hits and
@@ -159,6 +163,10 @@ export async function searchMemories(
         statuses,
         ...(query.kinds !== undefined ? { kinds: query.kinds } : {}),
         ...(query.scopes !== undefined ? { scopes: query.scopes } : {}),
+        ...(query.createdAtAfter !== undefined ? { createdAtAfter: query.createdAtAfter } : {}),
+        ...(query.createdAtBefore !== undefined ? { createdAtBefore: query.createdAtBefore } : {}),
+        ...(query.confirmedAfter !== undefined ? { confirmedAfter: query.confirmedAfter } : {}),
+        ...(query.confirmedBefore !== undefined ? { confirmedBefore: query.confirmedBefore } : {}),
       });
       for (const hit of vectorHits) {
         const key = hit.id as unknown as string;

@@ -48,6 +48,21 @@ export interface SearchQuery {
   readonly limit?: number;
   readonly now?: Timestamp;
   /**
+   * Inclusive lower bound on `createdAt`. Applied at the
+   * candidate-generation SQL boundary so both FTS and vector
+   * arms honour the same window.
+   */
+  readonly createdAtAfter?: Timestamp;
+  /**
+   * Exclusive upper bound on `createdAt`. Half-open with
+   * `createdAtAfter` so two consecutive pages don't double-count.
+   */
+  readonly createdAtBefore?: Timestamp;
+  /** Inclusive lower bound on `lastConfirmedAt`. */
+  readonly confirmedAfter?: Timestamp;
+  /** Exclusive upper bound on `lastConfirmedAt`. */
+  readonly confirmedBefore?: Timestamp;
+  /**
    * Pagination cursor. When supplied, results start *after* the
    * memory with this id in the ranked output. Stable across
    * pages because the ranker is a pure function of the query +

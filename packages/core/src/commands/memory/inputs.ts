@@ -498,6 +498,12 @@ export const MemoryEventsInputSchema = z
       .nonempty()
       .optional()
       .describe('Filter to specific event types. Omit for all event types.'),
+    since: TimestampSchema.optional().describe(
+      'Inclusive lower bound on event `at`. ISO-8601 UTC. Events at or after this instant are included.',
+    ),
+    until: TimestampSchema.optional().describe(
+      'Exclusive upper bound on event `at`. ISO-8601 UTC. Events strictly before this instant are included.',
+    ),
     limit: z
       .number()
       .int()

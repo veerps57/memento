@@ -42,6 +42,7 @@ import {
   type MemoryId,
   type MemoryKindType,
   type Scope,
+  type Timestamp,
 } from '@psraghuveer/memento-schema';
 import { type Kysely, sql } from 'kysely';
 import type { EmbeddingProvider } from '../embedding/provider.js';
@@ -54,6 +55,10 @@ export interface VectorSearchOptions {
   readonly statuses: readonly ('active' | 'superseded' | 'forgotten' | 'archived')[];
   readonly kinds?: readonly MemoryKindType[];
   readonly scopes?: readonly Scope[];
+  readonly createdAtAfter?: Timestamp;
+  readonly createdAtBefore?: Timestamp;
+  readonly confirmedAfter?: Timestamp;
+  readonly confirmedBefore?: Timestamp;
 }
 
 export interface VectorHit {
@@ -148,13 +153,32 @@ export async function searchVector(
           sql` or `,
         )})`;
 
+  // Half-open temporal windows. Mirrors the FTS arm so vector
+  // candidates respect the same date filter the caller asked for.
+  const createdAfterClause =
+    options.createdAtAfter === undefined
+      ? sql``
+      : sql` and created_at >= ${options.createdAtAfter as unknown as string}`;
+  const createdBeforeClause =
+    options.createdAtBefore === undefined
+      ? sql``
+      : sql` and created_at < ${options.createdAtBefore as unknown as string}`;
+  const confirmedAfterClause =
+    options.confirmedAfter === undefined
+      ? sql``
+      : sql` and last_confirmed_at >= ${options.confirmedAfter as unknown as string}`;
+  const confirmedBeforeClause =
+    options.confirmedBefore === undefined
+      ? sql``
+      : sql` and last_confirmed_at < ${options.confirmedBefore as unknown as string}`;
+
   // Pull only the columns the scanner needs. The embedding
   // payload is the dominant byte-cost; everything else is small.
   const rows = await sql<{ id: string; embedding_json: string }>`
     select id, embedding_json
     from memories
     where embedding_json is not null
-      and status in (${statusList})${kindClause}${scopeClause}
+      and status in (${statusList})${kindClause}${scopeClause}${createdAfterClause}${createdBeforeClause}${confirmedAfterClause}${confirmedBeforeClause}
   `.execute(db);
 
   const queryNorm = l2Norm(options.queryVector);

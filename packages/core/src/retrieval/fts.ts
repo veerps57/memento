@@ -28,7 +28,7 @@
 //    values are bound as parameters via `${}`; identifiers come
 //    exclusively from enums / fixed lists in this file.
 
-import type { MemoryId, MemoryKindType, Scope } from '@psraghuveer/memento-schema';
+import type { MemoryId, MemoryKindType, Scope, Timestamp } from '@psraghuveer/memento-schema';
 import { type Kysely, sql } from 'kysely';
 import type { MementoSchema } from '../storage/schema.js';
 
@@ -38,6 +38,10 @@ export interface FtsSearchOptions {
   readonly statuses: readonly ('active' | 'superseded' | 'forgotten' | 'archived')[];
   readonly kinds?: readonly MemoryKindType[];
   readonly scopes?: readonly Scope[];
+  readonly createdAtAfter?: Timestamp;
+  readonly createdAtBefore?: Timestamp;
+  readonly confirmedAfter?: Timestamp;
+  readonly confirmedBefore?: Timestamp;
 }
 
 export interface FtsHit {
@@ -110,13 +114,34 @@ export async function searchFts(
           sql` or `,
         )})`;
 
+  // Temporal bounds are applied at SQL so both FTS and vector
+  // arms see the same filtered candidate set. Half-open windows
+  // (`>= after`, `< before`) so callers can paginate two
+  // consecutive windows without double-counting at the boundary.
+  const createdAfterClause =
+    options.createdAtAfter === undefined
+      ? sql``
+      : sql` and m.created_at >= ${options.createdAtAfter as unknown as string}`;
+  const createdBeforeClause =
+    options.createdAtBefore === undefined
+      ? sql``
+      : sql` and m.created_at < ${options.createdAtBefore as unknown as string}`;
+  const confirmedAfterClause =
+    options.confirmedAfter === undefined
+      ? sql``
+      : sql` and m.last_confirmed_at >= ${options.confirmedAfter as unknown as string}`;
+  const confirmedBeforeClause =
+    options.confirmedBefore === undefined
+      ? sql``
+      : sql` and m.last_confirmed_at < ${options.confirmedBefore as unknown as string}`;
+
   const result = await sql<{ id: string; bm25: number }>`
     select m.id as id, bm25(memories_fts) as bm25
     from memories_fts
     join memories_fts_map map on map.rowid = memories_fts.rowid
     join memories m on m.id = map.memory_id
     where memories_fts match ${cleaned}
-      and m.status in (${statusList})${kindClause}${scopeClause}
+      and m.status in (${statusList})${kindClause}${scopeClause}${createdAfterClause}${createdBeforeClause}${confirmedAfterClause}${confirmedBeforeClause}
     order by bm25(memories_fts) asc
     limit ${options.limit}
   `.execute(db);

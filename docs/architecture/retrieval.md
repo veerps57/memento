@@ -19,6 +19,23 @@ Applied first. The query specifies an optional `scopes: Scope[]` list. When omit
 
 `status` is also filtered here. By default, only `active` memories are searchable. Callers can opt into `superseded`, `forgotten`, or `archived` explicitly via `includeStatuses`, primarily for debugging and audit.
 
+## Temporal filters
+
+`memory.search` accepts optional half-open windows on `createdAt` and `lastConfirmedAt`:
+
+```text
+createdAtAfter    — inclusive lower bound on createdAt
+createdAtBefore   — exclusive upper bound on createdAt
+confirmedAfter    — inclusive lower bound on lastConfirmedAt
+confirmedBefore   — exclusive upper bound on lastConfirmedAt
+```
+
+The bounds are pushed into the SQL `WHERE` clause for both the FTS and vector arms, so the candidate-generation caps (`retrieval.candidate.ftsLimit`, `retrieval.candidate.vectorLimit`) apply to the already-narrowed set rather than to the full corpus. Each bound is independent; pair `createdAtAfter` and `createdAtBefore` for a half-open window.
+
+`memory.events` accepts the same shape under different names — `since` (inclusive lower bound on event `at`) and `until` (exclusive upper bound). Use these to scope cross-session forensics ("what did I decide about retrieval between Monday and Wednesday?") without paging through every event in the log.
+
+The bounds never affect *which* status counts as `active` — `now` on the search input only feeds decay scoring. Time-travel reads (status as of a past instant) are out of scope.
+
 ## Candidate generation
 
 ### FTS5 (always available)
