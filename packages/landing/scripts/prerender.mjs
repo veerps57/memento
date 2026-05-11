@@ -10,8 +10,11 @@
 //      package.json) and `__MEMENTO_LAST_MODIFIED__` (from the
 //      most recent git commit touching packages/landing) into the
 //      JSON-LD graph.
-//   3. Generates a FAQPage JSON-LD block from `FAQ_ITEMS` and
-//      replaces the `<!--FAQ-PAGE-JSONLD-->` placeholder.
+//   3. Generates FAQPage, HowTo, and ItemList (comparison) JSON-LD
+//      blocks from the SSR-exported source data (`FAQ_ITEMS`,
+//      `HOWTO`, `COMPARISON`) and replaces the corresponding
+//      placeholders. All three schemas read from the same modules
+//      the visible page renders from, so they can't drift.
 //   4. Adds `<lastmod>` to `dist/sitemap.xml` using the same
 //      git timestamp.
 //   5. Removes the SSR build directory.
@@ -46,8 +49,12 @@ const ssrEntry = pathToFileURL(resolve(ssrDir, 'entry-server.js')).href;
  *      totalTime: string,
  *      steps: ReadonlyArray<{ name: string, text: string, command?: string }>,
  *    },
+ *    COMPARISON: {
+ *      columns: ReadonlyArray<{ key: string, label: string }>,
+ *      rows: ReadonlyArray<Record<string, string>>,
+ *    },
  *  }} */
-const { render, FAQ_ITEMS, HOWTO } = await import(ssrEntry);
+const { render, FAQ_ITEMS, HOWTO, COMPARISON } = await import(ssrEntry);
 
 const cliPkg = JSON.parse(readFileSync(resolve(repoRoot, 'packages/cli/package.json'), 'utf8'));
 const version = String(cliPkg.version ?? '0.0.0');
@@ -73,6 +80,7 @@ const faqPageJsonLd = JSON.stringify(
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
     '@id': 'https://runmemento.com/#faq',
+    inLanguage: 'en',
     mainEntity: FAQ_ITEMS.map((item) => ({
       '@type': 'Question',
       name: item.question,
@@ -121,6 +129,54 @@ const howToJsonLd = JSON.stringify(
   2,
 );
 
+// ItemList schema for the "Memento vs the alternatives" comparison.
+// Marks each column as a Schema.org Thing with `additionalProperty`
+// PropertyValue entries — one per comparison row. AI search engines
+// surface comparison content disproportionately for "X vs Y" queries,
+// but only if the contrast is parseable. The visible <table> + this
+// JSON-LD give them two complementary signals from one source.
+//
+// The Memento column links to the existing SoftwareApplication node
+// (`@id` reference) so the comparison enriches that entity rather
+// than introducing a parallel one. Other columns ship as `Thing`
+// because they aren't all individually addressable SoftwareApplications
+// — "Per-client config files" is a category, not a product.
+const COMPARISON_ITEM_IDS = {
+  memento: 'https://runmemento.com/#software',
+  chatgptMemory: 'https://runmemento.com/#comparison-chatgpt-memory',
+  claudeProjects: 'https://runmemento.com/#comparison-claude-projects',
+  perClientFiles: 'https://runmemento.com/#comparison-per-client-files',
+};
+const comparisonJsonLd = JSON.stringify(
+  {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    '@id': 'https://runmemento.com/#comparison',
+    name: 'Memento vs the alternatives',
+    description:
+      'Feature comparison: Memento (local-first MCP memory layer) vs ChatGPT Memory, Claude Projects, and per-client config files (CLAUDE.md, .cursorrules, copilot-instructions.md).',
+    inLanguage: 'en',
+    numberOfItems: COMPARISON.columns.length,
+    itemListOrder: 'https://schema.org/ItemListUnordered',
+    itemListElement: COMPARISON.columns.map((column, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      item: {
+        '@type': column.key === 'memento' ? 'SoftwareApplication' : 'Thing',
+        '@id': COMPARISON_ITEM_IDS[column.key],
+        name: column.label,
+        additionalProperty: COMPARISON.rows.map((row) => ({
+          '@type': 'PropertyValue',
+          name: row.property,
+          value: row[column.key],
+        })),
+      },
+    })),
+  },
+  null,
+  2,
+);
+
 // Critical-font preload tags. @fontsource ships per-weight CSS
 // imports that the browser only fetches when the page first
 // references them, which can delay LCP on slow connections.
@@ -161,17 +217,10 @@ const html = template
   // OG-aware unfurlers (LinkedIn, some AI fetchers) re-fetch when
   // it changes, replacing stale cached previews.
   .replaceAll('__MEMENTO_OG_UPDATED_TIME__', lastModified)
-  // Visible "Last updated" string in the footer — surfaces freshness
-  // to LLMs that read body text directly (not just JSON-LD). Format
-  // as a human-readable date next to the lastModified ISO timestamp.
-  .replaceAll(
-    '__MEMENTO_LAST_UPDATED_HUMAN__',
-    new Date(lastModified).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    }),
-  )
+  // The visible footer "Last updated" string is injected by Vite's
+  // `define` (see vite.config.ts → `__MEMENTO_LAST_MODIFIED_HUMAN__`),
+  // not by a prerender placeholder. Both paths read the same git
+  // log so they stay in lockstep.
   .replace(
     '<!--FAQ-PAGE-JSONLD-->',
     `<script type="application/ld+json">\n${faqPageJsonLd}\n    </script>`,
@@ -179,6 +228,10 @@ const html = template
   .replace(
     '<!--HOWTO-JSONLD-->',
     `<script type="application/ld+json">\n${howToJsonLd}\n    </script>`,
+  )
+  .replace(
+    '<!--COMPARISON-JSONLD-->',
+    `<script type="application/ld+json">\n${comparisonJsonLd}\n    </script>`,
   )
   .replace('<!--FONT-PRELOAD-->', fontPreloadTags);
 writeFileSync(indexPath, html, 'utf8');

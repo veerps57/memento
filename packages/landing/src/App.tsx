@@ -747,12 +747,17 @@ function Footer(): JSX.Element {
             <Wordmark className="text-sm" />
             <span className="font-mono text-xs">Apache-2.0 · local-first · no telemetry</span>
           </div>
-          {/* Visible freshness signal so LLMs reading body text
-              (not just JSON-LD) can cite a "Last updated" date. The
+          {/* Visible author byline + freshness signal so LLMs reading
+              body text (not just the Schema.org Person + dateModified
+              in JSON-LD) can cite "Built by … as of …". The
               <time dateTime> uses the ISO timestamp; the display
               text is the human-readable form. */}
           <p className="font-mono text-xs">
-            Last updated{' '}
+            Built by{' '}
+            <a className="hover:text-fg" href="https://github.com/veerps57" rel="author">
+              veerps57
+            </a>
+            {' · Last updated '}
             <time dateTime={__MEMENTO_LAST_MODIFIED_ISO__}>{__MEMENTO_LAST_MODIFIED_HUMAN__}</time>
             {' · '}
             <a className="hover:text-fg" href="/llms.txt">

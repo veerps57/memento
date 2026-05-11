@@ -102,10 +102,15 @@
             "@type": "SoftwareApplication",
             "@id": "https://runmemento.com/#software",
             "name": "Memento",
-            "alternateName": "@psraghuveer/memento",
+            "alternateName": [
+              "Memento Memory Layer",
+              "Memento for MCP",
+              "@psraghuveer/memento"
+            ],
             "applicationCategory": "DeveloperApplication",
             "applicationSubCategory": "Memory layer for AI assistants",
             "operatingSystem": "macOS, Linux, Windows",
+            "inLanguage": "en",
             "description": "A local-first, LLM-agnostic memory layer for AI assistants. Runs as an MCP server over a single SQLite file on your machine. No cloud, no vendor lock-in. Works with Claude Code, Cursor, Copilot, Cline, OpenCode, and any MCP-capable client.",
             "license": "https://www.apache.org/licenses/LICENSE-2.0",
             "url": "https://runmemento.com/",
@@ -151,6 +156,7 @@
     </script>
     <!--FAQ-PAGE-JSONLD-->
     <!--HOWTO-JSONLD-->
+    <!--COMPARISON-JSONLD-->
     <!-- Icons. We ship real files (favicon.ico, favicon.svg,
          favicon-{16,32}x{16,32}.png, apple-touch-icon.png) instead of
          relying on a single inline data: URI: every browser,
@@ -164,6 +170,18 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <!-- iOS / Android "add to home screen" hints. Aligns the
+         installed-PWA chrome with the same brand wording the rest
+         of the page uses (title, og:site_name, schema.org name).
+         `apple-mobile-web-app-status-bar-style: black-translucent`
+         matches the dark theme-color in the head; the standalone
+         install renders the body underneath instead of behind a
+         coloured bar. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Memento" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="Memento" />
     <!-- Bing/Edge live-tile probe defaults to /browserconfig.xml,
          which is also a 404 source today. Pointing it at our PNG
          skips the file and resolves the probe with one redirect. -->
@@ -188,13 +206,17 @@
   </head>
   <body class="bg-bg text-fg font-sans antialiased">
     <noscript>
-      <!-- Heading wording matches src/App.tsx exactly so non-JS
-           crawlers that parse both noscript and SSR'd body don't
-           see two top-level headings with divergent text. The
-           brand name lives in a paragraph below instead. -->
+      <!-- Wording matches src/App.tsx exactly so non-JS crawlers
+           that parse both noscript and SSR'd body don't see
+           competing primary-topic signals. Demoted to <h2> so the
+           SSR'd hero's <h1> remains the single page H1; SEO
+           linters (Ahrefs, Screaming Frog) flag duplicate H1s
+           across noscript/body even though HTML5 sectioning
+           technically permits them. The brand name lives in the
+           eyebrow paragraph above. -->
       <main style="max-width: 720px; margin: 4rem auto; padding: 0 1.25rem; font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; color: #e8e8ea; background: #0e0e10;">
         <p style="font-family: ui-monospace, monospace; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin: 0 0 0.5rem;">Memento</p>
-        <h1 style="font-size: 2rem; margin: 0 0 1rem;">One memory layer for every AI assistant you use.</h1>
+        <h2 style="font-size: 2rem; margin: 0 0 1rem; font-weight: 500;">One memory layer for every AI assistant you use.</h2>
         <p>A local-first, LLM-agnostic memory layer for AI assistants. Memento runs an MCP server over a single SQLite file on your machine, so any MCP-capable AI assistant — Claude Desktop, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, custom agents — can read and write durable, structured memory about you, your work, and your decisions.</p>
         <p>Get started:</p>
         <pre style="background: #1a1a1d; padding: 1rem; border-radius: 6px; overflow-x: auto; font-family: ui-monospace, monospace;">npx @psraghuveer/memento init</pre>
