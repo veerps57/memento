@@ -37,7 +37,13 @@ async function newAppWithBundledRoot(): Promise<{ app: MementoApp; bundledRoot: 
   tempDirs.push(bundledRoot);
   const app = await createMementoApp({
     dbPath: ':memory:',
-    configOverrides: { 'packs.bundledRegistryPath': bundledRoot },
+    configOverrides: {
+      'packs.bundledRegistryPath': bundledRoot,
+      // Pack tests write free-prose preference content for the
+      // round-trip assertions; the topic-line gate isn't what
+      // they're exercising.
+      'safety.requireTopicLine': false,
+    },
   });
   apps.push(app);
   return { app, bundledRoot };

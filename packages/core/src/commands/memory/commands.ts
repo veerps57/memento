@@ -55,7 +55,12 @@ import {
   MemoryWriteInputSchema,
   MemoryWriteManyInputSchema,
 } from './inputs.js';
-import { assertNoReservedTags, enforceSafetyCaps, rationaleFromKind } from './safety-caps.js';
+import {
+  assertNoReservedTags,
+  enforceSafetyCaps,
+  enforceTopicLine,
+  rationaleFromKind,
+} from './safety-caps.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
 // Dashboard opt-in. The dashboard's UI today consumes
@@ -268,6 +273,12 @@ export function createMemoryCommands(
           deps.configStore,
         );
         if (!cap.ok) return cap;
+        const topic = enforceTopicLine(
+          'memory.write',
+          { kind: input.kind, content: input.content },
+          deps.configStore,
+        );
+        if (!topic.ok) return topic;
       }
       const pinned = input.pinned ?? deps?.configStore?.get('write.defaultPinned') ?? false;
       const storedConfidence =
@@ -356,6 +367,13 @@ export function createMemoryCommands(
             i,
           );
           if (!cap.ok) return cap;
+          const topic = enforceTopicLine(
+            'memory.write_many',
+            { kind: item.kind, content: item.content },
+            deps.configStore,
+            i,
+          );
+          if (!topic.ok) return topic;
         }
       }
       const defaultPinned = deps?.configStore?.get('write.defaultPinned') ?? false;
@@ -489,6 +507,12 @@ export function createMemoryCommands(
             deps.configStore,
           );
           if (!cap.ok) return cap;
+          const topic = enforceTopicLine(
+            'memory.supersede',
+            { kind: input.next.kind, content: input.next.content },
+            deps.configStore,
+          );
+          if (!topic.ok) return topic;
         }
         const pinned = input.next.pinned ?? deps?.configStore?.get('write.defaultPinned') ?? false;
         const storedConfidence =

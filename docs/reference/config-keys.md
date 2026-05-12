@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 96 keys.
+Total: 97 keys.
 
 ## `decay.*`
 
@@ -147,6 +147,7 @@ Total: 96 keys.
 | `safety.memoryContentMaxBytes` | `65536` | yes | Maximum byte length of `memory.write` (and supersede / extract) content. Inputs exceeding this are rejected with `INVALID_INPUT` before the scrubber or storage layer runs. |
 | `safety.summaryMaxBytes` | `2048` | yes | Maximum byte length of `memory.write` summary. Summaries are one-line listings; the cap reflects that intent. |
 | `safety.tagMaxCount` | `64` | yes | Maximum number of tags accepted on a single `memory.write`. Each tag is independently capped at 64 characters by `TagSchema`. |
+| `safety.requireTopicLine` | `true` | yes | When `true` (default), reject `memory.write`, `memory.write_many`, `memory.supersede`, and `memory.extract` calls whose `kind` is `preference` or `decision` and whose content's first non-blank line does not match the `topic: value` (or `topic = value`) convention. The rule mirrors the conflict detector's preference/decision parser — content that bypasses detection at retrieval time is rejected at write time. Flip to `false` to keep the historical permissive shape (at the cost of silent conflict-detection misses). |
 
 ## `extraction.*`
 

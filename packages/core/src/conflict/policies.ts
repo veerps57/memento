@@ -271,7 +271,7 @@ export function runPolicy(
 
 // — helpers ———————————————————————————————————————————————————
 
-function parseKeyValue(content: string): { key: string; value: string } | null {
+export function parseKeyValue(content: string): { key: string; value: string } | null {
   const match = PREFERENCE_KV_REGEX.exec(content);
   if (match === null) {
     return null;

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertNoReservedTags,
   enforceSafetyCaps,
+  enforceTopicLine,
   rationaleFromKind,
 } from '../../src/commands/memory/safety-caps.js';
 import { createConfigStore } from '../../src/config/index.js';
@@ -141,6 +142,106 @@ describe('assertNoReservedTags', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.message).toMatch(/items\[3\]/);
+    }
+  });
+});
+
+describe('enforceTopicLine', () => {
+  it('passes when safety.requireTopicLine is off', () => {
+    const store = createConfigStore({ 'safety.requireTopicLine': false });
+    const result = enforceTopicLine(
+      'memory.write',
+      { kind: { type: 'preference' }, content: 'free prose only, no topic line' },
+      store,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects when safety.requireTopicLine is on (the default)', () => {
+    const store = createConfigStore();
+    const result = enforceTopicLine(
+      'memory.write',
+      { kind: { type: 'preference' }, content: 'free prose only, no topic line' },
+      store,
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('passes for non-preference / non-decision kinds even when the flag is on', () => {
+    const store = createConfigStore({ 'safety.requireTopicLine': true });
+    for (const kind of ['fact', 'todo', 'snippet']) {
+      const result = enforceTopicLine(
+        'memory.write',
+        { kind: { type: kind }, content: 'free prose, no topic line required' },
+        store,
+      );
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  it('accepts a `topic: value` first line for preference', () => {
+    const store = createConfigStore({ 'safety.requireTopicLine': true });
+    const result = enforceTopicLine(
+      'memory.write',
+      {
+        kind: { type: 'preference' },
+        content: 'node-package-manager: pnpm\n\nUser prefers pnpm over npm.',
+      },
+      store,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts `topic = value` (the alternate separator)', () => {
+    const store = createConfigStore({ 'safety.requireTopicLine': true });
+    const result = enforceTopicLine(
+      'memory.write',
+      { kind: { type: 'decision' }, content: 'storage = sqlite\n\nRationale follows.' },
+      store,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects preference content with no topic line', () => {
+    const store = createConfigStore({ 'safety.requireTopicLine': true });
+    const result = enforceTopicLine(
+      'memory.write',
+      { kind: { type: 'preference' }, content: 'User loves pnpm. Hates npm.' },
+      store,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/topic:\s*value/);
+      expect(result.error.message).toMatch(/preference/);
+    }
+  });
+
+  it('rejects decision content with no topic line', () => {
+    const store = createConfigStore({ 'safety.requireTopicLine': true });
+    const result = enforceTopicLine(
+      'memory.write',
+      { kind: { type: 'decision' }, content: 'We picked SQLite because it was easier.' },
+      store,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/decision/);
+    }
+  });
+
+  it('weaves the batch index into the message when supplied', () => {
+    const store = createConfigStore({ 'safety.requireTopicLine': true });
+    const result = enforceTopicLine(
+      'memory.write_many',
+      { kind: { type: 'preference' }, content: 'no topic line here' },
+      store,
+      4,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toMatch(/items\[4\]/);
     }
   });
 });

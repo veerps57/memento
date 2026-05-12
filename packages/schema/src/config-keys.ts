@@ -713,6 +713,23 @@ export const CONFIG_KEYS = {
     description:
       'Maximum number of tags accepted on a single `memory.write`. Each tag is independently capped at 64 characters by `TagSchema`.',
   }),
+  // Per `docs/architecture/conflict-detection.md`, the
+  // `preference` and `decision` policies parse the first line
+  // of a memory's `content` as `topic: value` (or
+  // `topic = value`). Content that lacks the topic-line anchor
+  // silently bypasses conflict detection — two contradictory
+  // preferences coexist without surfacing as a conflict. This
+  // opt-in switch rejects such writes at the input boundary so
+  // the failure mode is loud rather than silent. Off by default
+  // because today's permissive shape is widely depended upon by
+  // assistants that have not yet learned the convention.
+  'safety.requireTopicLine': defineKey({
+    schema: z.boolean(),
+    default: true,
+    mutable: true,
+    description:
+      "When `true` (default), reject `memory.write`, `memory.write_many`, `memory.supersede`, and `memory.extract` calls whose `kind` is `preference` or `decision` and whose content's first non-blank line does not match the `topic: value` (or `topic = value`) convention. The rule mirrors the conflict detector's preference/decision parser — content that bypasses detection at retrieval time is rejected at write time. Flip to `false` to keep the historical permissive shape (at the cost of silent conflict-detection misses).",
+  }),
 
   // — Extraction —
   // Auto-extraction pipeline per design proposal

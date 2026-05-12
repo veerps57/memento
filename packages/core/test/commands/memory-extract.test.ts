@@ -50,6 +50,12 @@ async function fixture(configOverrides: Record<string, unknown> = {}) {
     'extraction.maxCandidatesPerCall': 25,
     'extraction.processing': 'sync',
     'retrieval.vector.enabled': false,
+    // Most extract tests use free-prose preference/decision
+    // content because they're testing dedup, embedding, batching
+    // — not the topic-line shape. Default off here; the test
+    // that DOES exercise the validator overrides this back to
+    // `true` explicitly.
+    'safety.requireTopicLine': false,
     ...configOverrides,
   });
   const afterWriteCalls: unknown[] = [];
@@ -827,6 +833,10 @@ describe('memory.extract', () => {
       'extraction.maxCandidatesPerCall': 25,
       'extraction.processing': 'sync',
       'retrieval.vector.enabled': false,
+      // Test feeds free-prose decision content to exercise the
+      // dedup-by-kind path; the topic-line gate isn't the
+      // subject under test.
+      'safety.requireTopicLine': false,
     });
 
     const existing = await repo.write(
@@ -955,5 +965,26 @@ describe('memory.extract', () => {
     // Verify nothing persisted.
     const all = await repo.list({ status: 'active' });
     expect(all.length).toBe(1); // Only the pre-existing one.
+  });
+
+  it('rejects a preference candidate without a topic line when safety.requireTopicLine is on (the production default)', async () => {
+    const { command } = await fixture({ 'safety.requireTopicLine': true });
+    const result = await executeCommand(
+      command,
+      {
+        candidates: [
+          {
+            kind: 'preference',
+            content: 'User loves dark mode. Free-form prose.',
+          },
+        ],
+      },
+      ctx,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INVALID_INPUT');
+    expect(result.error.message).toMatch(/topic:/);
+    expect(result.error.message).toMatch(/items\[0\]/);
   });
 });
