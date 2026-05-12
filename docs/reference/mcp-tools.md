@@ -168,6 +168,8 @@ Load the most relevant memories for the current session without a search query. 
 
 Call at the start of a task to load context. No arguments required — returns the top memories from config-driven defaults.
 
+Every result's memory carries an `embeddingStatus` field (`"present"` | `"pending"` | `"disabled"`) so callers can tell whether a row contributed via vector similarity at all.
+
 Examples:
 
 - Default: `{}`
@@ -181,6 +183,8 @@ Examples:
 Registry name: `memory.events` — CLI: `memento memory events`
 
 Read the audit log: events for one memory (ascending) when id is given, otherwise recent events across all memories (descending).
+
+Optional `types`, `since`, `until`, and `limit` narrow the result set; `since`/`until` filter on the event `at` timestamp (half-open: `at >= since AND at < until`). There is no scope / kind / tag filter — events are not denormalised by those dimensions.
 
 - **Side-effect:** `read` — Pure read; safe to call freely.
 
@@ -272,6 +276,10 @@ Registry name: `memory.search` — CLI: `memento memory search`
 
 Search memories by free text using FTS5 + the configured linear ranker.
 
+Query text is treated as a term bag: FTS5 syntax (AND / OR / NOT / NEAR / phrase / prefix) is NOT parsed — sigils are stripped and tokens are ranked via BM25 + vector similarity.
+
+Every result's memory carries an `embeddingStatus` field (`"present"` | `"pending"` | `"disabled"`) so a vector score of 0 can be distinguished between "the row has no embedding yet" (`pending`) and "the content was not similar" (`present`).
+
 Examples:
 
 - Simple: `{"text":"database migration"}`
@@ -293,6 +301,8 @@ Attach or replace the embedding for an active memory; appends a reembedded event
 Registry name: `memory.supersede` — CLI: `memento memory supersede`
 
 Replace an existing memory with a new one in a single transaction. Use this instead of update when the content changes.
+
+History is preserved: the old memory transitions to `superseded` and its `supersededBy` field links to the new memory. The transaction emits a `superseded` audit event on the old id and a matching `created` event on the new id, so `memory.events` shows the chain from either side.
 
 Example:
 

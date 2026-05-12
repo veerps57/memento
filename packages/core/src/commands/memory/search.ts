@@ -151,7 +151,7 @@ export function createMemorySearchCommand(
     outputSchema: MemorySearchOutputSchema,
     metadata: {
       description:
-        'Search memories by free text using FTS5 + the configured linear ranker.\n\nExamples:\n\n- Simple: `{"text":"database migration"}`\n- With filters: `{"text":"auth","kinds":["decision","fact"],"limit":5}`',
+        'Search memories by free text using FTS5 + the configured linear ranker.\n\nQuery text is treated as a term bag: FTS5 syntax (AND / OR / NOT / NEAR / phrase / prefix) is NOT parsed — sigils are stripped and tokens are ranked via BM25 + vector similarity.\n\nEvery result\'s memory carries an `embeddingStatus` field (`"present"` | `"pending"` | `"disabled"`) so a vector score of 0 can be distinguished between "the row has no embedding yet" (`pending`) and "the content was not similar" (`present`).\n\nExamples:\n\n- Simple: `{"text":"database migration"}`\n- With filters: `{"text":"auth","kinds":["decision","fact"],"limit":5}`',
     },
     handler: async (input, ctx) => {
       try {

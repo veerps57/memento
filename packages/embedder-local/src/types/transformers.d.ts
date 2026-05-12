@@ -4,10 +4,11 @@
 //
 // `@psraghuveer/memento-embedder-local` is a thin adapter. The transformers.js
 // runtime is large (~100 MB once the model is cached) and is only
-// needed when a consumer opts in to vector retrieval (off by
+// needed when a consumer has vector retrieval enabled (on by
 // default — see ADR 0006 and `docs/architecture/retrieval.md`).
 // Listing it in `dependencies` would force every Memento install
-// to pay that cost; listing it as an `optionalPeerDependency`
+// to pay that cost on first run regardless of whether the host
+// wires an embedder; listing it as an `optionalPeerDependency`
 // still triggers `auto-install-peers=true` in this workspace.
 //
 // Instead we ship this shim so the source typechecks against a

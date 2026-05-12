@@ -132,7 +132,7 @@ export function createMemoryContextCommand(
     outputSchema: MemoryContextOutputSchema,
     metadata: {
       description:
-        'Load the most relevant memories for the current session without a search query. Uses ranked retrieval based on confidence, recency, scope, pinned status, and confirmation frequency.\n\nCall at the start of a task to load context. No arguments required — returns the top memories from config-driven defaults.\n\nExamples:\n\n- Default: `{}`\n- Scoped: `{"scopes":[{"type":"repo","remote":"github.com/org/app"},{"type":"global"}]}`\n- Filtered: `{"kinds":["preference","decision"],"limit":10}`',
+        'Load the most relevant memories for the current session without a search query. Uses ranked retrieval based on confidence, recency, scope, pinned status, and confirmation frequency.\n\nCall at the start of a task to load context. No arguments required — returns the top memories from config-driven defaults.\n\nEvery result\'s memory carries an `embeddingStatus` field (`"present"` | `"pending"` | `"disabled"`) so callers can tell whether a row contributed via vector similarity at all.\n\nExamples:\n\n- Default: `{}`\n- Scoped: `{"scopes":[{"type":"repo","remote":"github.com/org/app"},{"type":"global"}]}`\n- Filtered: `{"kinds":["preference","decision"],"limit":10}`',
       mcpName: 'get_memory_context',
     },
     handler: async (input) => {
