@@ -190,6 +190,16 @@ The dashboard and any debug tooling that *do* render the breakdown explicitly re
 
 A future `id`-only projection (response shape `{ memory: { id }, score }`) was scoped out of this change because it materially changes the memory shape and requires deeper TS-narrowing work in every consumer. Use `summary` when bytes matter today; follow up with `memory.read` if a caller needs deeper detail on a few specific results.
 
+## `memory.context` hints
+
+`memory.context` returns an optional `hint` field — a one-line nudge for the calling assistant — in three cases:
+
+1. **Empty store.** The active corpus is empty; the assistant should start capturing preferences via `write_memory` or `extract_memory`.
+2. **Empty page on a non-empty store.** The configured `scope` / `kinds` / `tags` filter excluded everything; the assistant should narrow differently or use `search_memory`.
+3. **Near-uniform ranking.** The returned page's top-bottom score spread is below `context.hint.uniformSpreadThreshold` (default `0.05`). The ranker has no meaningful signal — the order is essentially the candidate-fetch order. The hint suggests passing a `scopes` filter for layered ranking or using `search_memory` with a topic.
+
+The hint is purely advisory; the `results` array is always populated when there are matches. Assistants that ignore the hint see no behavior change. Setting `context.hint.uniformSpreadThreshold = 0` disables case (3) entirely.
+
 ## Pagination
 
 Results are paginated by ULID cursor. The cursor is the `id` of the last result returned. Paging is stable across writes because ULIDs sort lexicographically by creation time.

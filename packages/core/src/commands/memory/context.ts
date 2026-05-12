@@ -288,12 +288,15 @@ export function createMemoryContextCommand(
           return { memory, score: r.score };
         });
 
-        // Set a next-step nudge only when results are empty so an
-        // assistant calling `get_memory_context` on a fresh store
-        // gets an actionable signal instead of an opaque silence.
-        // Distinguish "store is genuinely empty" from "matched
-        // nothing for this scope" so the assistant's reply is
-        // accurate.
+        // Set a next-step nudge in three cases:
+        //   1. Empty store — capture preferences as they arise.
+        //   2. Empty result page on a non-empty store — narrow
+        //      the filter or use `search_memory` with a topic.
+        //   3. Non-empty page whose top-bottom score spread is
+        //      below `context.hint.uniformSpreadThreshold` —
+        //      the ranker has no meaningful signal here and the
+        //      caller should pass a `scopes` filter or use
+        //      `search_memory` for sharper results.
         if (results.length === 0) {
           const totalActive = await deps.memoryRepository.list({ status: 'active', limit: 1 });
           const hint =
@@ -305,6 +308,26 @@ export function createMemoryContextCommand(
             resolvedKinds: kinds as MemoryKindType[],
             hint,
           });
+        }
+
+        const uniformSpreadThreshold = cfg.get('context.hint.uniformSpreadThreshold');
+        if (results.length >= 2 && uniformSpreadThreshold > 0) {
+          // `length >= 2` is guarded above so both indices are
+          // populated — assertions silence the biome lint while
+          // keeping the runtime branch-free (`?? 0` would add
+          // never-reachable nullish-coalesce branches).
+          // biome-ignore lint/style/noNonNullAssertion: indices guarded by length check above.
+          const top = results[0]!.score;
+          // biome-ignore lint/style/noNonNullAssertion: indices guarded by length check above.
+          const bottom = results[results.length - 1]!.score;
+          const spread = top - bottom;
+          if (spread < uniformSpreadThreshold) {
+            return ok({
+              results,
+              resolvedKinds: kinds as MemoryKindType[],
+              hint: `Returned ${results.length} results with near-uniform scores (top-bottom spread = ${spread.toFixed(4)}). The ranker has no strong signal here — pass a \`scopes\` filter for layered ranking or call search_memory with a topic for a sharper page.`,
+            });
+          }
         }
 
         return ok({

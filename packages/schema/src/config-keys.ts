@@ -838,6 +838,20 @@ export const CONFIG_KEYS = {
     description:
       'Context ranker weight for confirmation frequency (memories confirmed often rank higher).',
   }),
+  // Near-uniform-ranking hint. When `memory.context` returns a
+  // page whose top-bottom score spread is below this threshold,
+  // the response carries a hint suggesting the caller pass a
+  // scope or call `memory.search` with a topic. The signal
+  // helps an assistant recognise "the ranker has no opinion
+  // here — everything's roughly tied" and act on it rather than
+  // treating the order as meaningful.
+  'context.hint.uniformSpreadThreshold': defineKey({
+    schema: z.number().min(0).finite(),
+    default: 0.05,
+    mutable: true,
+    description:
+      'When `memory.context` returns a page whose top-bottom score spread is below this value AND the page has at least two results, the response carries a hint suggesting the caller pass a `scopes` filter or call `memory.search` with a topic for a sharper signal. Set to `0` to disable.',
+  }),
   // Context-side diversity. Distinct namespace from
   // `retrieval.diversity.*` so the defaults can differ:
   // `memory.context` is the session-start survey surface where

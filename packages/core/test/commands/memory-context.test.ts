@@ -600,6 +600,149 @@ describe('memory.context', () => {
     });
   });
 
+  describe('context.hint.uniformSpreadThreshold', () => {
+    it('emits a near-uniform hint when top-bottom spread is below the threshold', async () => {
+      // Two memories at identical confidence and identical
+      // lastConfirmedAt produce identical baseline scores —
+      // spread ≈ 0, well below the default threshold of 0.05.
+      const { repo, command } = await fixture({
+        // Disable MMR so the post-rank pass doesn't change the
+        // page composition (the test asserts on spread, not on
+        // diversification).
+        'context.diversity.lambda': 1,
+      });
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'alpha',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'beta',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.hint).toMatch(/near-uniform scores/i);
+      expect(result.value.hint).toMatch(/spread/);
+    });
+
+    it('does not emit a hint when score spread is comfortably above the threshold', async () => {
+      // Pinned vs unpinned: weighted pinned arm produces a
+      // large spread on the same query — well above 0.05.
+      const { repo, command } = await fixture({
+        'context.diversity.lambda': 1,
+      });
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: true,
+          content: 'pinned alpha',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'plain beta',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.hint).toBeUndefined();
+    });
+
+    it('does not fire on a single-result page (no spread to measure)', async () => {
+      const { repo, command } = await fixture({
+        'context.diversity.lambda': 1,
+      });
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'only one',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.hint).toBeUndefined();
+    });
+
+    it('threshold = 0 disables the hint entirely', async () => {
+      const { repo, command } = await fixture({
+        'context.diversity.lambda': 1,
+        'context.hint.uniformSpreadThreshold': 0,
+      });
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'alpha',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'beta',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.hint).toBeUndefined();
+    });
+  });
+
   describe('context.diversity (MMR post-rank)', () => {
     it('default lambda = 0.7 is a passthrough when no candidate has an embedding', async () => {
       // Default config exercises MMR (lambda < 1) but every

@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 95 keys.
+Total: 96 keys.
 
 ## `decay.*`
 
@@ -173,6 +173,7 @@ Total: 95 keys.
 | `context.ranker.weights.scope` | `2` | yes | Context ranker weight on scope match (strong: prefer local context). |
 | `context.ranker.weights.pinned` | `3` | yes | Context ranker weight for pinned memories (always surface). |
 | `context.ranker.weights.frequency` | `0.5` | yes | Context ranker weight for confirmation frequency (memories confirmed often rank higher). |
+| `context.hint.uniformSpreadThreshold` | `0.05` | yes | When `memory.context` returns a page whose top-bottom score spread is below this value AND the page has at least two results, the response carries a hint suggesting the caller pass a `scopes` filter or call `memory.search` with a topic for a sharper signal. Set to `0` to disable. |
 | `context.diversity.lambda` | `0.7` | yes | MMR trade-off for `memory.context` between relevance and diversity. `1.0` is a passthrough — preserves the ranker output unchanged. `0.7` (default) gently breaks near-duplicate clusters so the session-start survey covers more topics. `0.0` is pure diversity. Memories without a stored embedding bypass the diversity penalty. |
 | `context.diversity.maxDuplicates` | `5` | yes | Soft ceiling on near-duplicate (cosine ≥ 0.9) candidates admitted to a `memory.context` page before the MMR pass starts skipping. Mirrors `retrieval.diversity.maxDuplicates` for the context surface. |
 
