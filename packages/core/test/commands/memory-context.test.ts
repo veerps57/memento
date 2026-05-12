@@ -310,10 +310,11 @@ describe('memory.context', () => {
       { actor },
     );
 
-    const result = await executeCommand(command, {}, ctx);
+    // Explicit `projection: 'full'` to access the breakdown.
+    const result = await executeCommand(command, { projection: 'full' }, ctx);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const breakdown = result.value.results[0]!.breakdown;
+    const breakdown = result.value.results[0]!.breakdown!;
     expect(breakdown).toHaveProperty('confidence');
     expect(breakdown).toHaveProperty('recency');
     expect(breakdown).toHaveProperty('scope');
@@ -551,6 +552,52 @@ describe('memory.context', () => {
     if (!result.ok) return;
     const ids = result.value.results.map((r) => r.memory.id as unknown as string);
     expect(ids).toContain(pinned.id as unknown as string);
+  });
+
+  describe('projection mode', () => {
+    it('default is `summary` — breakdown omitted', async () => {
+      const { repo, command } = await fixture();
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'note',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const r = result.value.results[0];
+      expect(r?.breakdown).toBeUndefined();
+      expect(r?.memory.id).toBeDefined();
+    });
+
+    it('`full` opts into the score breakdown', async () => {
+      const { repo, command } = await fixture();
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'note',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, { projection: 'full' }, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.results[0]?.breakdown).toBeDefined();
+    });
   });
 
   describe('context.diversity (MMR post-rank)', () => {

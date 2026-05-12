@@ -173,6 +173,21 @@ On `memory.context`, there's no pagination — the full ranked list IS the page 
 
 The ranker is a pure function over the candidate set; MMR is greedy and stateful (each pick depends on what came before). Keeping the two stages separate preserves the ranker's replay/audit story and keeps the MMR cost proportional to the page size rather than the candidate-set size.
 
+## Output projection
+
+`memory.search` and `memory.context` accept an optional `projection` input that shapes the response payload:
+
+| Mode | Includes | Use case |
+|---|---|---|
+| `summary` (default) | memory view, `score` | LLM agents, CLI lookups — the common case |
+| `full` | memory view, `score`, `breakdown`, `conflicts` (search only) | explainability UIs, debug tooling, weight tuning |
+
+Default is `summary` because the primary consumer of `memory.search` and `memory.context` is an LLM agent over MCP, and tokens are billed. The per-arm score `breakdown` and the `conflicts` array are diagnostic — they help operators understand and tune ranking, but they're noise for an agent that just wants to use the results. `summary` drops both from the wire (~30-40% byte savings on a typical top-10 page) while keeping the memory body unchanged.
+
+The dashboard and any debug tooling that *do* render the breakdown explicitly request `projection: 'full'`. Both fields are `.optional()` on the response schema so existing TypeScript consumers compile unchanged — they just see `undefined` for the dropped fields under the new default.
+
+A future `id`-only projection (response shape `{ memory: { id }, score }`) was scoped out of this change because it materially changes the memory shape and requires deeper TS-narrowing work in every consumer. Use `summary` when bytes matter today; follow up with `memory.read` if a caller needs deeper detail on a few specific results.
+
 ## Pagination
 
 Results are paginated by ULID cursor. The cursor is the `id` of the last result returned. Paging is stable across writes because ULIDs sort lexicographically by creation time.

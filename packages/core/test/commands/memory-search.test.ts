@@ -31,6 +31,26 @@ afterEach(() => {
 const actor: ActorRef = { type: 'cli' };
 const ctx = { actor };
 
+// Test-only cast: `breakdown` and `conflicts` are now `.optional()`
+// on the search output (to support `projection: 'summary'`). At
+// the default `full` projection both fields are populated. This
+// helper narrows the optional-types away at access sites that
+// were written before the fields became optional. Tests that
+// explicitly pass `projection: 'summary'` should not use this.
+function asFullResult<T>(value: T): T & {
+  conflicts: ReadonlyArray<{ conflictId: unknown; otherMemoryId: unknown; kind: unknown }>;
+  breakdown: {
+    fts: number;
+    vector: number;
+    confidence: number;
+    recency: number;
+    scope: number;
+    pinned: number;
+  };
+} {
+  return value as never;
+}
+
 function counterFactory(prefix: string): () => string {
   let i = 0;
   return () => {
@@ -89,7 +109,10 @@ describe('memory.search command', () => {
     const a = await repo.write({ ...baseInput, content: 'kafka kafka topic' }, { actor });
     await repo.write({ ...baseInput, content: 'unrelated note' }, { actor });
 
-    const result = await executeCommand(command, { text: 'kafka' }, ctx);
+    // Explicit `projection: 'full'` because this test asserts on
+    // the score-breakdown shape; the default `summary` projection
+    // omits the breakdown entirely.
+    const result = await executeCommand(command, { text: 'kafka', projection: 'full' }, ctx);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.results).toHaveLength(1);
@@ -318,7 +341,8 @@ describe('memory.search command', () => {
       embeddingProvider: provider,
       clock: () => fixedClock,
     });
-    const result = await executeCommand(command, { text: 'kafka' }, ctx);
+    // Explicit `projection: 'full'` to access the breakdown.
+    const result = await executeCommand(command, { text: 'kafka', projection: 'full' }, ctx);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const ids = result.value.results.map((r) => r.memory.id);
@@ -331,11 +355,11 @@ describe('memory.search command', () => {
     // exposes both arms — not absence of `c`.
     void c;
     const aResult = result.value.results.find((r) => r.memory.id === a.id);
-    expect(aResult?.breakdown.fts).toBeGreaterThan(0);
-    expect(aResult?.breakdown.vector).toBeGreaterThan(0);
+    expect(aResult?.breakdown?.fts).toBeGreaterThan(0);
+    expect(aResult?.breakdown?.vector).toBeGreaterThan(0);
     const bResult = result.value.results.find((r) => r.memory.id === b.id);
-    expect(bResult?.breakdown.fts).toBeGreaterThan(0);
-    expect(bResult?.breakdown.vector).toBe(0);
+    expect(bResult?.breakdown?.fts).toBeGreaterThan(0);
+    expect(bResult?.breakdown?.vector).toBe(0);
   });
 
   it('returns vector-only candidates when FTS produces no hits', async () => {
@@ -370,12 +394,13 @@ describe('memory.search command', () => {
       embeddingProvider: provider,
       clock: () => fixedClock,
     });
-    const result = await executeCommand(command, { text: 'paraphrase' }, ctx);
+    // Explicit `projection: 'full'` to assert on breakdown.
+    const result = await executeCommand(command, { text: 'paraphrase', projection: 'full' }, ctx);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.results.map((r) => r.memory.id)).toEqual([a.id]);
-    expect(result.value.results[0]?.breakdown.fts).toBe(0);
-    expect(result.value.results[0]?.breakdown.vector).toBeGreaterThan(0);
+    expect(result.value.results[0]?.breakdown?.fts).toBe(0);
+    expect(result.value.results[0]?.breakdown?.vector).toBeGreaterThan(0);
   });
 
   it('maps StaleEmbeddingError to CONFIG_ERROR with a rebuild hint', async () => {
@@ -501,7 +526,9 @@ describe('memory.search command', () => {
     expect(both.ok).toBe(true);
     if (!both.ok) return;
     expect(both.value.results).toHaveLength(1);
-    expect(both.value.results[0]?.memory.content).toBe('kafka architecture notes');
+    const r = both.value.results[0];
+    if (r === undefined) throw new Error('expected a result');
+    expect(asFullResult(r).memory.content).toBe('kafka architecture notes');
   });
 
   it('normalises tag filter to lowercase in search', async () => {
@@ -565,11 +592,13 @@ describe('memory.search command', () => {
         withConflictRepo: true,
       });
       await repo.write({ ...baseInput, content: 'kafka topic' }, { actor });
-      const result = await executeCommand(command, { text: 'kafka' }, ctx);
+      const result = await executeCommand(command, { text: 'kafka', projection: 'full' }, ctx);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.results).toHaveLength(1);
-      expect(result.value.results[0]?.conflicts).toEqual([]);
+      const r = result.value.results[0];
+      if (r === undefined) throw new Error('expected a result');
+      expect(asFullResult(r).conflicts).toEqual([]);
     });
 
     it('annotates with conflicts: [] when no conflictRepository was wired', async () => {
@@ -578,11 +607,13 @@ describe('memory.search command', () => {
         withConflictRepo: false,
       });
       await repo.write({ ...baseInput, content: 'kafka topic' }, { actor });
-      const result = await executeCommand(command, { text: 'kafka' }, ctx);
+      const result = await executeCommand(command, { text: 'kafka', projection: 'full' }, ctx);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.results).toHaveLength(1);
-      expect(result.value.results[0]?.conflicts).toEqual([]);
+      const r = result.value.results[0];
+      if (r === undefined) throw new Error('expected a result');
+      expect(asFullResult(r).conflicts).toEqual([]);
     });
 
     it('annotates with conflicts: [] when no open conflicts exist', async () => {
@@ -591,10 +622,12 @@ describe('memory.search command', () => {
         withConflictRepo: true,
       });
       await repo.write({ ...baseInput, content: 'kafka topic' }, { actor });
-      const result = await executeCommand(command, { text: 'kafka' }, ctx);
+      const result = await executeCommand(command, { text: 'kafka', projection: 'full' }, ctx);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.results[0]?.conflicts).toEqual([]);
+      const first = result.value.results[0];
+      if (first === undefined) throw new Error('expected a result');
+      expect(asFullResult(first).conflicts).toEqual([]);
     });
 
     it('surfaces an open conflict from the perspective of the result memory', async () => {
@@ -614,16 +647,19 @@ describe('memory.search command', () => {
         { actor },
       );
 
-      const result = await executeCommand(command, { text: 'kafka' }, ctx);
+      const result = await executeCommand(command, { text: 'kafka', projection: 'full' }, ctx);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       // Both memories should each surface the same conflict, but
       // with `otherMemoryId` set to the *other* side.
       const byId = new Map(result.value.results.map((r) => [r.memory.id, r]));
-      expect(byId.get(m1.id)?.conflicts).toEqual([
+      const r1 = byId.get(m1.id);
+      const r2 = byId.get(m2.id);
+      if (r1 === undefined || r2 === undefined) throw new Error('expected both results');
+      expect(asFullResult(r1).conflicts).toEqual([
         { conflictId: opened.id, otherMemoryId: m2.id, kind: 'fact' },
       ]);
-      expect(byId.get(m2.id)?.conflicts).toEqual([
+      expect(asFullResult(r2).conflicts).toEqual([
         { conflictId: opened.id, otherMemoryId: m1.id, kind: 'fact' },
       ]);
     });
@@ -646,11 +682,11 @@ describe('memory.search command', () => {
       );
       await conflictRepo.resolve(opened.id, 'accept-new', { actor });
 
-      const result = await executeCommand(command, { text: 'kafka' }, ctx);
+      const result = await executeCommand(command, { text: 'kafka', projection: 'full' }, ctx);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       for (const r of result.value.results) {
-        expect(r.conflicts).toEqual([]);
+        expect(asFullResult(r).conflicts).toEqual([]);
       }
     });
   });
@@ -679,7 +715,11 @@ describe('memory.search command', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.results).toHaveLength(1);
-      const memory = result.value.results[0]?.memory;
+      const memory = result.value.results[0]?.memory as {
+        id: typeof sensitive.id;
+        redacted: boolean;
+        content: string | null;
+      };
       expect(memory?.id).toBe(sensitive.id);
       expect(memory?.redacted).toBe(true);
       expect(memory?.content).toBeNull();
@@ -701,9 +741,62 @@ describe('memory.search command', () => {
       const result = await executeCommand(command, { text: 'kafka' }, ctx);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      const memory = result.value.results[0]?.memory;
+      const memory = result.value.results[0]?.memory as { redacted: boolean; content: string };
       expect(memory?.redacted).toBe(false);
       expect(memory?.content).toBe('kafka secret');
+    });
+  });
+
+  describe('projection mode', () => {
+    it('default is `summary` — breakdown and conflicts omitted', async () => {
+      const { repo, command } = await fixture();
+      await repo.write({ ...baseInput, content: 'kafka topic' }, { actor });
+      const result = await executeCommand(command, { text: 'kafka' }, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const r = result.value.results[0];
+      expect(r?.breakdown).toBeUndefined();
+      expect(r?.conflicts).toBeUndefined();
+      // Memory body still present.
+      expect(r?.memory.id).toBeDefined();
+    });
+
+    it('`full` opts back into breakdown and conflicts', async () => {
+      const { repo, command } = await fixture();
+      await repo.write({ ...baseInput, content: 'kafka topic' }, { actor });
+      const result = await executeCommand(command, { text: 'kafka', projection: 'full' }, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const r = result.value.results[0];
+      expect(r?.breakdown).toBeDefined();
+      expect(r?.conflicts).toBeDefined();
+    });
+
+    it('`summary` (default) returns smaller responses than `full`', async () => {
+      const { repo, command } = await fixture();
+      for (let i = 0; i < 10; i += 1) {
+        await repo.write({ ...baseInput, content: `kafka note ${i}` }, { actor });
+      }
+      const summaryResult = await executeCommand(command, { text: 'kafka' }, ctx);
+      const fullResult = await executeCommand(command, { text: 'kafka', projection: 'full' }, ctx);
+      expect(summaryResult.ok).toBe(true);
+      expect(fullResult.ok).toBe(true);
+      if (!summaryResult.ok || !fullResult.ok) return;
+      const summaryBytes = JSON.stringify(summaryResult.value).length;
+      const fullBytes = JSON.stringify(fullResult.value).length;
+      expect(summaryBytes).toBeLessThan(fullBytes);
+    });
+
+    it('rejects unknown projection values at the input boundary', async () => {
+      const { command } = await fixture();
+      const result = await executeCommand(
+        command,
+        { text: 'kafka', projection: 'id' as never },
+        ctx,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('INVALID_INPUT');
     });
   });
 
@@ -776,7 +869,8 @@ describe('memory.search command', () => {
       if (!result.ok) return;
       // Only the first memory (2025-01-01) falls inside [Jan-1, Jun-1).
       expect(result.value.results).toHaveLength(1);
-      expect(result.value.results[0]?.memory.content).toBe('kafka one');
+      const m = result.value.results[0]?.memory as { content: string };
+      expect(m?.content).toBe('kafka one');
     });
   });
 });

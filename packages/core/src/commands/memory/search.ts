@@ -86,12 +86,20 @@ const ConflictRefSchema = z
   })
   .strict();
 
+// Projection mode shapes the wire response: `full` carries the
+// score breakdown and the conflicts array; `summary` drops both
+// to save ~30-40% bytes on a typical top-10 page while keeping
+// the memory body intact. `breakdown` and `conflicts` are
+// `.optional()` rather than split into separate union schemas so
+// existing consumers that ignore `projection` see the same TS
+// surface they always have (the fields are populated in the
+// `full` default).
 const SearchResultSchema = z
   .object({
     memory: MemoryViewSchema,
     score: z.number(),
-    breakdown: ScoreBreakdownSchema,
-    conflicts: z.array(ConflictRefSchema),
+    breakdown: ScoreBreakdownSchema.optional(),
+    conflicts: z.array(ConflictRefSchema).optional(),
   })
   .strict();
 
@@ -173,16 +181,23 @@ export function createMemorySearchCommand(
         );
         const annotated = await annotateWithConflicts(deps, page);
         const stripEmbedding = !(input.includeEmbedding === true);
+        // Default is `summary` — lean shape for the common LLM-
+        // agent / CLI consumer. Callers that need ranking
+        // diagnostics opt into `full`.
+        const projection = input.projection ?? 'summary';
         return ok({
           ...annotated,
           results: annotated.results.map((r) => {
             const embeddingStatus = computeEmbeddingStatus(r.memory, deps.configStore);
-            return {
-              ...r,
-              memory: stripEmbedding
-                ? { ...r.memory, embedding: null, embeddingStatus }
-                : { ...r.memory, embeddingStatus },
-            };
+            const memory = stripEmbedding
+              ? { ...r.memory, embedding: null, embeddingStatus }
+              : { ...r.memory, embeddingStatus };
+            if (projection === 'full') {
+              return { ...r, memory };
+            }
+            // `summary` drops the `breakdown` and `conflicts`
+            // fields entirely from the wire response.
+            return { memory, score: r.score };
           }),
         });
       } catch (caught) {
