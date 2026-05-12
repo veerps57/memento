@@ -55,7 +55,7 @@ describe('rankLinear', () => {
 
   it('drops candidates whose memory is missing', () => {
     const out = rankLinear(
-      [{ id: 'missing' as unknown as MemoryId, bm25: -2, cosine: null }],
+      [{ id: 'missing' as unknown as MemoryId, bm25: -2, cosine: null, vector: null }],
       new Map(),
       options(),
     );
@@ -71,8 +71,8 @@ describe('rankLinear', () => {
     ]);
     const out = rankLinear(
       [
-        { id: m1.id, bm25: -10, cosine: null },
-        { id: m2.id, bm25: -2, cosine: null },
+        { id: m1.id, bm25: -10, cosine: null, vector: null },
+        { id: m2.id, bm25: -2, cosine: null, vector: null },
       ],
       map,
       options({ weights: { ...ZERO_WEIGHTS, fts: 1 } }),
@@ -89,7 +89,7 @@ describe('rankLinear', () => {
     });
     const map = new Map([[old.id as unknown as string, old]]);
     const out = rankLinear(
-      [{ id: old.id, bm25: null, cosine: null }],
+      [{ id: old.id, bm25: null, cosine: null, vector: null }],
       map,
       options({
         recencyHalfLifeMs: 0,
@@ -105,7 +105,7 @@ describe('rankLinear', () => {
     });
     const map = new Map([[halfAgo.id as unknown as string, halfAgo]]);
     const out = rankLinear(
-      [{ id: halfAgo.id, bm25: null, cosine: null }],
+      [{ id: halfAgo.id, bm25: null, cosine: null, vector: null }],
       map,
       options({
         recencyHalfLifeMs: 30 * 24 * 60 * 60 * 1000,
@@ -130,8 +130,8 @@ describe('rankLinear', () => {
     ]);
     const out = rankLinear(
       [
-        { id: broad.id, bm25: null, cosine: null },
-        { id: specific.id, bm25: null, cosine: null },
+        { id: broad.id, bm25: null, cosine: null, vector: null },
+        { id: specific.id, bm25: null, cosine: null, vector: null },
       ],
       map,
       options({
@@ -157,8 +157,8 @@ describe('rankLinear', () => {
     ]);
     const out = rankLinear(
       [
-        { id: plain.id, bm25: null, cosine: null },
-        { id: pinned.id, bm25: null, cosine: null },
+        { id: plain.id, bm25: null, cosine: null, vector: null },
+        { id: pinned.id, bm25: null, cosine: null, vector: null },
       ],
       map,
       options({ weights: { ...ZERO_WEIGHTS, pinned: 1 } }),
@@ -177,8 +177,8 @@ describe('rankLinear', () => {
     ]);
     const out = rankLinear(
       [
-        { id: a.id, bm25: null, cosine: null },
-        { id: b.id, bm25: null, cosine: null },
+        { id: a.id, bm25: null, cosine: null, vector: null },
+        { id: b.id, bm25: null, cosine: null, vector: null },
       ],
       map,
       options(),

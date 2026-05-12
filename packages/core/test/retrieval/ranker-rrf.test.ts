@@ -62,7 +62,7 @@ describe('rankRRF', () => {
 
   it('drops candidates whose memory is missing', () => {
     const out = rankRRF(
-      [{ id: 'missing' as unknown as MemoryId, bm25: -2, cosine: null }],
+      [{ id: 'missing' as unknown as MemoryId, bm25: -2, cosine: null, vector: null }],
       new Map(),
       options(),
     );
@@ -74,7 +74,7 @@ describe('rankRRF', () => {
     const map = new Map([[m.id as unknown as string, m]]);
     expect(() =>
       rankRRF(
-        [{ id: m.id, bm25: -1, cosine: null }],
+        [{ id: m.id, bm25: -1, cosine: null, vector: null }],
         map,
         options({ now: 'not-a-date' as unknown as Timestamp }),
       ),
@@ -90,8 +90,8 @@ describe('rankRRF', () => {
     ]);
     const out = rankRRF(
       [
-        { id: m1.id, bm25: -10, cosine: null }, // strongest FTS
-        { id: m2.id, bm25: -2, cosine: null }, // weaker FTS
+        { id: m1.id, bm25: -10, cosine: null, vector: null }, // strongest FTS
+        { id: m2.id, bm25: -2, cosine: null, vector: null }, // weaker FTS
       ],
       map,
       options({ weights: { ...ZERO_WEIGHTS, fts: 1 }, rrfK: 60 }),
@@ -110,8 +110,8 @@ describe('rankRRF', () => {
     ]);
     const out = rankRRF(
       [
-        { id: m1.id, bm25: null, cosine: 0.95 }, // strongest vector
-        { id: m2.id, bm25: null, cosine: 0.7 }, // weaker vector
+        { id: m1.id, bm25: null, cosine: 0.95, vector: null }, // strongest vector
+        { id: m2.id, bm25: null, cosine: 0.7, vector: null }, // weaker vector
       ],
       map,
       options({ weights: { ...ZERO_WEIGHTS, vector: 1 }, rrfK: 60 }),
@@ -125,7 +125,7 @@ describe('rankRRF', () => {
     const m = makeMemory();
     const map = new Map([[m.id as unknown as string, m]]);
     const out = rankRRF(
-      [{ id: m.id, bm25: -1, cosine: null }],
+      [{ id: m.id, bm25: -1, cosine: null, vector: null }],
       map,
       options({ weights: { ...ZERO_WEIGHTS, fts: 1, vector: 1 } }),
     );
@@ -148,9 +148,9 @@ describe('rankRRF', () => {
     ]);
     const out = rankRRF(
       [
-        { id: m1.id, bm25: -10, cosine: 0.95 },
-        { id: m2.id, bm25: -8, cosine: null },
-        { id: m3.id, bm25: null, cosine: 0.9 },
+        { id: m1.id, bm25: -10, cosine: 0.95, vector: null },
+        { id: m2.id, bm25: -8, cosine: null, vector: null },
+        { id: m3.id, bm25: null, cosine: 0.9, vector: null },
       ],
       map,
       options({ weights: { ...ZERO_WEIGHTS, fts: 1, vector: 1 } }),
@@ -177,8 +177,8 @@ describe('rankRRF', () => {
     ]);
     const out = rankRRF(
       [
-        { id: ftsOnly.id, bm25: -5, cosine: null },
-        { id: vectorOnly.id, bm25: null, cosine: 0.95 },
+        { id: ftsOnly.id, bm25: -5, cosine: null, vector: null },
+        { id: vectorOnly.id, bm25: null, cosine: 0.95, vector: null },
       ],
       map,
       options({ weights: { ...ZERO_WEIGHTS, fts: 1, vector: 1 } }),
@@ -196,8 +196,8 @@ describe('rankRRF', () => {
       [m2.id as unknown as string, m2],
     ]);
     const cands = [
-      { id: m1.id, bm25: -10, cosine: null },
-      { id: m2.id, bm25: -2, cosine: null },
+      { id: m1.id, bm25: -10, cosine: null, vector: null },
+      { id: m2.id, bm25: -2, cosine: null, vector: null },
     ];
 
     const tight = rankRRF(cands, map, options({ weights: { ...ZERO_WEIGHTS, fts: 1 }, rrfK: 1 }));
@@ -218,7 +218,7 @@ describe('rankRRF', () => {
     });
     const map = new Map([[halfAgo.id as unknown as string, halfAgo]]);
     const out = rankRRF(
-      [{ id: halfAgo.id, bm25: null, cosine: null }],
+      [{ id: halfAgo.id, bm25: null, cosine: null, vector: null }],
       map,
       options({
         recencyHalfLifeMs: 30 * 24 * 60 * 60 * 1000,
@@ -243,8 +243,8 @@ describe('rankRRF', () => {
     ]);
     const out = rankRRF(
       [
-        { id: broad.id, bm25: null, cosine: null },
-        { id: specific.id, bm25: null, cosine: null },
+        { id: broad.id, bm25: null, cosine: null, vector: null },
+        { id: specific.id, bm25: null, cosine: null, vector: null },
       ],
       map,
       options({
@@ -270,8 +270,8 @@ describe('rankRRF', () => {
     ]);
     const out = rankRRF(
       [
-        { id: pinned.id, bm25: -5, cosine: null },
-        { id: plain.id, bm25: -5, cosine: null },
+        { id: pinned.id, bm25: -5, cosine: null, vector: null },
+        { id: plain.id, bm25: -5, cosine: null, vector: null },
       ],
       map,
       options({ weights: { ...ZERO_WEIGHTS, fts: 1, pinned: 1 } }),
@@ -291,7 +291,7 @@ describe('rankRRF', () => {
       now: NOW,
       decayConfig: DEFAULT_DECAY_CONFIG,
     };
-    const out = rankRRF([{ id: m.id, bm25: -1, cosine: null }], map, omitted);
+    const out = rankRRF([{ id: m.id, bm25: -1, cosine: null, vector: null }], map, omitted);
     expect(out[0]?.breakdown.fts).toBeCloseTo(1 / 61, 10); // k=60 + rank=1
   });
 
@@ -304,8 +304,8 @@ describe('rankRRF', () => {
     ]);
     const out = rankRRF(
       [
-        { id: a.id, bm25: null, cosine: null },
-        { id: b.id, bm25: null, cosine: null },
+        { id: a.id, bm25: null, cosine: null, vector: null },
+        { id: b.id, bm25: null, cosine: null, vector: null },
       ],
       map,
       options(),

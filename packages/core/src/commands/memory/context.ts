@@ -35,6 +35,7 @@ import { z } from 'zod';
 import type { ConfigStore } from '../../config/index.js';
 import { type DecayConfig, decayConfigFromStore, effectiveConfidence } from '../../decay/engine.js';
 import type { MemoryRepository } from '../../repository/memory-repository.js';
+import { applyMMR } from '../../retrieval/diversity.js';
 import { scopeKey } from '../../scope/resolver.js';
 import type { MementoSchema } from '../../storage/schema.js';
 import { repoErrorToMementoError } from '../errors.js';
@@ -219,7 +220,7 @@ export function createMemoryContextCommand(
         const recencyHalfLifeMs = cfg.get('retrieval.recency.halfLife');
         const scopeBoostPerLevel = cfg.get('retrieval.scopeBoost');
 
-        const ranked = rankForContext(candidates, {
+        const rankedRaw = rankForContext(candidates, {
           weights,
           recencyHalfLifeMs,
           scopeBoostPerLevel,
@@ -229,6 +230,37 @@ export function createMemoryContextCommand(
           decayConfig,
           confirmCounts,
         });
+
+        // Post-rank diversity. Default `context.diversity.lambda`
+        // is `0.7` — gentle diversification by default because
+        // session-start retrieval is survey-style, not lookup-
+        // style. The caller asking "what should I know?" wants
+        // varied topics, not five paraphrases of the same
+        // preference. Memories whose stored embedding is null
+        // (pending auto-embed, or vector retrieval disabled
+        // when they were written) are absent from `vectorById`
+        // and so bypass the similarity penalty — they ride
+        // their relevance score alone.
+        const lambda = cfg.get('context.diversity.lambda');
+        let ranked: readonly RankedContextResult[];
+        if (lambda < 1 && rankedRaw.length > 1) {
+          const vectorById = new Map<string, readonly number[]>();
+          for (const m of candidates) {
+            const v = m.embedding?.vector;
+            if (v !== undefined && v !== null) {
+              vectorById.set(m.id as unknown as string, v);
+            }
+          }
+          // Unlike `memory.search`, `memory.context` does not
+          // paginate — the full ranked list is the page. So MMR
+          // runs over the entire ranked output, no windowing.
+          ranked = applyMMR(rankedRaw, vectorById, {
+            lambda,
+            maxDuplicates: cfg.get('context.diversity.maxDuplicates'),
+          });
+        } else {
+          ranked = rankedRaw;
+        }
 
         // Apply limit and project to output view.
         const redact = cfg.get('privacy.redactSensitiveSnippets');

@@ -16,6 +16,7 @@ import { decayConfigFromStore } from '../decay/engine.js';
 import type { EmbeddingProvider } from '../embedding/provider.js';
 import type { MemoryRepository } from '../repository/memory-repository.js';
 import type { MementoSchema } from '../storage/schema.js';
+import { applyMMR } from './diversity.js';
 import { searchFts } from './fts.js';
 import { type RankerOptions, rankLinear, rankRRF } from './ranker.js';
 import type { RawCandidate, SearchPage, SearchQuery, SearchResult } from './types.js';
@@ -143,6 +144,7 @@ export async function searchMemories(
       id: hit.id,
       bm25: hit.bm25,
       cosine: null,
+      vector: null,
     });
   }
 
@@ -172,9 +174,14 @@ export async function searchMemories(
         const key = hit.id as unknown as string;
         const existing = candidatesById.get(key);
         if (existing === undefined) {
-          candidatesById.set(key, { id: hit.id, bm25: null, cosine: hit.cosine });
+          candidatesById.set(key, {
+            id: hit.id,
+            bm25: null,
+            cosine: hit.cosine,
+            vector: hit.vector,
+          });
         } else {
-          candidatesById.set(key, { ...existing, cosine: hit.cosine });
+          candidatesById.set(key, { ...existing, cosine: hit.cosine, vector: hit.vector });
         }
       }
     } catch (caught) {
@@ -237,7 +244,7 @@ export async function searchMemories(
     ((deps.clock ?? defaultClock)() as unknown as SearchQuery['now']) ??
     defaultClock();
 
-  const ranked: readonly SearchResult[] = rankByStrategy(
+  const rankedRaw: readonly SearchResult[] = rankByStrategy(
     cfg.get('retrieval.ranker.strategy') as RankerStrategy,
     candidates,
     byId,
@@ -258,6 +265,40 @@ export async function searchMemories(
       rrfK: cfg.get('retrieval.ranker.rrf.k'),
     },
   );
+
+  // Post-rank diversity. At lambda = 1 (default) this is a
+  // passthrough. When lambda < 1, MMR runs over the visible-
+  // page head only — the diversity reorder targets the page the
+  // caller sees, not the hidden tail of the ranked list. The
+  // tail beyond `mmrWindow` falls through in the ranker's
+  // original order so pagination semantics stay intact: a
+  // cursor pointing into the tail finds its slice unchanged.
+  // The 2× multiplier on `limit` gives MMR room to swap
+  // candidates across the page boundary without admitting
+  // unbounded O(K²) cost on the full candidate set.
+  const lambda = cfg.get('retrieval.diversity.lambda');
+  let ranked: readonly SearchResult[];
+  if (lambda < 1 && rankedRaw.length > 1) {
+    // Build the vector lookup map from candidates that matched
+    // the vector arm. Candidates without a vector are absent
+    // from the map — `applyMMR` treats absence as "no similarity
+    // penalty", so FTS-only candidates ride their relevance
+    // score alone.
+    const vectorById = new Map<string, readonly number[]>();
+    for (const c of candidates) {
+      if (c.vector !== null) {
+        vectorById.set(c.id as unknown as string, c.vector);
+      }
+    }
+    const mmrWindow = Math.min(rankedRaw.length, Math.max(limit, 1) * 2);
+    const head = applyMMR(rankedRaw.slice(0, mmrWindow), vectorById, {
+      lambda,
+      maxDuplicates: cfg.get('retrieval.diversity.maxDuplicates'),
+    });
+    ranked = mmrWindow < rankedRaw.length ? [...head, ...rankedRaw.slice(mmrWindow)] : head;
+  } else {
+    ranked = rankedRaw;
+  }
 
   // Cursor advances past the named id. A stale cursor (id not
   // present in the current ranked set) yields an empty page —

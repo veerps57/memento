@@ -131,6 +131,37 @@ A monotonically decreasing function of (now − lastConfirmedAt) shaped by `retr
 
 When the query's effective scope set is layered (session ⊕ branch ⊕ repo ⊕ workspace ⊕ global), more-specific scopes get a small boost. The boost-per-scope-level is `retrieval.scopeBoost`.
 
+## Diversity (post-rank)
+
+A separate stage runs after the ranker and before the cursor-window slice. It reorders the ranked list greedily by Maximal Marginal Relevance — each successive pick maximises:
+
+```text
+λ × score - (1 - λ) × max(cosine_to_already_picked)
+```
+
+The first pick has no predecessors, so it's always the ranker's top result regardless of `λ`. From the second pick onward, candidates whose embedding is similar to an already-picked candidate are penalised. Candidates without a stored embedding (FTS-only, rows pending auto-embed) bypass the diversity penalty — they ride the relevance score alone rather than getting a synthetic zero-cosine score that would systematically push them up the page.
+
+### Two surfaces, two defaults
+
+Diversity applies to both `memory.search` and `memory.context`, with separate config namespaces because the surfaces are used differently:
+
+| Surface | Config | Default `lambda` | Rationale |
+|---|---|---|---|
+| `memory.search` | `retrieval.diversity.lambda` | `1.0` (passthrough) | Search is query-driven; the caller usually wants strict relevance — a fact lookup, not a survey. Opt in when paginating cluster-dense topics. |
+| `memory.context` | `context.diversity.lambda` | `0.7` (gentle diversity) | Session-start retrieval is survey-style. The caller asking "what should I know?" wants varied topics, not five paraphrases of the same preference. |
+
+Both also accept `*.diversity.maxDuplicates` (default `5`) — a soft ceiling on the size of any near-duplicate cluster (cosine ≥ 0.9) admitted to the page before further duplicates are skipped.
+
+### Windowing
+
+On `memory.search`, MMR runs over the top `limit × 2` of the ranked list, then concatenates the unmodified tail. The window gives MMR room to swap candidates across the page boundary without admitting O(K²) cost on the full candidate union (which can be hundreds at default caps). The tail-pass-through preserves pagination semantics: a cursor pointing into the tail finds its slice unchanged.
+
+On `memory.context`, there's no pagination — the full ranked list IS the page — so MMR runs over the entire list. No windowing needed.
+
+### Why post-rank rather than a ranker arm
+
+The ranker is a pure function over the candidate set; MMR is greedy and stateful (each pick depends on what came before). Keeping the two stages separate preserves the ranker's replay/audit story and keeps the MMR cost proportional to the page size rather than the candidate-set size.
+
 ## Pagination
 
 Results are paginated by ULID cursor. The cursor is the `id` of the last result returned. Paging is stable across writes because ULIDs sort lexicographically by creation time.

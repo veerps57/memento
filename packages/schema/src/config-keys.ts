@@ -316,6 +316,28 @@ export const CONFIG_KEYS = {
     description:
       'Ranker strategy. `linear` (default) is the weighted-sum ranker that the shipped `retrieval.ranker.weights.*` defaults are tuned for: FTS and cosine arms are batch-max-normalised to `[0, 1]` and composed with the four baseline arms (confidence, recency, scope, pinned) which are already `[0, 1]`. `rrf` (Reciprocal Rank Fusion) replaces the FTS and cosine arms with rank-based contributions `weight_a / (k + rank_a)` — values at `k=60` are around `0.016` at rank 1, three orders of magnitude smaller than `linear`. Flipping to `rrf` at the shipped weight defaults will heavily suppress the FTS and vector arms relative to the baselines; rescale `retrieval.ranker.weights.fts` / `retrieval.ranker.weights.vector` by roughly `(k + 1)` when switching. Tune `k` via `retrieval.ranker.rrf.k`.',
   }),
+  // Post-rank diversity pass via Maximal Marginal Relevance.
+  // Re-orders the top-K so successive picks penalise candidates
+  // similar to already-picked rows. `lambda = 1` is a passthrough
+  // (default — preserves prior ranking on upgrade); `lambda = 0`
+  // is pure diversity, ignoring relevance. The pass needs the
+  // candidate embeddings already loaded by the vector arm; rows
+  // without an embedding bypass the diversity penalty and ride
+  // the relevance score alone.
+  'retrieval.diversity.lambda': defineKey({
+    schema: Probability,
+    default: 1,
+    mutable: true,
+    description:
+      'MMR trade-off between relevance and diversity. `1.0` (default) is a passthrough — preserves the ranker output unchanged. `0.5` balances relevance against diversity. `0.0` is pure diversity, ignoring relevance. Applied as a post-rank reorder over the ranked page; rows without a stored embedding bypass the diversity penalty.',
+  }),
+  'retrieval.diversity.maxDuplicates': defineKey({
+    schema: PositiveInt,
+    default: 5,
+    mutable: true,
+    description:
+      'Soft ceiling on near-duplicate (cosine ≥ 0.9) candidates admitted to a single page before the MMR pass starts skipping. Compose with `retrieval.diversity.lambda`: lambda controls the per-pick reorder weight, maxDuplicates puts a hard cap on the clustering itself. Default `5` is effectively off for most pages; lower to suppress dense clusters.',
+  }),
   'retrieval.ranker.rrf.k': defineKey({
     // RRF dampening constant. Higher values flatten the
     // contribution curve (more weight on lower-ranked
@@ -808,6 +830,29 @@ export const CONFIG_KEYS = {
     mutable: true,
     description:
       'Context ranker weight for confirmation frequency (memories confirmed often rank higher).',
+  }),
+  // Context-side diversity. Distinct namespace from
+  // `retrieval.diversity.*` so the defaults can differ:
+  // `memory.context` is the session-start survey surface where
+  // distinctness is part of the contract (the caller wants
+  // varied topics, not five paraphrases of the same preference).
+  // `memory.search` is a query-driven surface where strict
+  // relevance is usually the right answer. So context defaults
+  // to gentle diversity (`lambda = 0.7`) and search defaults to
+  // passthrough (`lambda = 1`).
+  'context.diversity.lambda': defineKey({
+    schema: Probability,
+    default: 0.7,
+    mutable: true,
+    description:
+      'MMR trade-off for `memory.context` between relevance and diversity. `1.0` is a passthrough — preserves the ranker output unchanged. `0.7` (default) gently breaks near-duplicate clusters so the session-start survey covers more topics. `0.0` is pure diversity. Memories without a stored embedding bypass the diversity penalty.',
+  }),
+  'context.diversity.maxDuplicates': defineKey({
+    schema: PositiveInt,
+    default: 5,
+    mutable: true,
+    description:
+      'Soft ceiling on near-duplicate (cosine ≥ 0.9) candidates admitted to a `memory.context` page before the MMR pass starts skipping. Mirrors `retrieval.diversity.maxDuplicates` for the context surface.',
   }),
 
   // — Export —

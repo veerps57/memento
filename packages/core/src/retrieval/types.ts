@@ -138,4 +138,15 @@ export interface RawCandidate {
   readonly bm25: number | null;
   /** Cosine similarity in `[-1, 1]`; `null` = no vector match (or vector disabled). */
   readonly cosine: number | null;
+  /**
+   * The candidate's full stored embedding vector, threaded
+   * forward from the vector arm so the post-rank diversity
+   * pass can compute pairwise cosines without re-loading the
+   * rows. `null` when the candidate did not match the vector
+   * arm (FTS-only candidate) or when vector retrieval is off;
+   * the diversity pass treats `null` as "no penalty" rather
+   * than "orthogonal", so FTS-only candidates ride their
+   * relevance score alone.
+   */
+  readonly vector: readonly number[] | null;
 }

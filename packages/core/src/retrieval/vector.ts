@@ -64,6 +64,15 @@ export interface VectorSearchOptions {
 export interface VectorHit {
   readonly id: MemoryId;
   readonly cosine: number;
+  /**
+   * The candidate's full stored embedding vector. The scanner
+   * has it in hand at the moment it computes cosine, so
+   * returning it costs only the reference. Threaded forward
+   * through the pipeline so the post-rank diversity pass can
+   * compute pairwise cosines without re-reading the
+   * `embedding_json` column.
+   */
+  readonly vector: readonly number[];
 }
 
 /**
@@ -210,7 +219,7 @@ export async function searchVector(
       });
     }
     const cosine = cosineSimilarity(options.queryVector, parsed.vector, queryNorm);
-    hits.push({ id: row.id as MemoryId, cosine });
+    hits.push({ id: row.id as MemoryId, cosine, vector: parsed.vector });
   }
 
   // Partial sort would be marginally faster, but for the v1
