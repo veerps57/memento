@@ -549,6 +549,72 @@ function pairwise(stamps: readonly string[]): string[] {
   return stamps.flatMap((s) => [s, s]);
 }
 
+describe('retrieval.ranker.strategy = rrf', () => {
+  it('routes to the RRF ranker and produces inverse-rank breakdowns', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    const strong = await repo.write(
+      { ...baseInput, content: 'kafka kafka kafka kafka kafka' },
+      { actor },
+    );
+    const weak = await repo.write(
+      {
+        ...baseInput,
+        content: 'kafka once among many other words and unrelated tokens here',
+      },
+      { actor },
+    );
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({
+          'retrieval.vector.enabled': false,
+          'retrieval.ranker.strategy': 'rrf',
+        }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka' },
+    );
+
+    // Strong hit gets FTS rank 1 → breakdown.fts = 1/(60+1).
+    expect(page.results.map((r) => r.memory.id)).toEqual([strong.id, weak.id]);
+    expect(page.results[0]?.breakdown.fts).toBeCloseTo(1 / 61, 10);
+    expect(page.results[1]?.breakdown.fts).toBeCloseTo(1 / 62, 10);
+  });
+
+  it('honours `retrieval.ranker.rrf.k` from config', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    await repo.write({ ...baseInput, content: 'kafka kafka kafka' }, { actor });
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({
+          'retrieval.vector.enabled': false,
+          'retrieval.ranker.strategy': 'rrf',
+          'retrieval.ranker.rrf.k': 9,
+        }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka' },
+    );
+
+    expect(page.results[0]?.breakdown.fts).toBeCloseTo(1 / 10, 10); // k=9 + rank=1
+  });
+});
+
 describe('per-arm candidate thresholds', () => {
   // Helper: drive a vector-on search whose provider returns the
   // supplied query vector. Each memory's stored embedding decides

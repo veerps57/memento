@@ -71,7 +71,11 @@ Operators raise these to suppress the noise floor that pollutes top-K on paraphr
 
 ## Ranker
 
-The ranker takes candidates and produces a final ordering. The default ranker is a configurable linear combination:
+The ranker takes candidates and produces a final ordering. The strategy is selected by `retrieval.ranker.strategy`; two strategies ship today.
+
+### `linear` (default)
+
+A configurable weighted sum:
 
 ```text
 score = w_fts        * normalize(ftsScore)
@@ -82,9 +86,34 @@ score = w_fts        * normalize(ftsScore)
       + w_pinned     * (pinned ? 1 : 0)
 ```
 
-All weights are `ConfigKey`s under `retrieval.ranker.weights.*`. The default values are documented in the auto-generated [`docs/reference/config-keys.md`](../reference/config-keys.md) and chosen to produce reasonable results out of the box; serious users will tune them.
+The FTS and vector arms are batch-max-normalised — every candidate's score is divided by the largest magnitude in the batch, so the strongest hit on each arm always scores `1`. The four baseline arms (`confidence`, `recency`, `scope`, `pinned`) live in natural `[0, 1]` units. All weights are `ConfigKey`s under `retrieval.ranker.weights.*`.
 
-The ranker is selected by `retrieval.ranker.strategy`. Today the only registered value is `'linear'`; the schema is a one-element enum. The strategy field exists so additional rankers (reciprocal-rank fusion, a learned re-ranker, etc.) can be added by widening the enum without changing the call sites — this is principle 3 (Extensible) in code, not a claim that those strategies ship today.
+### `rrf` (Reciprocal Rank Fusion)
+
+Replaces the batch-max-normalised arms with rank-based contributions:
+
+```text
+score = w_fts        * 1/(k + rank_fts(candidate))
+      + w_vector     * 1/(k + rank_vector(candidate))
+      + w_confidence * effectiveConfidence
+      + w_recency    * recencyBoost(lastConfirmedAt, now)
+      + w_scope      * scopeBoost(scope, queryScope)
+      + w_pinned     * (pinned ? 1 : 0)
+```
+
+`rank_fts` is the candidate's position in the FTS-sorted list (1-indexed; ascending BM25 = most-negative-first). `rank_vector` is the candidate's position in the cosine-sorted list (descending). Candidates that did not match an arm contribute `0` to that arm — their rank is undefined, not infinite. `k` is a dampening constant tunable via `retrieval.ranker.rrf.k`; the literature default `60` is the registry default.
+
+### When to prefer each
+
+`linear` is the default and is the strategy the shipped weight defaults are tuned for. The FTS and vector arms produce values in `[0, 1]` after batch-max normalisation; the four baseline arms live in `[0, 1]` natively. The default weights (`fts=1.0`, `vector=1.0`, `confidence=0.5`, `recency=0.25`, `scope=0.25`, `pinned=0.25`) compose all six on the same scale.
+
+`rrf` produces FTS and vector contributions at a different scale — top-rank values are `1/(k+1) ≈ 0.016` at `k=60`, three orders of magnitude smaller than `linear`'s `1.0`. **Switching `retrieval.ranker.strategy` from `linear` to `rrf` without also rescaling `retrieval.ranker.weights.fts` and `retrieval.ranker.weights.vector` will dramatically reduce the influence of the FTS and vector arms relative to the four baseline arms.** As a starting point, multiply `fts` and `vector` weights by roughly `(k + 1)` to bring the top-rank contribution back into the same band as `linear`'s top-hit contribution. Operators flipping the strategy at runtime should expect a re-tuning pass.
+
+`rrf` is provided as an alternative for operators whose workloads see the `linear` ranker's batch-max normalisation pathology (a single dominant FTS hit collapsing the rest of the batch toward zero). Whether `rrf` outperforms `linear` on a given store depends on the corpus, the query mix, and the weight regime. The two strategies are kept side-by-side so a future eval can promote one default over the other on the basis of measured outcomes, not a-priori reasoning.
+
+Switching strategies is a runtime config change; no reindex required.
+
+The default values for the six weights are documented in the auto-generated [`docs/reference/config-keys.md`](../reference/config-keys.md) and chosen to produce reasonable results out of the box; serious users will tune them.
 
 ### `effectiveConfidence`
 

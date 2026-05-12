@@ -310,11 +310,23 @@ export const CONFIG_KEYS = {
       'Vector search backend selector. `brute-force` is the shipping backend; `auto` resolves to it.',
   }),
   'retrieval.ranker.strategy': defineKey({
-    schema: z.enum(['linear']),
+    schema: z.enum(['linear', 'rrf']),
     default: 'linear',
     mutable: true,
     description:
-      'Ranker strategy. `linear` is the shipping strategy; the enum can be widened without breaking existing configs.',
+      'Ranker strategy. `linear` (default) is the weighted-sum ranker that the shipped `retrieval.ranker.weights.*` defaults are tuned for: FTS and cosine arms are batch-max-normalised to `[0, 1]` and composed with the four baseline arms (confidence, recency, scope, pinned) which are already `[0, 1]`. `rrf` (Reciprocal Rank Fusion) replaces the FTS and cosine arms with rank-based contributions `weight_a / (k + rank_a)` — values at `k=60` are around `0.016` at rank 1, three orders of magnitude smaller than `linear`. Flipping to `rrf` at the shipped weight defaults will heavily suppress the FTS and vector arms relative to the baselines; rescale `retrieval.ranker.weights.fts` / `retrieval.ranker.weights.vector` by roughly `(k + 1)` when switching. Tune `k` via `retrieval.ranker.rrf.k`.',
+  }),
+  'retrieval.ranker.rrf.k': defineKey({
+    // RRF dampening constant. Higher values flatten the
+    // contribution curve (more weight on lower-ranked
+    // candidates); lower values concentrate weight at the top.
+    // 60 is the literature convention (Cormack et al. 2009 and
+    // every subsequent re-implementation).
+    schema: z.number().int().positive(),
+    default: 60,
+    mutable: true,
+    description:
+      'Reciprocal-rank fusion dampening constant. Per-arm contribution is `weight_a / (k + rank_a)`. Higher `k` flattens the contribution curve so lower-ranked candidates retain more weight; lower `k` concentrates weight at the top. Literature default is `60`. Only consulted when `retrieval.ranker.strategy = rrf`.',
   }),
   'retrieval.ranker.weights.fts': defineKey({
     schema: z.number().min(0).finite(),

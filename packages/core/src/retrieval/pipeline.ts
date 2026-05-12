@@ -17,7 +17,7 @@ import type { EmbeddingProvider } from '../embedding/provider.js';
 import type { MemoryRepository } from '../repository/memory-repository.js';
 import type { MementoSchema } from '../storage/schema.js';
 import { searchFts } from './fts.js';
-import { type RankerOptions, rankLinear } from './ranker.js';
+import { type RankerOptions, rankLinear, rankRRF } from './ranker.js';
 import type { RawCandidate, SearchPage, SearchQuery, SearchResult } from './types.js';
 import { StaleEmbeddingError, searchVector } from './vector.js';
 
@@ -255,6 +255,7 @@ export async function searchMemories(
       ...(query.scopes !== undefined ? { scopes: query.scopes as readonly Scope[] } : {}),
       now: now as never,
       decayConfig: decayConfigFromStore(deps.configStore),
+      rrfK: cfg.get('retrieval.ranker.rrf.k'),
     },
   );
 
@@ -322,7 +323,7 @@ function clampLimit(limit: number | undefined, cfg: ConfigStore): number {
  * one side without the other is detected before the binary
  * ships.
  */
-type RankerStrategy = 'linear';
+type RankerStrategy = 'linear' | 'rrf';
 
 function rankByStrategy(
   strategy: RankerStrategy,
@@ -333,6 +334,8 @@ function rankByStrategy(
   switch (strategy) {
     case 'linear':
       return rankLinear(candidates, memories, options);
+    case 'rrf':
+      return rankRRF(candidates, memories, options);
     default:
       return assertNever(strategy);
   }

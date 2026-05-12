@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 89 keys.
+Total: 90 keys.
 
 ## `decay.*`
 
@@ -87,7 +87,8 @@ Total: 89 keys.
 | `retrieval.fts.tokenizer` | `"unicode61"` | no | FTS5 tokenizer for `memories_fts`. Pinned at server start because changing it requires a reindex. |
 | `retrieval.vector.enabled` | `true` | yes | When true, retrieval unions FTS candidates with cosine-similarity matches over `embedding`. Requires an `EmbeddingProvider` to be wired into the host; `memory.search` returns CONFIG_ERROR when the flag is on and no provider is present. |
 | `retrieval.vector.backend` | `"auto"` | no | Vector search backend selector. `brute-force` is the shipping backend; `auto` resolves to it. |
-| `retrieval.ranker.strategy` | `"linear"` | yes | Ranker strategy. `linear` is the shipping strategy; the enum can be widened without breaking existing configs. |
+| `retrieval.ranker.strategy` | `"linear"` | yes | Ranker strategy. `linear` (default) is the weighted-sum ranker that the shipped `retrieval.ranker.weights.*` defaults are tuned for: FTS and cosine arms are batch-max-normalised to `[0, 1]` and composed with the four baseline arms (confidence, recency, scope, pinned) which are already `[0, 1]`. `rrf` (Reciprocal Rank Fusion) replaces the FTS and cosine arms with rank-based contributions `weight_a / (k + rank_a)` — values at `k=60` are around `0.016` at rank 1, three orders of magnitude smaller than `linear`. Flipping to `rrf` at the shipped weight defaults will heavily suppress the FTS and vector arms relative to the baselines; rescale `retrieval.ranker.weights.fts` / `retrieval.ranker.weights.vector` by roughly `(k + 1)` when switching. Tune `k` via `retrieval.ranker.rrf.k`. |
+| `retrieval.ranker.rrf.k` | `60` | yes | Reciprocal-rank fusion dampening constant. Per-arm contribution is `weight_a / (k + rank_a)`. Higher `k` flattens the contribution curve so lower-ranked candidates retain more weight; lower `k` concentrates weight at the top. Literature default is `60`. Only consulted when `retrieval.ranker.strategy = rrf`. |
 | `retrieval.ranker.weights.fts` | `1` | yes | Linear ranker weight on the normalised FTS5 BM25 score. |
 | `retrieval.ranker.weights.vector` | `1` | yes | Linear ranker weight on the normalised cosine-similarity score. |
 | `retrieval.ranker.weights.confidence` | `0.5` | yes | Linear ranker weight on `effectiveConfidence` (storedConfidence × decayFactor). |
