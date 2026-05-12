@@ -388,6 +388,13 @@ export const CONFIG_KEYS = {
     mutable: true,
     description: 'Linear ranker weight added when a memory is pinned.',
   }),
+  'retrieval.ranker.weights.supersedingMultiplier': defineKey({
+    schema: Probability,
+    default: 0.5,
+    mutable: true,
+    description:
+      'Multiplier applied to a superseded memory\'s final score when its successor (the memory pointed to by `supersededBy`) is co-present in the same result set. `1.0` disables demotion; `0.0` collapses superseded predecessors to zero score. Default `0.5` keeps the chain visible while ranking the active head higher. Only fires when callers opt into superseded retrieval via `memory.search`\'s `includeStatuses: ["active", "superseded"]`; default search behaviour (active-only) is unaffected.',
+  }),
   'retrieval.recency.halfLife': defineKey({
     schema: z.number().min(0).finite(),
     default: 30 * MS_PER_DAY,

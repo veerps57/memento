@@ -131,6 +131,17 @@ A monotonically decreasing function of (now − lastConfirmedAt) shaped by `retr
 
 When the query's effective scope set is layered (session ⊕ branch ⊕ repo ⊕ workspace ⊕ global), more-specific scopes get a small boost. The boost-per-scope-level is `retrieval.scopeBoost`.
 
+### Superseded-predecessor demotion
+
+When a caller opts into `memory.search` with `includeStatuses: ["active", "superseded"]`, the ranker may surface both the active head of a supersession chain and one or more of its predecessors. Without intervention, the predecessor can outrank the head on otherwise-similar arms — its content was correct *at the time it was written*, and the FTS / vector arms don't know which version is "current".
+
+The ranker applies a final multiplier (`retrieval.ranker.weights.supersedingMultiplier`, default `0.5`) to a memory's score when:
+
+1. The memory's `status === 'superseded'`, **and**
+2. The memory's `supersededBy` pointer resolves to another memory in the same result set.
+
+Both rankers (`linear` and `rrf`) honour this rule. The default active-only filter excludes superseded predecessors upstream, so the hook never runs for the common case — only when the caller has explicitly asked for both sides of the chain. A caller fetching a predecessor in isolation (audit-log lookup, `memory.read` walking a supersedes pointer) is unaffected because the successor isn't in the result set. Set the multiplier to `1.0` to disable the demotion entirely.
+
 ## Diversity (post-rank)
 
 A separate stage runs after the ranker and before the cursor-window slice. It reorders the ranked list greedily by Maximal Marginal Relevance — each successive pick maximises:

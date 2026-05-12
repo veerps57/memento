@@ -54,6 +54,17 @@ export interface RankerOptions {
    * is the literature convention (Cormack et al. 2009).
    */
   readonly rrfK?: number;
+  /**
+   * Multiplier applied to a superseded memory's final score when
+   * its successor (the row at `supersededBy`) is co-present in
+   * the same result set. `1.0` (or omitted) disables demotion;
+   * `0.5` halves the score of the predecessor so the active head
+   * ranks above it on otherwise-similar arms. Only fires when the
+   * caller opts into `includeStatuses: ["active", "superseded"]`
+   * — the default active-only filter excludes predecessors
+   * upstream and this hook never runs.
+   */
+  readonly supersedingMultiplier?: number;
 }
 
 /**
@@ -96,13 +107,14 @@ export function rankLinear(
       recencyHalfLifeMs: options.recencyHalfLifeMs,
       scopeBoostPerLevel: options.scopeBoostPerLevel,
     });
-    const score =
+    let score =
       options.weights.fts * breakdown.fts +
       options.weights.vector * breakdown.vector +
       options.weights.confidence * breakdown.confidence +
       options.weights.recency * breakdown.recency +
       options.weights.scope * breakdown.scope +
       options.weights.pinned * breakdown.pinned;
+    score = applySupersessionDemotion(score, memory, memories, options.supersedingMultiplier);
     out.push({ memory, score, breakdown });
   }
 
@@ -261,13 +273,14 @@ export function rankRRF(
     const pinned = memory.pinned ? 1 : 0;
 
     const breakdown: ScoreBreakdown = { fts, vector, confidence, recency, scope, pinned };
-    const score =
+    let score =
       options.weights.fts * fts +
       options.weights.vector * vector +
       options.weights.confidence * confidence +
       options.weights.recency * recency +
       options.weights.scope * scope +
       options.weights.pinned * pinned;
+    score = applySupersessionDemotion(score, memory, memories, options.supersedingMultiplier);
     out.push({ memory, score, breakdown });
   }
 
@@ -302,6 +315,39 @@ function maxCosine(candidates: readonly RawCandidate[]): number {
     }
   }
   return max;
+}
+
+/**
+ * Apply the superseded-predecessor demotion. Only fires when the
+ * candidate is itself a superseded memory AND its `supersededBy`
+ * pointer resolves to a memory in the current result set. This
+ * keeps the demotion local to "the user asked for both sides of
+ * a chain and we surfaced both" — a caller fetching the
+ * predecessor in isolation (audit log, `memory.read` chains) is
+ * unaffected because the successor isn't in `memories`.
+ *
+ * Shared between {@link rankLinear} and {@link rankRRF} so the
+ * two rankers honour the same chain-demotion semantics.
+ */
+function applySupersessionDemotion(
+  score: number,
+  memory: Memory,
+  memories: ReadonlyMap<string, Memory>,
+  multiplier: number | undefined,
+): number {
+  if (multiplier === undefined || multiplier >= 1) {
+    return score;
+  }
+  if (memory.status !== 'superseded') {
+    return score;
+  }
+  if (memory.supersededBy === null) {
+    return score;
+  }
+  if (!memories.has(memory.supersededBy as unknown as string)) {
+    return score;
+  }
+  return score * multiplier;
 }
 
 function buildScopeRank(scopes: readonly Scope[] | undefined): ReadonlyMap<string, number> {

@@ -295,6 +295,52 @@ describe('rankRRF', () => {
     expect(out[0]?.breakdown.fts).toBeCloseTo(1 / 61, 10); // k=60 + rank=1
   });
 
+  it('demotes a superseded predecessor when its successor is co-present', () => {
+    const b = makeMemory({ id: 'Mb' as unknown as MemoryId });
+    const a = makeMemory({
+      id: 'Ma' as unknown as MemoryId,
+      status: 'superseded',
+      supersededBy: b.id,
+    });
+    const map = new Map([
+      [a.id as unknown as string, a],
+      [b.id as unknown as string, b],
+    ]);
+    const out = rankRRF(
+      [
+        { id: a.id, bm25: -1, cosine: null, vector: null },
+        { id: b.id, bm25: -2, cosine: null, vector: null }, // B has stronger FTS so it lands rank 1
+      ],
+      map,
+      options({
+        weights: { ...ZERO_WEIGHTS, fts: 1 },
+        supersedingMultiplier: 0.5,
+      }),
+    );
+    expect(out[0]?.memory.id).toBe(b.id);
+    expect(out[1]?.memory.id).toBe(a.id);
+    // A's inverse-rank score (1/62) gets halved by the multiplier.
+    expect(out[1]?.score).toBeCloseTo((1 / 62) * 0.5, 10);
+  });
+
+  it('does not demote when the successor is absent', () => {
+    const a = makeMemory({
+      id: 'Ma' as unknown as MemoryId,
+      status: 'superseded',
+      supersededBy: 'Mghost' as unknown as MemoryId,
+    });
+    const map = new Map([[a.id as unknown as string, a]]);
+    const out = rankRRF(
+      [{ id: a.id, bm25: -1, cosine: null, vector: null }],
+      map,
+      options({
+        weights: { ...ZERO_WEIGHTS, fts: 1 },
+        supersedingMultiplier: 0.5,
+      }),
+    );
+    expect(out[0]?.score).toBeCloseTo(1 / 61, 10);
+  });
+
   it('breaks score ties by id descending (newer ULIDs win)', () => {
     const a = makeMemory({ id: 'M01' as unknown as MemoryId });
     const b = makeMemory({ id: 'M02' as unknown as MemoryId });

@@ -168,6 +168,119 @@ describe('rankLinear', () => {
     expect(out[1]?.score).toBe(0);
   });
 
+  it('throws on invalid `now`', () => {
+    const m = makeMemory();
+    const map = new Map([[m.id as unknown as string, m]]);
+    expect(() =>
+      rankLinear(
+        [{ id: m.id, bm25: -1, cosine: null, vector: null }],
+        map,
+        options({ now: 'not-a-date' as unknown as Timestamp }),
+      ),
+    ).toThrow(/not a valid ISO timestamp/);
+  });
+
+  it('does not demote a status=superseded memory with null supersededBy', () => {
+    // Pathological/legacy shape — `supersededBy` is null even
+    // though status flipped to 'superseded'. Supersession
+    // atomicity prevents this in production writes, but the
+    // ranker guard still has to return early when the pointer
+    // is absent (no successor to compare against).
+    const m = makeMemory({
+      id: 'Mlegacy' as unknown as MemoryId,
+      status: 'superseded',
+      supersededBy: null,
+    });
+    const map = new Map([[m.id as unknown as string, m]]);
+    const out = rankLinear(
+      [{ id: m.id, bm25: -1, cosine: null, vector: null }],
+      map,
+      options({
+        weights: { ...ZERO_WEIGHTS, fts: 1 },
+        supersedingMultiplier: 0.5,
+      }),
+    );
+    expect(out[0]?.score).toBeCloseTo(1, 5); // No demotion applied.
+  });
+
+  it('demotes a superseded predecessor when its successor is co-present', () => {
+    // A (superseded by B) and B (active). At equal raw scores
+    // the multiplier puts B above A.
+    const b = makeMemory({ id: 'Mb' as unknown as MemoryId });
+    const a = makeMemory({
+      id: 'Ma' as unknown as MemoryId,
+      status: 'superseded',
+      supersededBy: b.id,
+    });
+    const map = new Map([
+      [a.id as unknown as string, a],
+      [b.id as unknown as string, b],
+    ]);
+    const out = rankLinear(
+      [
+        { id: a.id, bm25: -1, cosine: null, vector: null },
+        { id: b.id, bm25: -1, cosine: null, vector: null },
+      ],
+      map,
+      options({
+        weights: { ...ZERO_WEIGHTS, fts: 1 },
+        supersedingMultiplier: 0.5,
+      }),
+    );
+    expect(out[0]?.memory.id).toBe(b.id);
+    expect(out[1]?.memory.id).toBe(a.id);
+    expect(out[1]?.score).toBeCloseTo((out[0]?.score ?? 0) * 0.5, 5);
+  });
+
+  it('does not demote when the successor is absent from the result set', () => {
+    // A is superseded but B is not co-present. A keeps its full
+    // score — the caller fetched the predecessor in isolation.
+    const orphanSupersededBy = 'Mghost' as unknown as MemoryId;
+    const a = makeMemory({
+      id: 'Ma' as unknown as MemoryId,
+      status: 'superseded',
+      supersededBy: orphanSupersededBy,
+    });
+    const map = new Map([[a.id as unknown as string, a]]);
+    const out = rankLinear(
+      [{ id: a.id, bm25: -1, cosine: null, vector: null }],
+      map,
+      options({
+        weights: { ...ZERO_WEIGHTS, fts: 1 },
+        supersedingMultiplier: 0.5,
+      }),
+    );
+    expect(out[0]?.score).toBeCloseTo(1, 5); // FTS=1.0 normalised
+  });
+
+  it('multiplier 1.0 disables demotion (passthrough)', () => {
+    const b = makeMemory({ id: 'Mb' as unknown as MemoryId });
+    const a = makeMemory({
+      id: 'Ma' as unknown as MemoryId,
+      status: 'superseded',
+      supersededBy: b.id,
+    });
+    const map = new Map([
+      [a.id as unknown as string, a],
+      [b.id as unknown as string, b],
+    ]);
+    const out = rankLinear(
+      [
+        { id: a.id, bm25: -1, cosine: null, vector: null },
+        { id: b.id, bm25: -1, cosine: null, vector: null },
+      ],
+      map,
+      options({
+        weights: { ...ZERO_WEIGHTS, fts: 1 },
+        supersedingMultiplier: 1.0,
+      }),
+    );
+    // Multiplier 1.0 means no demotion — id-desc tie-break
+    // applies (Mb > Ma).
+    expect(out[0]?.memory.id).toBe(b.id);
+    expect(out[1]?.score).toBe(out[0]?.score);
+  });
+
   it('breaks score ties by id descending', () => {
     const a = makeMemory({ id: 'M01' as unknown as MemoryId });
     const b = makeMemory({ id: 'M02' as unknown as MemoryId });

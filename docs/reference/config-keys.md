@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 94 keys.
+Total: 95 keys.
 
 ## `decay.*`
 
@@ -97,6 +97,7 @@ Total: 94 keys.
 | `retrieval.ranker.weights.recency` | `0.25` | yes | Linear ranker weight on the recency boost. Set to 0 alongside `retrieval.recency.halfLife = 0` to disable. |
 | `retrieval.ranker.weights.scope` | `0.25` | yes | Linear ranker weight on the scope-specificity boost (more-specific scopes rank higher when the query spans a layered set). |
 | `retrieval.ranker.weights.pinned` | `0.25` | yes | Linear ranker weight added when a memory is pinned. |
+| `retrieval.ranker.weights.supersedingMultiplier` | `0.5` | yes | Multiplier applied to a superseded memory's final score when its successor (the memory pointed to by `supersededBy`) is co-present in the same result set. `1.0` disables demotion; `0.0` collapses superseded predecessors to zero score. Default `0.5` keeps the chain visible while ranking the active head higher. Only fires when callers opt into superseded retrieval via `memory.search`'s `includeStatuses: ["active", "superseded"]`; default search behaviour (active-only) is unaffected. |
 | `retrieval.recency.halfLife` | `2592000000` | yes | Half-life of the recency boost, in milliseconds. The boost decays as 0.5 ^ ((now − lastConfirmedAt) / halfLife). Set to 0 to disable the boost regardless of weight. |
 | `retrieval.scopeBoost` | `0.1` | yes | Per-level boost applied to scope-specificity. The most-specific scope in the resolved layer set scores N × scopeBoost; the least-specific scores 0. |
 | `retrieval.search.defaultLimit` | `20` | yes | Default result count for `memory.search` when no limit is supplied. |

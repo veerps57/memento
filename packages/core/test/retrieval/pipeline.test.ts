@@ -976,3 +976,67 @@ describe('per-arm candidate thresholds', () => {
     expect(page.results.map((r) => r.memory.id)).toEqual([strong.id]);
   });
 });
+
+describe('superseded-predecessor demotion', () => {
+  it('ranks the active head above its superseded predecessor when both are returned', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    const old = await repo.write({ ...baseInput, content: 'kafka topic v1' }, { actor });
+    const head = await repo.supersede(
+      old.id,
+      { ...baseInput, content: 'kafka topic v2' },
+      { actor },
+    );
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({ 'retrieval.vector.enabled': false }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka', includeStatuses: ['active', 'superseded'] },
+    );
+
+    expect(page.results.map((r) => r.memory.id)).toEqual([head.current.id, old.id]);
+  });
+
+  it('treats supersedingMultiplier = 1.0 as a passthrough (newer-id wins ties as usual)', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => fixedClock as never,
+      memoryIdFactory: counterFactory('M0') as never,
+      eventIdFactory: counterFactory('E0'),
+    });
+    const old = await repo.write({ ...baseInput, content: 'kafka topic v1' }, { actor });
+    const head = await repo.supersede(
+      old.id,
+      { ...baseInput, content: 'kafka topic v2' },
+      { actor },
+    );
+
+    const page = await searchMemories(
+      {
+        db: handle.db,
+        memoryRepository: repo,
+        configStore: createConfigStore({
+          'retrieval.vector.enabled': false,
+          'retrieval.ranker.weights.supersedingMultiplier': 1.0,
+        }),
+        clock: () => fixedClock,
+      },
+      { text: 'kafka', includeStatuses: ['active', 'superseded'] },
+    );
+
+    // Multiplier 1 means no demotion. Scores tie on FTS; id-desc
+    // tie-break still puts the newer head first because it has
+    // the higher ULID, but the predecessor's score equals the
+    // head's (it isn't halved).
+    expect(page.results.map((r) => r.memory.id)).toEqual([head.current.id, old.id]);
+    expect(page.results[1]?.score).toBe(page.results[0]?.score);
+  });
+});

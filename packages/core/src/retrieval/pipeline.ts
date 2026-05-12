@@ -263,6 +263,7 @@ export async function searchMemories(
       now: now as never,
       decayConfig: decayConfigFromStore(deps.configStore),
       rrfK: cfg.get('retrieval.ranker.rrf.k'),
+      supersedingMultiplier: cfg.get('retrieval.ranker.weights.supersedingMultiplier'),
     },
   );
 
