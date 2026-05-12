@@ -61,6 +61,9 @@ export function createEmbeddingCommands(deps: CreateEmbeddingCommandsDeps): read
           actor: ctx.actor,
           ...(input.batchSize !== undefined ? { batchSize: input.batchSize } : {}),
           ...(input.force !== undefined ? { force: input.force } : {}),
+          ...(input.includeNonActive !== undefined
+            ? { includeNonActive: input.includeNonActive }
+            : {}),
         });
         return {
           scanned: result.scanned,

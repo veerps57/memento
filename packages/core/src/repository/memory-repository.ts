@@ -284,19 +284,20 @@ export interface MemoryRepository {
     ctx: { actor: ActorRef },
   ): Promise<{ applied: number; skippedIds: readonly MemoryId[] }>;
   /**
-   * Attach (or replace) the embedding for an active memory and
-   * append a `reembedded` event in the same transaction. The
-   * input carries `model`, `dimension`, and `vector`; the repo
-   * stamps `createdAt` from its clock and validates the row
-   * through {@link EmbeddingSchema} (which enforces
+   * Attach (or replace) the embedding for a memory and append a
+   * `reembedded` event in the same transaction. The input carries
+   * `model`, `dimension`, and `vector`; the repo stamps `createdAt`
+   * from its clock and validates the row through
+   * {@link EmbeddingSchema} (which enforces
    * `vector.length === dimension`) before writing.
    *
-   * Legal only on `active` memories: vector retrieval is over
-   * `active` rows (see `docs/architecture/retrieval.md`), so
-   * embedding non-active memories is wasted work and would
-   * widen the audit-log invariants in ways the doctor checks
-   * don't currently bound. The bulk driver
-   * {@link reembedAll} respects the same restriction.
+   * Legal on `active`, `forgotten`, and `archived` memories.
+   * Non-active rows are reachable via `memory.read` regardless of
+   * status; making them reachable via vector retrieval (when the
+   * caller opts into `includeStatuses` on `memory.search`) is the
+   * parity move. The bulk driver {@link reembedAll} restricts to
+   * `active` by default and accepts an opt-in to widen its scan
+   * to non-active rows.
    *
    * Per `docs/architecture/data-model.md`, `lastConfirmedAt`
    * equals `MAX(at)` over events including `reembedded`, so the
@@ -1144,10 +1145,17 @@ export function createMemoryRepository(
         actor: ctx.actor,
         eventId: eventIdFactory(),
         op: 'setEmbedding',
-        // Active-only by design (see interface doc-string and
-        // retrieval.md). Reembedding a forgotten / archived
-        // memory has no consumer in v1.
-        allowedStatuses: ['active'],
+        // Active-by-default, with opt-in coverage of forgotten /
+        // archived rows. Forgotten and archived memories are
+        // reachable via `memory.read` regardless of status; making
+        // them reachable via vector retrieval (when callers opt
+        // into `includeStatuses: ["active", "forgotten",
+        // "archived"]`) is a parity move. `embedding.rebuild`
+        // gates non-active coverage behind `includeNonActive`;
+        // direct `memory.set_embedding` callers can target any of
+        // these statuses for the same reason — symmetry with the
+        // read surface.
+        allowedStatuses: ['active', 'forgotten', 'archived'],
         eventType: 'reembedded',
         payload: { model: embedding.model, dimension: embedding.dimension },
         update: () => ({ embedding_json: JSON.stringify(embedding) }),

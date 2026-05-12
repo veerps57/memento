@@ -148,7 +148,7 @@ describe('MemoryRepository.setEmbedding', () => {
     expect(count.n).toBe(0);
   });
 
-  it('rejects on non-active memories (forgotten / superseded / archived)', async () => {
+  it('accepts a forgotten memory (vector retrieval over forgotten is opt-in)', async () => {
     const handle = await fixture();
     const repo = createMemoryRepository(handle.db, {
       clock: () => '2025-01-01T00:00:00.000Z' as never,
@@ -158,8 +158,49 @@ describe('MemoryRepository.setEmbedding', () => {
     const memory = await repo.write(baseInput, { actor });
     await repo.forget(memory.id, null, { actor });
 
+    const updated = await repo.setEmbedding(
+      memory.id,
+      { model: 'm', dimension: 2, vector: [1, 2] },
+      { actor },
+    );
+    expect(updated.status).toBe('forgotten');
+    expect(updated.embedding?.dimension).toBe(2);
+  });
+
+  it('accepts an archived memory', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => '2025-01-01T00:00:00.000Z' as never,
+      memoryIdFactory: counterFactory('M') as never,
+      eventIdFactory: counterFactory('E'),
+    });
+    const memory = await repo.write(baseInput, { actor });
+    await repo.archive(memory.id, { actor });
+
+    const updated = await repo.setEmbedding(
+      memory.id,
+      { model: 'm', dimension: 2, vector: [1, 2] },
+      { actor },
+    );
+    expect(updated.status).toBe('archived');
+    expect(updated.embedding?.dimension).toBe(2);
+  });
+
+  it('rejects on superseded memories (the chain forward-pointer makes them not a valid embed target)', async () => {
+    const handle = await fixture();
+    const repo = createMemoryRepository(handle.db, {
+      clock: () => '2025-01-01T00:00:00.000Z' as never,
+      memoryIdFactory: counterFactory('M') as never,
+      eventIdFactory: counterFactory('E'),
+    });
+    const old = await repo.write(baseInput, { actor });
+    await repo.supersede(old.id, { ...baseInput, content: 'replacement' }, { actor });
+
+    // `old` is now status=superseded with a non-null
+    // supersededBy pointer. Embedding it would just produce
+    // a vector for content that's been explicitly replaced.
     await expect(
-      repo.setEmbedding(memory.id, { model: 'm', dimension: 2, vector: [1, 2] }, { actor }),
+      repo.setEmbedding(old.id, { model: 'm', dimension: 2, vector: [1, 2] }, { actor }),
     ).rejects.toThrow(/setEmbedding/);
   });
 

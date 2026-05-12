@@ -26,6 +26,12 @@ export const EmbeddingRebuildInputSchema = z
       .describe(
         'If true, re-embeds all memories even if they already have an embedding for the current model.',
       ),
+    includeNonActive: z
+      .boolean()
+      .optional()
+      .describe(
+        'If true, widen the scan beyond `active` to also include `forgotten` and `archived` memories. Default false — active-only. Use this when callers will opt into vector retrieval over non-active statuses via `memory.search` `includeStatuses`.',
+      ),
     confirm: confirmGate().describe(
       'Safety gate — must be true to proceed. Rebuild rewrites all embeddings and may take minutes.',
     ),
