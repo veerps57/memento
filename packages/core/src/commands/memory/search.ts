@@ -217,11 +217,10 @@ export function createMemorySearchCommand(
  *
  * When the flag is off or no `conflictRepository` was wired,
  * every result is annotated with `conflicts: []` so the field
- * shape is stable. When on, we issue one `list` call per result
- * memory — typical search pages are small (≤ 50) and the
- * `conflicts(memory_id)` indexes hit; if profiling later shows
- * this is hot, a batch filter can be added without touching
- * this call site.
+ * shape is stable. When on, we issue **one** batched lookup
+ * (`listOpenByMemoryIds`) for the whole page instead of N
+ * per-result queries — the indexes are the same but the
+ * round-trip count is constant.
  */
 type AnnotatedResult = {
   memory: MemoryView;
@@ -259,18 +258,18 @@ async function annotateWithConflicts(
     };
   }
 
-  const enriched = await Promise.all(
-    page.results.map(async (r): Promise<AnnotatedResult> => {
-      const open = await repo.list({ open: true, memoryId: r.memory.id });
-      const conflicts = open.map((c) => toConflictRef(c, r.memory.id));
-      return {
-        memory: projectMemoryView(r.memory, redact),
-        score: r.score,
-        breakdown: r.breakdown,
-        conflicts,
-      };
-    }),
-  );
+  const memoryIds = page.results.map((r) => r.memory.id);
+  const byMemoryId = await repo.listOpenByMemoryIds(memoryIds);
+  const enriched = page.results.map((r): AnnotatedResult => {
+    const open = byMemoryId.get(r.memory.id as unknown as string) ?? [];
+    const conflicts = open.map((c) => toConflictRef(c, r.memory.id));
+    return {
+      memory: projectMemoryView(r.memory, redact),
+      score: r.score,
+      breakdown: r.breakdown,
+      conflicts,
+    };
+  });
   return { ...page, results: enriched };
 }
 

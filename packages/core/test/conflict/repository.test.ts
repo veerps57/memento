@@ -269,4 +269,86 @@ describe('createConflictRepository', () => {
       await expect(repo.list({ limit: -5 })).rejects.toThrow(/positive integer/);
     });
   });
+
+  describe('listOpenByMemoryIds', () => {
+    it('returns an empty map for empty input without touching the db', async () => {
+      const { handle } = await seedTwoMemories();
+      const repo = createConflictRepository(handle.db);
+      const map = await repo.listOpenByMemoryIds([]);
+      expect(map.size).toBe(0);
+    });
+
+    it('groups open conflicts by both memory ids and dedupes when both sides match', async () => {
+      const handle = await fixture();
+      const memoryRepo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const a = await memoryRepo.write(baseInput, { actor });
+      const b = await memoryRepo.write({ ...baseInput, content: 'b' }, { actor });
+      const c = await memoryRepo.write({ ...baseInput, content: 'c' }, { actor });
+      const repo = createConflictRepository(handle.db, {
+        clock: () => fixedClock as never,
+        conflictIdFactory: counterFactory('C0') as never,
+        eventIdFactory: counterFactory('CE'),
+      });
+
+      const ab = await repo.open(
+        { newMemoryId: b.id, conflictingMemoryId: a.id, kind: 'fact', evidence: {} },
+        { actor },
+      );
+      const ac = await repo.open(
+        { newMemoryId: c.id, conflictingMemoryId: a.id, kind: 'fact', evidence: {} },
+        { actor },
+      );
+      const resolved = await repo.open(
+        { newMemoryId: a.id, conflictingMemoryId: b.id, kind: 'fact', evidence: {} },
+        { actor },
+      );
+      await repo.resolve(resolved.id, 'ignore', { actor });
+
+      // Pass all three ids — the (a,b) conflict matches both
+      // sides and must appear under each key with the same
+      // identity, not a duplicate.
+      const map = await repo.listOpenByMemoryIds([a.id, b.id, c.id]);
+      const idsForA = map.get(a.id as unknown as string)?.map((x) => x.id) ?? [];
+      const idsForB = map.get(b.id as unknown as string)?.map((x) => x.id) ?? [];
+      const idsForC = map.get(c.id as unknown as string)?.map((x) => x.id) ?? [];
+
+      expect(new Set(idsForA)).toEqual(new Set([ab.id, ac.id]));
+      expect(idsForB).toEqual([ab.id]);
+      expect(idsForC).toEqual([ac.id]);
+
+      // The resolved conflict is absent from every bucket.
+      for (const bucket of [idsForA, idsForB, idsForC]) {
+        expect(bucket).not.toContain(resolved.id);
+      }
+    });
+
+    it('omits keys that have no open conflicts', async () => {
+      const handle = await fixture();
+      const memoryRepo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const a = await memoryRepo.write(baseInput, { actor });
+      const b = await memoryRepo.write({ ...baseInput, content: 'b' }, { actor });
+      const lonely = await memoryRepo.write({ ...baseInput, content: 'lonely' }, { actor });
+      const repo = createConflictRepository(handle.db, {
+        clock: () => fixedClock as never,
+        conflictIdFactory: counterFactory('C0') as never,
+        eventIdFactory: counterFactory('CE'),
+      });
+      await repo.open(
+        { newMemoryId: b.id, conflictingMemoryId: a.id, kind: 'fact', evidence: {} },
+        { actor },
+      );
+
+      const map = await repo.listOpenByMemoryIds([a.id, lonely.id]);
+      expect(map.has(a.id as unknown as string)).toBe(true);
+      expect(map.has(lonely.id as unknown as string)).toBe(false);
+    });
+  });
 });
