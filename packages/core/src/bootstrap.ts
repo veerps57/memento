@@ -407,6 +407,26 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     })();
   }
 
+  // Optional warmup. Drives the embedder's one-time init (heavy
+  // runtime import, model load, pipeline construction) so the
+  // first user-facing search does not pay the lazy-init cost.
+  // Fire-and-forget — boot does not block on this. When the
+  // startup backfill above is active, both promises race; the
+  // backfill's first `embed()` would have triggered the same
+  // init anyway, so the warmup is a no-op in that case.
+  if (
+    embeddingProvider !== undefined &&
+    embeddingProvider.warmup !== undefined &&
+    configStore.get('embedder.local.warmupOnBoot')
+  ) {
+    const warmup = embeddingProvider.warmup.bind(embeddingProvider);
+    void warmup().catch(() => {
+      // Best-effort: a failed warmup leaves the next real
+      // `embed()` call to surface the underlying error with
+      // its usual context.
+    });
+  }
+
   let closed = false;
   const close = (): void => {
     if (closed) return;

@@ -529,6 +529,13 @@ export const CONFIG_KEYS = {
     description:
       'Directory in which the local embedder caches downloaded model files. `null` resolves to `<XDG_CACHE_HOME>/memento/models` (or the platform equivalent) at startup; otherwise the literal path is used. Pinned at server start.',
   }),
+  'embedder.local.warmupOnBoot': defineKey({
+    schema: z.boolean(),
+    default: true,
+    mutable: false,
+    description:
+      'When true and an EmbeddingProvider that exposes `warmup()` is wired, the server fires a fire-and-forget warmup at boot so the first user-facing query does not pay the lazy-init cost (model dynamic-import + pipeline construction). Disable to keep the embedder strictly demand-loaded.',
+  }),
 
   'embedding.autoEmbed': defineKey({
     schema: z.boolean(),

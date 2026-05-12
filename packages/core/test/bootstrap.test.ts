@@ -621,3 +621,71 @@ describe('createMementoApp — startup embedding backfill', () => {
     expect(withVectors).toHaveLength(2);
   });
 });
+
+describe('createMementoApp — embedder warmup', () => {
+  function makeProviderWithWarmup(): {
+    provider: EmbeddingProvider;
+    warmupCalls: () => number;
+  } {
+    let warmup = 0;
+    return {
+      provider: {
+        model: 'warmup-test',
+        dimension: 3,
+        embed: async () => [0.1, 0.2, 0.3],
+        warmup: async () => {
+          warmup += 1;
+        },
+      },
+      warmupCalls: () => warmup,
+    };
+  }
+
+  it('fires provider.warmup() at boot when embedder.local.warmupOnBoot is true', async () => {
+    const { provider, warmupCalls } = makeProviderWithWarmup();
+    await newApp({ embeddingProvider: provider });
+    // Fire-and-forget — the warmup promise has resolved by now
+    // because the fake completes synchronously, but yield once
+    // to let the microtask queue drain.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(warmupCalls()).toBe(1);
+  });
+
+  it('skips warmup when embedder.local.warmupOnBoot is false', async () => {
+    const { provider, warmupCalls } = makeProviderWithWarmup();
+    await newApp({
+      embeddingProvider: provider,
+      configOverrides: { 'embedder.local.warmupOnBoot': false },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(warmupCalls()).toBe(0);
+  });
+
+  it('is a no-op when the provider does not expose warmup', async () => {
+    // A provider missing the optional method must not break boot.
+    const provider: EmbeddingProvider = {
+      model: 'no-warmup',
+      dimension: 3,
+      embed: async () => [0, 0, 0],
+    };
+    const app = await newApp({ embeddingProvider: provider });
+    expect(app).toBeDefined();
+  });
+
+  it('does not block boot or rethrow when warmup rejects', async () => {
+    // The provider's warmup throws — bootstrap must swallow it
+    // and return a usable app. The next real embed surfaces any
+    // underlying error.
+    const failing: EmbeddingProvider = {
+      model: 'rejecting-warmup',
+      dimension: 3,
+      embed: async () => [0, 0, 0],
+      warmup: async () => {
+        throw new Error('boom');
+      },
+    };
+    const app = await newApp({ embeddingProvider: failing });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(app).toBeDefined();
+  });
+});

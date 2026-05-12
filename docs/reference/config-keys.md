@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 97 keys.
+Total: 98 keys.
 
 ## `decay.*`
 
@@ -116,6 +116,7 @@ Total: 97 keys.
 | `embedder.local.maxInputBytes` | `32768` | no | Maximum byte length of text passed to the local embedder. Inputs above this are truncated to the cap before tokenisation. Pinned at server start because crossing the cap would change retrieval semantics. |
 | `embedder.local.timeoutMs` | `10000` | no | Wallclock timeout for a single embed call, in milliseconds. The embedder rejects with a typed error after this elapses; auto-embed swallows it (the memory is written without a vector and `embedding rebuild` recovers). |
 | `embedder.local.cacheDir` | `null` | no | Directory in which the local embedder caches downloaded model files. `null` resolves to `<XDG_CACHE_HOME>/memento/models` (or the platform equivalent) at startup; otherwise the literal path is used. Pinned at server start. |
+| `embedder.local.warmupOnBoot` | `true` | no | When true and an EmbeddingProvider that exposes `warmup()` is wired, the server fires a fire-and-forget warmup at boot so the first user-facing query does not pay the lazy-init cost (model dynamic-import + pipeline construction). Disable to keep the embedder strictly demand-loaded. |
 
 ## `scrubber.*`
 
