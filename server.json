@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.runmemento/memento",
+  "description": "Local-first, LLM-agnostic memory layer for AI assistants.",
+  "repository": {
+    "url": "https://github.com/veerps57/memento.git",
+    "source": "github"
+  },
+  "websiteUrl": "https://runmemento.com",
+  "version": "0.6.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@psraghuveer/memento",
+      "version": "0.6.2",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "serve",
+          "description": "Required subcommand. Starts the MCP stdio server."
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "MEMENTO_DB",
+          "description": "Absolute path to the SQLite database file. Defaults to $XDG_DATA_HOME/memento/memento.db (typically ~/.local/share/memento/memento.db on POSIX).",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

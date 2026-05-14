@@ -172,7 +172,7 @@ The canonical pre-push command mirrors the CI gate:
 pnpm verify
 ```
 
-`pnpm verify` runs, in order: <!-- verify-chain:begin -->lint → typecheck → build → test → test:e2e → docs:lint → docs:reflow:check → docs:links → docs:check → format:packs:check<!-- verify-chain:end -->. If it passes locally, CI on the same commit should pass too (modulo OS-specific surprises in the matrix).
+`pnpm verify` runs, in order: <!-- verify-chain:begin -->lint → typecheck → build → test → test:e2e → docs:lint → docs:reflow:check → docs:links → docs:check → format:packs:check → server-json:check<!-- verify-chain:end -->. If it passes locally, CI on the same commit should pass too (modulo OS-specific surprises in the matrix).
 
 The individual steps are also available for tighter loops while iterating:
 
