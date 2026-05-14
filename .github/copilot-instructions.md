@@ -39,4 +39,4 @@ If a change cannot be justified against these, it should not land.
 pnpm install && pnpm verify
 ```
 
-`pnpm verify` mirrors the CI gate (<!-- verify-chain:begin -->lint → typecheck → build → test → test:e2e → docs:lint → docs:reflow:check → docs:links → docs:check → format:packs:check<!-- verify-chain:end -->). See `AGENTS.md` for the full pre-PR checklist.
+`pnpm verify` mirrors the CI gate (<!-- verify-chain:begin -->lint → typecheck → build → test → test:e2e → docs:lint → docs:reflow:check → docs:links → docs:check → format:packs:check → server-json:check<!-- verify-chain:end -->). See `AGENTS.md` for the full pre-PR checklist.

@@ -20,11 +20,11 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && vitest run --config vitest.e2e.config.ts",
-    "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm test:e2e && pnpm docs:lint && pnpm docs:reflow:check && pnpm docs:links && pnpm docs:check && pnpm format:packs:check",
+    "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm test:e2e && pnpm docs:lint && pnpm docs:reflow:check && pnpm docs:links && pnpm docs:check && pnpm format:packs:check && pnpm server-json:check",
     "postinstall": "node scripts/ensure-better-sqlite3.mjs",
     "prepare": "lefthook install",
     "changeset": "changeset",
-    "version-packages": "changeset version && biome format --write .",
+    "version-packages": "changeset version && node scripts/sync-server-json.mjs --write && biome format --write .",
     "release": "pnpm build && changeset publish",
     "dev:server": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node packages/cli/dist/cli.js serve",
     "dev:dashboard": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento-dashboard -F @psraghuveer/memento build && node packages/cli/dist/cli.js dashboard --port 3004",
@@ -36,7 +36,9 @@
     "docs:reflow:check": "node scripts/reflow-md.mjs --check",
     "docs:links": "node scripts/check-md-links.mjs",
     "format:packs": "node scripts/format-packs.mjs --write",
-    "format:packs:check": "node scripts/format-packs.mjs --check"
+    "format:packs:check": "node scripts/format-packs.mjs --check",
+    "server-json:sync": "node scripts/sync-server-json.mjs --write",
+    "server-json:check": "node scripts/sync-server-json.mjs --check"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

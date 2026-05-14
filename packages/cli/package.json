@@ -1,6 +1,7 @@
 {
   "name": "@psraghuveer/memento",
   "version": "0.6.2",
+  "mcpName": "com.runmemento/memento",
   "description": "Local-first, LLM-agnostic memory layer for AI assistants. Run via npx @psraghuveer/memento.",
   "keywords": [
     "memento",
