@@ -1,6 +1,6 @@
 # ADR-0022: Publishing to the official MCP Registry
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-14
 - **Deciders:** Memento Authors
 - **Tags:** distribution, registry, ci-cd, publishing
@@ -48,7 +48,7 @@ The Smithery, Glama, PulseMCP, mcp.so, and mcpfinder listings are operational fo
 **Negative — accepted:**
 
 - A persistent TXT record on the apex of `runmemento.com` and a private key in GitHub Secrets are new operational dependencies. The OIDC-on-`io.github.veerps57/*` path would have neither. We accept the cost because the namespace stability is worth more than the simplicity of OIDC, and the runbook makes rotation tractable.
-- Key rotation is non-trivial: generate new keypair, add the new TXT (the registry tries records in order — the stale one must be removed first or verification fails), update `MCP_PRIVATE_KEY`. Publishing pauses during DNS propagation. The runbook in [docs/guides/operations.md](../../docs/guides/operations.md) documents the exact sequence.
+- Key rotation is non-trivial: generate new keypair, add the new TXT (the registry tries records in order — the stale one must be removed first or verification fails), update `MCP_PRIVATE_KEY`. Publishing pauses during DNS propagation. The runbook in [docs/ops/mcp-registry-publishing.md](../ops/mcp-registry-publishing.md) documents the exact sequence.
 - `server.json` is one more file to keep in version sync. We solve this with the version-packages sync script and a CI gate, treating it the same way the auto-generated `docs/reference/` files are treated — committed but mechanically derived.
 - The `mcp-publisher` binary is downloaded at CI time from GitHub releases. A silent upstream change could break publishing without warning. We pin both the release tag and the SHA-256 of the binary to defend against this; pin updates flow through a normal PR with the new SHA recorded.
 
@@ -96,7 +96,7 @@ Have the registry-publish workflow `jq`-rewrite `server.json.version` from the t
 - New `scripts/sync-server-json-version.mjs` invoked from the root [package.json](../../package.json)'s `version-packages` script — reads CLI version, writes `server.json.version` and `server.json.packages[0].version`, runs Biome format on the result.
 - New CI gate in `pnpm verify` (or a small new `docs:check`-style script) that fails on `server.json.version != packages/cli/package.json.version`.
 - New `.github/workflows/mcp-registry-publish.yml` triggered on `push: tags: ['v*']`, downloads a pinned `mcp-publisher` binary verified by SHA-256, authenticates via DNS, publishes.
-- New operations-runbook section in [docs/guides/operations.md](../../docs/guides/operations.md) covering key rotation and first-publish procedure.
+- New maintainer playbook at [docs/ops/mcp-registry-publishing.md](../ops/mcp-registry-publishing.md) covering the publishing pipeline, key rotation, and first-publish procedure.
 - README badge for the registry entry added after the first successful publish.
 
 ## References
