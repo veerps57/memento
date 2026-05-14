@@ -409,6 +409,37 @@ describe('createEmbeddingCommands', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('INVALID_INPUT');
   });
+
+  it('threads `includeNonActive` through to the bulk driver', async () => {
+    // With a forgotten memory in the corpus, default behaviour
+    // skips it (active-only scan); `includeNonActive: true`
+    // picks it up.
+    const { byName, memoryRepo } = await fixture();
+    const active = await writeMemory(byName);
+    const toForget = await writeMemory(byName);
+    await memoryRepo.forget(toForget, null, { actor: ctx.actor });
+
+    const defaultResult = await executeCommand(
+      get(byName, 'embedding.rebuild'),
+      { confirm: true },
+      ctx,
+    );
+    expect(defaultResult.ok).toBe(true);
+    if (!defaultResult.ok) return;
+    expect(defaultResult.value.scanned).toBe(1);
+    expect(defaultResult.value.embedded).toContain(active);
+    expect(defaultResult.value.embedded).not.toContain(toForget);
+
+    const widenedResult = await executeCommand(
+      get(byName, 'embedding.rebuild'),
+      { confirm: true, includeNonActive: true, force: true },
+      ctx,
+    );
+    expect(widenedResult.ok).toBe(true);
+    if (!widenedResult.ok) return;
+    expect(widenedResult.value.scanned).toBe(2);
+    expect(widenedResult.value.embedded).toContain(toForget);
+  });
 });
 
 describe('createCompactCommands', () => {

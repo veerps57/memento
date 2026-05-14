@@ -56,6 +56,21 @@ export interface EmbeddingProvider {
    * @since ADR-0017
    */
   embedBatch?(texts: readonly string[]): Promise<readonly (readonly number[])[]>;
+  /**
+   * Drive any one-time initialisation work (e.g. dynamic-import
+   * of a heavy runtime, model download, pipeline construction)
+   * without producing a vector the caller will use. Optional —
+   * a provider whose first `embed()` is already cheap can omit
+   * this. Implementations MUST be idempotent and safe to fire
+   * concurrently with `embed`: the bootstrap fires it
+   * fire-and-forget after startup so the first user-facing
+   * `embed()` call does not pay the lazy-init cost.
+   *
+   * Errors should not be raised to the bootstrap — the caller
+   * treats warmup as best-effort and lets the next real
+   * `embed()` surface any underlying failure.
+   */
+  warmup?(): Promise<void>;
 }
 
 /**

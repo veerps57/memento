@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 87 keys.
+Total: 98 keys.
 
 ## `decay.*`
 
@@ -87,19 +87,25 @@ Total: 87 keys.
 | `retrieval.fts.tokenizer` | `"unicode61"` | no | FTS5 tokenizer for `memories_fts`. Pinned at server start because changing it requires a reindex. |
 | `retrieval.vector.enabled` | `true` | yes | When true, retrieval unions FTS candidates with cosine-similarity matches over `embedding`. Requires an `EmbeddingProvider` to be wired into the host; `memory.search` returns CONFIG_ERROR when the flag is on and no provider is present. |
 | `retrieval.vector.backend` | `"auto"` | no | Vector search backend selector. `brute-force` is the shipping backend; `auto` resolves to it. |
-| `retrieval.ranker.strategy` | `"linear"` | yes | Ranker strategy. `linear` is the shipping strategy; the enum can be widened without breaking existing configs. |
+| `retrieval.ranker.strategy` | `"linear"` | yes | Ranker strategy. `linear` (default) is the weighted-sum ranker that the shipped `retrieval.ranker.weights.*` defaults are tuned for: FTS and cosine arms are batch-max-normalised to `[0, 1]` and composed with the four baseline arms (confidence, recency, scope, pinned) which are already `[0, 1]`. `rrf` (Reciprocal Rank Fusion) replaces the FTS and cosine arms with rank-based contributions `weight_a / (k + rank_a)` — values at `k=60` are around `0.016` at rank 1, three orders of magnitude smaller than `linear`. Flipping to `rrf` at the shipped weight defaults will heavily suppress the FTS and vector arms relative to the baselines; rescale `retrieval.ranker.weights.fts` / `retrieval.ranker.weights.vector` by roughly `(k + 1)` when switching. Tune `k` via `retrieval.ranker.rrf.k`. |
+| `retrieval.diversity.lambda` | `1` | yes | MMR trade-off between relevance and diversity. `1.0` (default) is a passthrough — preserves the ranker output unchanged. `0.5` balances relevance against diversity. `0.0` is pure diversity, ignoring relevance. Applied as a post-rank reorder over the ranked page; rows without a stored embedding bypass the diversity penalty. |
+| `retrieval.diversity.maxDuplicates` | `5` | yes | Soft ceiling on near-duplicate (cosine ≥ 0.9) candidates admitted to a single page before the MMR pass starts skipping. Compose with `retrieval.diversity.lambda`: lambda controls the per-pick reorder weight, maxDuplicates puts a hard cap on the clustering itself. Default `5` is effectively off for most pages; lower to suppress dense clusters. |
+| `retrieval.ranker.rrf.k` | `60` | yes | Reciprocal-rank fusion dampening constant. Per-arm contribution is `weight_a / (k + rank_a)`. Higher `k` flattens the contribution curve so lower-ranked candidates retain more weight; lower `k` concentrates weight at the top. Literature default is `60`. Only consulted when `retrieval.ranker.strategy = rrf`. |
 | `retrieval.ranker.weights.fts` | `1` | yes | Linear ranker weight on the normalised FTS5 BM25 score. |
 | `retrieval.ranker.weights.vector` | `1` | yes | Linear ranker weight on the normalised cosine-similarity score. |
 | `retrieval.ranker.weights.confidence` | `0.5` | yes | Linear ranker weight on `effectiveConfidence` (storedConfidence × decayFactor). |
 | `retrieval.ranker.weights.recency` | `0.25` | yes | Linear ranker weight on the recency boost. Set to 0 alongside `retrieval.recency.halfLife = 0` to disable. |
 | `retrieval.ranker.weights.scope` | `0.25` | yes | Linear ranker weight on the scope-specificity boost (more-specific scopes rank higher when the query spans a layered set). |
 | `retrieval.ranker.weights.pinned` | `0.25` | yes | Linear ranker weight added when a memory is pinned. |
+| `retrieval.ranker.weights.supersedingMultiplier` | `0.5` | yes | Multiplier applied to a superseded memory's final score when its successor (the memory pointed to by `supersededBy`) is co-present in the same result set. `1.0` disables demotion; `0.0` collapses superseded predecessors to zero score. Default `0.5` keeps the chain visible while ranking the active head higher. Only fires when callers opt into superseded retrieval via `memory.search`'s `includeStatuses: ["active", "superseded"]`; default search behaviour (active-only) is unaffected. |
 | `retrieval.recency.halfLife` | `2592000000` | yes | Half-life of the recency boost, in milliseconds. The boost decays as 0.5 ^ ((now − lastConfirmedAt) / halfLife). Set to 0 to disable the boost regardless of weight. |
 | `retrieval.scopeBoost` | `0.1` | yes | Per-level boost applied to scope-specificity. The most-specific scope in the resolved layer set scores N × scopeBoost; the least-specific scores 0. |
 | `retrieval.search.defaultLimit` | `20` | yes | Default result count for `memory.search` when no limit is supplied. |
 | `retrieval.search.maxLimit` | `200` | yes | Hard upper bound on `memory.search` result count. |
 | `retrieval.candidate.ftsLimit` | `500` | yes | Maximum FTS5 candidates fetched per query before ranking. Keeps the ranker fast at the cost of recall on very-frequent terms. Common-word queries (`the`, `is`, `and`, etc.) match many memories at low BM25 — the cap keeps p95 latency flat. Lower it (e.g. 200) for faster common-word queries; raise it (e.g. 1000+) for richer recall on broad searches at the cost of more ranker work per call. |
 | `retrieval.candidate.vectorLimit` | `200` | yes | Maximum vector candidates fetched per query before ranking. Only consulted when `retrieval.vector.enabled` is true. |
+| `retrieval.candidate.ftsMinScore` | `0` | yes | Minimum absolute BM25 score below which an FTS-only candidate is dropped from the union before ranking. SQLite FTS5 reports BM25 as a negative number where more-negative = more-relevant; this threshold compares against `\|bm25\|`. Candidates that also match the vector arm above its floor survive regardless. Default `0` preserves prior behaviour (no filtering). |
+| `retrieval.candidate.vectorMinCosine` | `-1` | yes | Minimum cosine similarity below which a vector-only candidate is dropped from the union before ranking. Cosine is bounded in `[-1, 1]`; raise to ~0.85 to suppress the paraphrase-noise floor that pollutes top-K on neutral queries. Candidates that also match the FTS arm above its floor survive regardless. Default `-1` preserves prior behaviour (no filtering). |
 
 ## `embedder.*`
 
@@ -110,6 +116,7 @@ Total: 87 keys.
 | `embedder.local.maxInputBytes` | `32768` | no | Maximum byte length of text passed to the local embedder. Inputs above this are truncated to the cap before tokenisation. Pinned at server start because crossing the cap would change retrieval semantics. |
 | `embedder.local.timeoutMs` | `10000` | no | Wallclock timeout for a single embed call, in milliseconds. The embedder rejects with a typed error after this elapses; auto-embed swallows it (the memory is written without a vector and `embedding rebuild` recovers). |
 | `embedder.local.cacheDir` | `null` | no | Directory in which the local embedder caches downloaded model files. `null` resolves to `<XDG_CACHE_HOME>/memento/models` (or the platform equivalent) at startup; otherwise the literal path is used. Pinned at server start. |
+| `embedder.local.warmupOnBoot` | `true` | no | When true and an EmbeddingProvider that exposes `warmup()` is wired, the server fires a fire-and-forget warmup at boot so the first user-facing query does not pay the lazy-init cost (model dynamic-import + pipeline construction). Disable to keep the embedder strictly demand-loaded. |
 
 ## `scrubber.*`
 
@@ -141,6 +148,7 @@ Total: 87 keys.
 | `safety.memoryContentMaxBytes` | `65536` | yes | Maximum byte length of `memory.write` (and supersede / extract) content. Inputs exceeding this are rejected with `INVALID_INPUT` before the scrubber or storage layer runs. |
 | `safety.summaryMaxBytes` | `2048` | yes | Maximum byte length of `memory.write` summary. Summaries are one-line listings; the cap reflects that intent. |
 | `safety.tagMaxCount` | `64` | yes | Maximum number of tags accepted on a single `memory.write`. Each tag is independently capped at 64 characters by `TagSchema`. |
+| `safety.requireTopicLine` | `true` | yes | When `true` (default), reject `memory.write`, `memory.write_many`, `memory.supersede`, and `memory.extract` calls whose `kind` is `preference` or `decision` and whose content's first non-blank line does not match the `topic: value` (or `topic = value`) convention. The rule mirrors the conflict detector's preference/decision parser — content that bypasses detection at retrieval time is rejected at write time. Flip to `false` to keep the historical permissive shape (at the cost of silent conflict-detection misses). |
 
 ## `extraction.*`
 
@@ -167,6 +175,9 @@ Total: 87 keys.
 | `context.ranker.weights.scope` | `2` | yes | Context ranker weight on scope match (strong: prefer local context). |
 | `context.ranker.weights.pinned` | `3` | yes | Context ranker weight for pinned memories (always surface). |
 | `context.ranker.weights.frequency` | `0.5` | yes | Context ranker weight for confirmation frequency (memories confirmed often rank higher). |
+| `context.hint.uniformSpreadThreshold` | `0.05` | yes | When `memory.context` returns a page whose top-bottom score spread is below this value AND the page has at least two results, the response carries a hint suggesting the caller pass a `scopes` filter or call `memory.search` with a topic for a sharper signal. Set to `0` to disable. |
+| `context.diversity.lambda` | `0.7` | yes | MMR trade-off for `memory.context` between relevance and diversity. `1.0` is a passthrough — preserves the ranker output unchanged. `0.7` (default) gently breaks near-duplicate clusters so the session-start survey covers more topics. `0.0` is pure diversity. Memories without a stored embedding bypass the diversity penalty. |
+| `context.diversity.maxDuplicates` | `5` | yes | Soft ceiling on near-duplicate (cosine ≥ 0.9) candidates admitted to a `memory.context` page before the MMR pass starts skipping. Mirrors `retrieval.diversity.maxDuplicates` for the context surface. |
 
 ## `export.*`
 

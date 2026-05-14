@@ -86,12 +86,20 @@ const ConflictRefSchema = z
   })
   .strict();
 
+// Projection mode shapes the wire response: `full` carries the
+// score breakdown and the conflicts array; `summary` drops both
+// to save ~30-40% bytes on a typical top-10 page while keeping
+// the memory body intact. `breakdown` and `conflicts` are
+// `.optional()` rather than split into separate union schemas so
+// existing consumers that ignore `projection` see the same TS
+// surface they always have (the fields are populated in the
+// `full` default).
 const SearchResultSchema = z
   .object({
     memory: MemoryViewSchema,
     score: z.number(),
-    breakdown: ScoreBreakdownSchema,
-    conflicts: z.array(ConflictRefSchema),
+    breakdown: ScoreBreakdownSchema.optional(),
+    conflicts: z.array(ConflictRefSchema).optional(),
   })
   .strict();
 
@@ -143,7 +151,7 @@ export function createMemorySearchCommand(
     outputSchema: MemorySearchOutputSchema,
     metadata: {
       description:
-        'Search memories by free text using FTS5 + the configured linear ranker.\n\nExamples:\n\n- Simple: `{"text":"database migration"}`\n- With filters: `{"text":"auth","kinds":["decision","fact"],"limit":5}`',
+        'Search memories by free text using FTS5 + the configured linear ranker.\n\nQuery text is treated as a term bag: FTS5 syntax (AND / OR / NOT / NEAR / phrase / prefix) is NOT parsed — sigils are stripped and tokens are ranked via BM25 + vector similarity.\n\nEvery result\'s memory carries an `embeddingStatus` field (`"present"` | `"pending"` | `"disabled"`) so a vector score of 0 can be distinguished between "the row has no embedding yet" (`pending`) and "the content was not similar" (`present`).\n\nExamples:\n\n- Simple: `{"text":"database migration"}`\n- With filters: `{"text":"auth","kinds":["decision","fact"],"limit":5}`',
     },
     handler: async (input, ctx) => {
       try {
@@ -160,21 +168,36 @@ export function createMemorySearchCommand(
             ...(input.limit !== undefined ? { limit: input.limit } : {}),
             ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
             ...(input.now !== undefined ? { now: input.now } : {}),
+            ...(input.createdAtAfter !== undefined ? { createdAtAfter: input.createdAtAfter } : {}),
+            ...(input.createdAtBefore !== undefined
+              ? { createdAtBefore: input.createdAtBefore }
+              : {}),
+            ...(input.confirmedAfter !== undefined ? { confirmedAfter: input.confirmedAfter } : {}),
+            ...(input.confirmedBefore !== undefined
+              ? { confirmedBefore: input.confirmedBefore }
+              : {}),
           },
           { actor: ctx.actor },
         );
         const annotated = await annotateWithConflicts(deps, page);
         const stripEmbedding = !(input.includeEmbedding === true);
+        // Default is `summary` — lean shape for the common LLM-
+        // agent / CLI consumer. Callers that need ranking
+        // diagnostics opt into `full`.
+        const projection = input.projection ?? 'summary';
         return ok({
           ...annotated,
           results: annotated.results.map((r) => {
             const embeddingStatus = computeEmbeddingStatus(r.memory, deps.configStore);
-            return {
-              ...r,
-              memory: stripEmbedding
-                ? { ...r.memory, embedding: null, embeddingStatus }
-                : { ...r.memory, embeddingStatus },
-            };
+            const memory = stripEmbedding
+              ? { ...r.memory, embedding: null, embeddingStatus }
+              : { ...r.memory, embeddingStatus };
+            if (projection === 'full') {
+              return { ...r, memory };
+            }
+            // `summary` drops the `breakdown` and `conflicts`
+            // fields entirely from the wire response.
+            return { memory, score: r.score };
           }),
         });
       } catch (caught) {
@@ -194,11 +217,10 @@ export function createMemorySearchCommand(
  *
  * When the flag is off or no `conflictRepository` was wired,
  * every result is annotated with `conflicts: []` so the field
- * shape is stable. When on, we issue one `list` call per result
- * memory — typical search pages are small (≤ 50) and the
- * `conflicts(memory_id)` indexes hit; if profiling later shows
- * this is hot, a batch filter can be added without touching
- * this call site.
+ * shape is stable. When on, we issue **one** batched lookup
+ * (`listOpenByMemoryIds`) for the whole page instead of N
+ * per-result queries — the indexes are the same but the
+ * round-trip count is constant.
  */
 type AnnotatedResult = {
   memory: MemoryView;
@@ -236,18 +258,18 @@ async function annotateWithConflicts(
     };
   }
 
-  const enriched = await Promise.all(
-    page.results.map(async (r): Promise<AnnotatedResult> => {
-      const open = await repo.list({ open: true, memoryId: r.memory.id });
-      const conflicts = open.map((c) => toConflictRef(c, r.memory.id));
-      return {
-        memory: projectMemoryView(r.memory, redact),
-        score: r.score,
-        breakdown: r.breakdown,
-        conflicts,
-      };
-    }),
-  );
+  const memoryIds = page.results.map((r) => r.memory.id);
+  const byMemoryId = await repo.listOpenByMemoryIds(memoryIds);
+  const enriched = page.results.map((r): AnnotatedResult => {
+    const open = byMemoryId.get(r.memory.id as unknown as string) ?? [];
+    const conflicts = open.map((c) => toConflictRef(c, r.memory.id));
+    return {
+      memory: projectMemoryView(r.memory, redact),
+      score: r.score,
+      breakdown: r.breakdown,
+      conflicts,
+    };
+  });
   return { ...page, results: enriched };
 }
 

@@ -59,6 +59,18 @@ export interface ReembedOptions {
    * passes on a clean corpus.
    */
   readonly force?: boolean;
+  /**
+   * If `true`, widen the scan beyond `active` to also include
+   * `forgotten` and `archived` memories. Default `false` —
+   * active-only matches the historical bulk-rebuild scope and
+   * keeps boot-time backfill cheap. Operators flip this when
+   * they want vector retrieval over a status the caller opted
+   * into via `includeStatuses` (audit forensics, debug
+   * tooling). The single-row `MemoryRepository.setEmbedding`
+   * accepts all three statuses regardless; this flag is only
+   * about which rows the bulk driver scans.
+   */
+  readonly includeNonActive?: boolean;
 }
 
 export interface ReembedSkip {
@@ -79,7 +91,21 @@ export async function reembedAll(
   options: ReembedOptions,
 ): Promise<ReembedResult> {
   const limit = clampBatchSize(options.batchSize);
-  const memories = await repo.list({ status: 'active', limit });
+  // Active-only by default. `includeNonActive` widens the scan
+  // by issuing parallel `list` calls per status and merging the
+  // results. The combined cap stays at `batchSize` so the bulk
+  // driver doesn't accidentally fan out under the opt-in.
+  let memories: Memory[];
+  if (options.includeNonActive) {
+    const [active, forgotten, archived] = await Promise.all([
+      repo.list({ status: 'active', limit }),
+      repo.list({ status: 'forgotten', limit }),
+      repo.list({ status: 'archived', limit }),
+    ]);
+    memories = [...active, ...forgotten, ...archived].slice(0, limit);
+  } else {
+    memories = await repo.list({ status: 'active', limit });
+  }
 
   const embedded: MemoryId[] = [];
   const skipped: ReembedSkip[] = [];

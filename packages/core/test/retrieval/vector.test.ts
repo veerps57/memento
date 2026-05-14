@@ -283,4 +283,103 @@ describe('searchVector', () => {
     });
     expect(empty).toEqual([]);
   });
+
+  describe('temporal filters', () => {
+    // `writeWithEmbedding` issues two repo calls (`write`,
+    // `setEmbedding`) and each one reads the clock, so a single
+    // logical write consumes two consecutive clock entries. The
+    // helper duplicates each timestamp pair-wise so a memory's
+    // createdAt and lastConfirmedAt land on the same instant.
+    function pairwise(stamps: readonly string[]): string[] {
+      return stamps.flatMap((s) => [s, s]);
+    }
+
+    it('filters out rows older than createdAtAfter', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = pairwise(['2025-01-01T00:00:00.000Z', '2025-12-01T00:00:00.000Z']);
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      await writeWithEmbedding(repo, 'old', [1, 0, 0]);
+      const newer = await writeWithEmbedding(repo, 'new', [1, 0, 0]);
+
+      const hits = await searchVector(handle.db, {
+        queryVector: [1, 0, 0],
+        provider: { model: TEST_MODEL, dimension: TEST_DIM },
+        limit: 10,
+        statuses: ['active'],
+        createdAtAfter: '2025-06-01T00:00:00.000Z' as never,
+      });
+      expect(hits.map((h) => h.id)).toEqual([newer.id]);
+    });
+
+    it('createdAtBefore is exclusive', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = pairwise(['2025-01-01T00:00:00.000Z', '2025-06-01T00:00:00.000Z']);
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const older = await writeWithEmbedding(repo, 'older', [1, 0, 0]);
+      await writeWithEmbedding(repo, 'cutoff', [1, 0, 0]);
+
+      const hits = await searchVector(handle.db, {
+        queryVector: [1, 0, 0],
+        provider: { model: TEST_MODEL, dimension: TEST_DIM },
+        limit: 10,
+        statuses: ['active'],
+        createdAtBefore: '2025-06-01T00:00:00.000Z' as never,
+      });
+      expect(hits.map((h) => h.id)).toEqual([older.id]);
+    });
+
+    it('confirmedAfter narrows by last_confirmed_at', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = pairwise(['2025-01-01T00:00:00.000Z', '2025-12-01T00:00:00.000Z']);
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      await writeWithEmbedding(repo, 'old', [1, 0, 0]);
+      const newer = await writeWithEmbedding(repo, 'new', [1, 0, 0]);
+
+      const hits = await searchVector(handle.db, {
+        queryVector: [1, 0, 0],
+        provider: { model: TEST_MODEL, dimension: TEST_DIM },
+        limit: 10,
+        statuses: ['active'],
+        confirmedAfter: '2025-06-01T00:00:00.000Z' as never,
+      });
+      expect(hits.map((h) => h.id)).toEqual([newer.id]);
+    });
+
+    it('confirmedBefore is exclusive', async () => {
+      const handle = await fixture();
+      let i = 0;
+      const clocks = pairwise(['2025-01-01T00:00:00.000Z', '2025-06-01T00:00:00.000Z']);
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const older = await writeWithEmbedding(repo, 'older', [1, 0, 0]);
+      await writeWithEmbedding(repo, 'cutoff', [1, 0, 0]);
+
+      const hits = await searchVector(handle.db, {
+        queryVector: [1, 0, 0],
+        provider: { model: TEST_MODEL, dimension: TEST_DIM },
+        limit: 10,
+        statuses: ['active'],
+        confirmedBefore: '2025-06-01T00:00:00.000Z' as never,
+      });
+      expect(hits.map((h) => h.id)).toEqual([older.id]);
+    });
+  });
 });

@@ -310,11 +310,45 @@ export const CONFIG_KEYS = {
       'Vector search backend selector. `brute-force` is the shipping backend; `auto` resolves to it.',
   }),
   'retrieval.ranker.strategy': defineKey({
-    schema: z.enum(['linear']),
+    schema: z.enum(['linear', 'rrf']),
     default: 'linear',
     mutable: true,
     description:
-      'Ranker strategy. `linear` is the shipping strategy; the enum can be widened without breaking existing configs.',
+      'Ranker strategy. `linear` (default) is the weighted-sum ranker that the shipped `retrieval.ranker.weights.*` defaults are tuned for: FTS and cosine arms are batch-max-normalised to `[0, 1]` and composed with the four baseline arms (confidence, recency, scope, pinned) which are already `[0, 1]`. `rrf` (Reciprocal Rank Fusion) replaces the FTS and cosine arms with rank-based contributions `weight_a / (k + rank_a)` — values at `k=60` are around `0.016` at rank 1, three orders of magnitude smaller than `linear`. Flipping to `rrf` at the shipped weight defaults will heavily suppress the FTS and vector arms relative to the baselines; rescale `retrieval.ranker.weights.fts` / `retrieval.ranker.weights.vector` by roughly `(k + 1)` when switching. Tune `k` via `retrieval.ranker.rrf.k`.',
+  }),
+  // Post-rank diversity pass via Maximal Marginal Relevance.
+  // Re-orders the top-K so successive picks penalise candidates
+  // similar to already-picked rows. `lambda = 1` is a passthrough
+  // (default — preserves prior ranking on upgrade); `lambda = 0`
+  // is pure diversity, ignoring relevance. The pass needs the
+  // candidate embeddings already loaded by the vector arm; rows
+  // without an embedding bypass the diversity penalty and ride
+  // the relevance score alone.
+  'retrieval.diversity.lambda': defineKey({
+    schema: Probability,
+    default: 1,
+    mutable: true,
+    description:
+      'MMR trade-off between relevance and diversity. `1.0` (default) is a passthrough — preserves the ranker output unchanged. `0.5` balances relevance against diversity. `0.0` is pure diversity, ignoring relevance. Applied as a post-rank reorder over the ranked page; rows without a stored embedding bypass the diversity penalty.',
+  }),
+  'retrieval.diversity.maxDuplicates': defineKey({
+    schema: PositiveInt,
+    default: 5,
+    mutable: true,
+    description:
+      'Soft ceiling on near-duplicate (cosine ≥ 0.9) candidates admitted to a single page before the MMR pass starts skipping. Compose with `retrieval.diversity.lambda`: lambda controls the per-pick reorder weight, maxDuplicates puts a hard cap on the clustering itself. Default `5` is effectively off for most pages; lower to suppress dense clusters.',
+  }),
+  'retrieval.ranker.rrf.k': defineKey({
+    // RRF dampening constant. Higher values flatten the
+    // contribution curve (more weight on lower-ranked
+    // candidates); lower values concentrate weight at the top.
+    // 60 is the literature convention (Cormack et al. 2009 and
+    // every subsequent re-implementation).
+    schema: z.number().int().positive(),
+    default: 60,
+    mutable: true,
+    description:
+      'Reciprocal-rank fusion dampening constant. Per-arm contribution is `weight_a / (k + rank_a)`. Higher `k` flattens the contribution curve so lower-ranked candidates retain more weight; lower `k` concentrates weight at the top. Literature default is `60`. Only consulted when `retrieval.ranker.strategy = rrf`.',
   }),
   'retrieval.ranker.weights.fts': defineKey({
     schema: z.number().min(0).finite(),
@@ -353,6 +387,13 @@ export const CONFIG_KEYS = {
     default: 0.25,
     mutable: true,
     description: 'Linear ranker weight added when a memory is pinned.',
+  }),
+  'retrieval.ranker.weights.supersedingMultiplier': defineKey({
+    schema: Probability,
+    default: 0.5,
+    mutable: true,
+    description:
+      'Multiplier applied to a superseded memory\'s final score when its successor (the memory pointed to by `supersededBy`) is co-present in the same result set. `1.0` disables demotion; `0.0` collapses superseded predecessors to zero score. Default `0.5` keeps the chain visible while ranking the active head higher. Only fires when callers opt into superseded retrieval via `memory.search`\'s `includeStatuses: ["active", "superseded"]`; default search behaviour (active-only) is unaffected.',
   }),
   'retrieval.recency.halfLife': defineKey({
     schema: z.number().min(0).finite(),
@@ -398,6 +439,39 @@ export const CONFIG_KEYS = {
     mutable: true,
     description:
       'Maximum vector candidates fetched per query before ranking. Only consulted when `retrieval.vector.enabled` is true.',
+  }),
+  // Per-arm minimum-score floors. The candidate union is built
+  // by `retrieval.candidate.ftsLimit` and
+  // `retrieval.candidate.vectorLimit` regardless of how strong
+  // each individual hit is. These two keys add a second gate:
+  // candidates whose every arm is below its configured floor
+  // are dropped before ranking. A candidate that matches BOTH
+  // arms survives if either is above its floor — the cut fires
+  // only when every signal the candidate contributed is weak.
+  //
+  // Defaults are no-ops:
+  //   - `ftsMinScore = 0` keeps every FTS hit (|bm25| is always
+  //     non-negative).
+  //   - `vectorMinCosine = -1` keeps every vector hit (cosine
+  //     is bounded in [-1, 1]).
+  //
+  // Operators raise these to suppress weak-arm candidates that
+  // pollute the top-K — typical paraphrase queries score every
+  // unrelated row at cosine 0.7-0.85, so a `vectorMinCosine`
+  // around 0.85 trims that tail without affecting strong hits.
+  'retrieval.candidate.ftsMinScore': defineKey({
+    schema: z.number().min(0).finite(),
+    default: 0,
+    mutable: true,
+    description:
+      'Minimum absolute BM25 score below which an FTS-only candidate is dropped from the union before ranking. SQLite FTS5 reports BM25 as a negative number where more-negative = more-relevant; this threshold compares against `|bm25|`. Candidates that also match the vector arm above its floor survive regardless. Default `0` preserves prior behaviour (no filtering).',
+  }),
+  'retrieval.candidate.vectorMinCosine': defineKey({
+    schema: z.number().min(-1).max(1),
+    default: -1,
+    mutable: true,
+    description:
+      'Minimum cosine similarity below which a vector-only candidate is dropped from the union before ranking. Cosine is bounded in `[-1, 1]`; raise to ~0.85 to suppress the paraphrase-noise floor that pollutes top-K on neutral queries. Candidates that also match the FTS arm above its floor survive regardless. Default `-1` preserves prior behaviour (no filtering).',
   }),
 
   // — Embedder —
@@ -454,6 +528,13 @@ export const CONFIG_KEYS = {
     mutable: false,
     description:
       'Directory in which the local embedder caches downloaded model files. `null` resolves to `<XDG_CACHE_HOME>/memento/models` (or the platform equivalent) at startup; otherwise the literal path is used. Pinned at server start.',
+  }),
+  'embedder.local.warmupOnBoot': defineKey({
+    schema: z.boolean(),
+    default: true,
+    mutable: false,
+    description:
+      'When true and an EmbeddingProvider that exposes `warmup()` is wired, the server fires a fire-and-forget warmup at boot so the first user-facing query does not pay the lazy-init cost (model dynamic-import + pipeline construction). Disable to keep the embedder strictly demand-loaded.',
   }),
 
   'embedding.autoEmbed': defineKey({
@@ -639,6 +720,23 @@ export const CONFIG_KEYS = {
     description:
       'Maximum number of tags accepted on a single `memory.write`. Each tag is independently capped at 64 characters by `TagSchema`.',
   }),
+  // Per `docs/architecture/conflict-detection.md`, the
+  // `preference` and `decision` policies parse the first line
+  // of a memory's `content` as `topic: value` (or
+  // `topic = value`). Content that lacks the topic-line anchor
+  // silently bypasses conflict detection — two contradictory
+  // preferences coexist without surfacing as a conflict. This
+  // opt-in switch rejects such writes at the input boundary so
+  // the failure mode is loud rather than silent. Off by default
+  // because today's permissive shape is widely depended upon by
+  // assistants that have not yet learned the convention.
+  'safety.requireTopicLine': defineKey({
+    schema: z.boolean(),
+    default: true,
+    mutable: true,
+    description:
+      "When `true` (default), reject `memory.write`, `memory.write_many`, `memory.supersede`, and `memory.extract` calls whose `kind` is `preference` or `decision` and whose content's first non-blank line does not match the `topic: value` (or `topic = value`) convention. The rule mirrors the conflict detector's preference/decision parser — content that bypasses detection at retrieval time is rejected at write time. Flip to `false` to keep the historical permissive shape (at the cost of silent conflict-detection misses).",
+  }),
 
   // — Extraction —
   // Auto-extraction pipeline per design proposal
@@ -763,6 +861,43 @@ export const CONFIG_KEYS = {
     mutable: true,
     description:
       'Context ranker weight for confirmation frequency (memories confirmed often rank higher).',
+  }),
+  // Near-uniform-ranking hint. When `memory.context` returns a
+  // page whose top-bottom score spread is below this threshold,
+  // the response carries a hint suggesting the caller pass a
+  // scope or call `memory.search` with a topic. The signal
+  // helps an assistant recognise "the ranker has no opinion
+  // here — everything's roughly tied" and act on it rather than
+  // treating the order as meaningful.
+  'context.hint.uniformSpreadThreshold': defineKey({
+    schema: z.number().min(0).finite(),
+    default: 0.05,
+    mutable: true,
+    description:
+      'When `memory.context` returns a page whose top-bottom score spread is below this value AND the page has at least two results, the response carries a hint suggesting the caller pass a `scopes` filter or call `memory.search` with a topic for a sharper signal. Set to `0` to disable.',
+  }),
+  // Context-side diversity. Distinct namespace from
+  // `retrieval.diversity.*` so the defaults can differ:
+  // `memory.context` is the session-start survey surface where
+  // distinctness is part of the contract (the caller wants
+  // varied topics, not five paraphrases of the same preference).
+  // `memory.search` is a query-driven surface where strict
+  // relevance is usually the right answer. So context defaults
+  // to gentle diversity (`lambda = 0.7`) and search defaults to
+  // passthrough (`lambda = 1`).
+  'context.diversity.lambda': defineKey({
+    schema: Probability,
+    default: 0.7,
+    mutable: true,
+    description:
+      'MMR trade-off for `memory.context` between relevance and diversity. `1.0` is a passthrough — preserves the ranker output unchanged. `0.7` (default) gently breaks near-duplicate clusters so the session-start survey covers more topics. `0.0` is pure diversity. Memories without a stored embedding bypass the diversity penalty.',
+  }),
+  'context.diversity.maxDuplicates': defineKey({
+    schema: PositiveInt,
+    default: 5,
+    mutable: true,
+    description:
+      'Soft ceiling on near-duplicate (cosine ≥ 0.9) candidates admitted to a `memory.context` page before the MMR pass starts skipping. Mirrors `retrieval.diversity.maxDuplicates` for the context surface.',
   }),
 
   // — Export —

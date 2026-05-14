@@ -26,6 +26,9 @@ import {
   ok,
 } from '@psraghuveer/memento-schema';
 import type { ConfigStore } from '../../config/index.js';
+import { parseKeyValue } from '../../conflict/index.js';
+
+const TOPIC_LINE_KINDS: readonly string[] = ['preference', 'decision'];
 
 export interface SafetyCheckInput {
   readonly content: string;
@@ -148,6 +151,45 @@ export function rationaleFromKind(kind: {
     return kind.rationale ?? null;
   }
   return null;
+}
+
+/**
+ * Enforce the topic-line convention for `preference` and
+ * `decision` writes when `safety.requireTopicLine` is enabled.
+ * Returns `Ok(undefined)` when the rule does not apply (config
+ * off, or kind is not preference/decision); otherwise rejects
+ * with `INVALID_INPUT` pointing the caller at the canonical
+ * shape.
+ *
+ * The validator reuses the conflict detector's
+ * {@link parseKeyValue} parser so the write-time gate and the
+ * retrieval-time conflict check agree on what counts as a
+ * topic-line. If the parser drifts, both sides drift together.
+ */
+export function enforceTopicLine(
+  op: string,
+  input: {
+    readonly kind: { readonly type: string };
+    readonly content: string;
+  },
+  configStore: ConfigStore,
+  index?: number,
+): Result<undefined> {
+  if (!configStore.get('safety.requireTopicLine')) {
+    return ok(undefined);
+  }
+  if (!TOPIC_LINE_KINDS.includes(input.kind.type)) {
+    return ok(undefined);
+  }
+  if (parseKeyValue(input.content) !== null) {
+    return ok(undefined);
+  }
+  const at = index !== undefined ? ` at items[${index}]` : '';
+  return err<MementoError>({
+    code: 'INVALID_INPUT',
+    message: `${op}: ${input.kind.type} content${at} must start with a \`topic: value\` (or \`topic = value\`) line followed by free prose. The conflict detector parses the first line as the topic — content without it silently bypasses detection. Example: \`node-package-manager: pnpm\\n\\nUser prefers pnpm over npm.\``,
+    details: { kind: input.kind.type, field: 'content' },
+  });
 }
 
 // Re-export `Scope` so callers don't need a second import line

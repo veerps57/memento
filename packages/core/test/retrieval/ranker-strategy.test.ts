@@ -18,9 +18,9 @@ import type { z } from 'zod';
 
 describe('retrieval.ranker.strategy registry/pipeline parity', () => {
   it('exposes exactly the strategies the pipeline implements', () => {
-    // Pipeline implements: 'linear'. Update this list and add a
-    // case in `pipeline.ts#rankByStrategy` together.
-    const implemented = ['linear'] as const;
+    // Pipeline implements: 'linear', 'rrf'. Update this list and
+    // add a case in `pipeline.ts#rankByStrategy` together.
+    const implemented = ['linear', 'rrf'] as const;
     const schema = CONFIG_KEYS['retrieval.ranker.strategy'].schema as z.ZodEnum<
       ['linear', ...string[]]
     >;

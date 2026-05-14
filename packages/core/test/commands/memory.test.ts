@@ -212,6 +212,60 @@ describe('createMemoryCommands', () => {
       expect(result.error.code).toBe('INVALID_INPUT');
       expect(result.error.message).toMatch(/safety\.summaryMaxBytes/u);
     });
+
+    it('rejects preference content lacking a topic line when safety.requireTopicLine is on', async () => {
+      const { byName } = await fixture({
+        configOverrides: { 'safety.requireTopicLine': true },
+      });
+      const cmd = get(byName, 'memory.write');
+      const result = await executeCommand(
+        cmd,
+        {
+          ...writeInput,
+          kind: { type: 'preference' },
+          content: 'User prefers pnpm to npm.',
+        },
+        ctx,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/topic:/);
+    });
+
+    it('accepts preference content WITH a topic line when safety.requireTopicLine is on', async () => {
+      const { byName } = await fixture({
+        configOverrides: { 'safety.requireTopicLine': true },
+      });
+      const cmd = get(byName, 'memory.write');
+      const result = await executeCommand(
+        cmd,
+        {
+          ...writeInput,
+          kind: { type: 'preference' },
+          content: 'node-package-manager: pnpm\n\nUser prefers pnpm to npm.',
+        },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+    });
+
+    it('allows non-preference / non-decision content without a topic line', async () => {
+      const { byName } = await fixture({
+        configOverrides: { 'safety.requireTopicLine': true },
+      });
+      const cmd = get(byName, 'memory.write');
+      const result = await executeCommand(
+        cmd,
+        {
+          ...writeInput,
+          kind: { type: 'fact' },
+          content: 'Memento uses SQLite for storage.',
+        },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+    });
   });
 
   describe('memory.read / memory.list', () => {
@@ -561,6 +615,38 @@ describe('createMemoryCommands', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.code).toBe('NOT_FOUND');
+    });
+
+    it('rejects preference content lacking a topic line when safety.requireTopicLine is on', async () => {
+      const { byName } = await fixture({
+        configOverrides: { 'safety.requireTopicLine': true },
+      });
+      const seed = await executeCommand(
+        get(byName, 'memory.write'),
+        {
+          ...writeInput,
+          kind: { type: 'preference' },
+          content: 'node-package-manager: pnpm\n\nUser prefers pnpm.',
+        },
+        ctx,
+      );
+      if (!seed.ok) throw new Error('seed failed');
+      const result = await executeCommand(
+        get(byName, 'memory.supersede'),
+        {
+          oldId: seed.value.id,
+          next: {
+            ...writeInput,
+            kind: { type: 'preference' },
+            content: 'No topic line here.',
+          },
+        },
+        ctx,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/topic:/);
     });
   });
 
@@ -1063,6 +1149,42 @@ describe('createMemoryCommands', () => {
         expect(result.error.code).toBe('INVALID_INPUT');
       }
     });
+
+    it('filters by since / until at the command boundary', async () => {
+      const handle = openDatabase({ path: ':memory:' });
+      handles.push(handle);
+      await migrateToLatest(handle.db, MIGRATIONS);
+      let i = 0;
+      const clocks = [
+        '2025-01-01T00:00:00.000Z',
+        '2025-06-01T00:00:00.000Z',
+        '2025-12-01T00:00:00.000Z',
+      ];
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => clocks[i++] as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const eventRepository = createEventRepository(handle.db);
+      const commands = createMemoryCommands(repo, undefined, { eventRepository });
+      const byName = new Map(commands.map((c) => [c.name, c]));
+
+      await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      await executeCommand(get(byName, 'memory.write'), { ...writeInput, content: 'mid' }, ctx);
+      await executeCommand(get(byName, 'memory.write'), { ...writeInput, content: 'late' }, ctx);
+
+      const halfOpen = await executeCommand(
+        get(byName, 'memory.events'),
+        {
+          since: '2025-06-01T00:00:00.000Z',
+          until: '2025-12-01T00:00:00.000Z',
+        },
+        ctx,
+      );
+      if (!halfOpen.ok) throw new Error('expected ok');
+      expect(halfOpen.value).toHaveLength(1);
+      expect(String(halfOpen.value[0]?.at)).toBe('2025-06-01T00:00:00.000Z');
+    });
   });
 
   // Confirm-gate (ADR-0012). `memory.forget` and
@@ -1546,6 +1668,49 @@ describe('createMemoryCommands', () => {
       if (result.ok) return;
       expect(result.error.code).toBe('INVALID_INPUT');
 
+      const all = await repo.list({});
+      expect(all).toHaveLength(0);
+    });
+
+    it('rejects the batch when any preference item lacks a topic line under safety.requireTopicLine', async () => {
+      const handle = openDatabase({ path: ':memory:' });
+      handles.push(handle);
+      await migrateToLatest(handle.db, MIGRATIONS);
+      const repo = createMemoryRepository(handle.db, {
+        clock: () => fixedClock as never,
+        memoryIdFactory: counterFactory('M0') as never,
+        eventIdFactory: counterFactory('E0'),
+      });
+      const eventRepository = createEventRepository(handle.db);
+      const commands = createMemoryCommands(repo, undefined, {
+        eventRepository,
+        configStore: createConfigStore({ 'safety.requireTopicLine': true }),
+      });
+      const byName = new Map(commands.map((c) => [c.name, c]));
+
+      const result = await executeCommand(
+        get(byName, 'memory.write_many'),
+        {
+          items: [
+            {
+              ...writeInput,
+              kind: { type: 'preference' },
+              content: 'good-key: good-value\n\nFine prose.',
+            },
+            {
+              ...writeInput,
+              kind: { type: 'preference' },
+              content: 'No topic line in this one.',
+            },
+          ],
+        },
+        ctx,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('INVALID_INPUT');
+      expect(result.error.message).toMatch(/items\[1\]/);
+      // Whole batch rolled back — repo has no rows.
       const all = await repo.list({});
       expect(all).toHaveLength(0);
     });

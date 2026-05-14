@@ -71,6 +71,8 @@ and faster on his laptop.
 
 Without that first line, two contradictory preferences ("I use bun" vs "I use npm") will silently coexist instead of being surfaced for triage. The detector is doing what the doc says — the responsibility for shape lives at the write boundary.
 
+Memento enforces the convention at write time. `safety.requireTopicLine` defaults to `true`: `memory.write`, `memory.write_many`, `memory.supersede`, and `memory.extract` reject `preference` or `decision` content whose first non-blank line doesn't parse as `topic: value` (or `topic = value`). The validator reuses the same parser the conflict detector uses, so the write-time gate and the retrieval-time conflict check stay in sync: content that would bypass detection at retrieval time fails fast at write time. The error message includes the canonical example so the caller can fix the next write without reading the docs. Flip the flag to `false` to keep the historical permissive shape — at the cost of silent conflict-detection misses on free-prose content.
+
 ## Surfacing
 
 Conflicts are read, not pushed:

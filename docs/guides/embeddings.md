@@ -78,9 +78,11 @@ const app = await createMementoApp({
 
 `createLocalEmbedder()` returns synchronously; the underlying transformers.js pipeline is **lazy-loaded on the first call to `embed()`**. That keeps `memento serve` startup, `memento context`, and other read-only paths fast and offline-friendly.
 
+When the embedder is wired into Memento via `createMementoApp`, the bootstrap kicks off a fire-and-forget `provider.warmup()` after the startup backfill so the first user-facing query does not pay the lazy-init cost. The warmup races with normal request handling — it doesn't block boot, and a failure leaves the next real `embed()` to surface the underlying error. Set `embedder.local.warmupOnBoot` to `false` to keep the embedder strictly demand-loaded.
+
 ## First-run model download
 
-The first call to `embed()` blocks briefly while transformers.js downloads the ONNX model from Hugging Face — roughly 110 MB for `bge-base-en-v1.5`. Subsequent calls reuse the cache. The cache directory follows transformers.js's default; override it via `cacheDir` on `createLocalEmbedder({ cacheDir: "/abs/path" })` if you want to keep it under your Memento data directory.
+The first call to `embed()` blocks briefly while transformers.js downloads the ONNX model from Hugging Face — roughly 110 MB for `bge-base-en-v1.5`. Subsequent calls reuse the cache. With `embedder.local.warmupOnBoot` on (the default), the boot-time warmup pays this download cost in the background instead of the first user-facing search. The cache directory follows transformers.js's default; override it via `cacheDir` on `createLocalEmbedder({ cacheDir: "/abs/path" })` if you want to keep it under your Memento data directory.
 
 To pre-warm the cache without going through Memento:
 

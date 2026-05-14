@@ -1,6 +1,7 @@
 export {
   CONFLICT_POLICIES,
   DEFAULT_POLICY_CONFIG,
+  parseKeyValue,
   runPolicy,
 } from './policies.js';
 export type {

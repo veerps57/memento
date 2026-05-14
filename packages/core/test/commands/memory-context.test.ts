@@ -310,10 +310,11 @@ describe('memory.context', () => {
       { actor },
     );
 
-    const result = await executeCommand(command, {}, ctx);
+    // Explicit `projection: 'full'` to access the breakdown.
+    const result = await executeCommand(command, { projection: 'full' }, ctx);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const breakdown = result.value.results[0]!.breakdown;
+    const breakdown = result.value.results[0]!.breakdown!;
     expect(breakdown).toHaveProperty('confidence');
     expect(breakdown).toHaveProperty('recency');
     expect(breakdown).toHaveProperty('scope');
@@ -551,5 +552,359 @@ describe('memory.context', () => {
     if (!result.ok) return;
     const ids = result.value.results.map((r) => r.memory.id as unknown as string);
     expect(ids).toContain(pinned.id as unknown as string);
+  });
+
+  describe('projection mode', () => {
+    it('default is `summary` — breakdown omitted', async () => {
+      const { repo, command } = await fixture();
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'note',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const r = result.value.results[0];
+      expect(r?.breakdown).toBeUndefined();
+      expect(r?.memory.id).toBeDefined();
+    });
+
+    it('`full` opts into the score breakdown', async () => {
+      const { repo, command } = await fixture();
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'note',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, { projection: 'full' }, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.results[0]?.breakdown).toBeDefined();
+    });
+  });
+
+  describe('context.hint.uniformSpreadThreshold', () => {
+    it('emits a near-uniform hint when top-bottom spread is below the threshold', async () => {
+      // Two memories at identical confidence and identical
+      // lastConfirmedAt produce identical baseline scores —
+      // spread ≈ 0, well below the default threshold of 0.05.
+      const { repo, command } = await fixture({
+        // Disable MMR so the post-rank pass doesn't change the
+        // page composition (the test asserts on spread, not on
+        // diversification).
+        'context.diversity.lambda': 1,
+      });
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'alpha',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'beta',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.hint).toMatch(/near-uniform scores/i);
+      expect(result.value.hint).toMatch(/spread/);
+    });
+
+    it('does not emit a hint when score spread is comfortably above the threshold', async () => {
+      // Pinned vs unpinned: weighted pinned arm produces a
+      // large spread on the same query — well above 0.05.
+      const { repo, command } = await fixture({
+        'context.diversity.lambda': 1,
+      });
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: true,
+          content: 'pinned alpha',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'plain beta',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.hint).toBeUndefined();
+    });
+
+    it('does not fire on a single-result page (no spread to measure)', async () => {
+      const { repo, command } = await fixture({
+        'context.diversity.lambda': 1,
+      });
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'only one',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.hint).toBeUndefined();
+    });
+
+    it('threshold = 0 disables the hint entirely', async () => {
+      const { repo, command } = await fixture({
+        'context.diversity.lambda': 1,
+        'context.hint.uniformSpreadThreshold': 0,
+      });
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'alpha',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'beta',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.hint).toBeUndefined();
+    });
+  });
+
+  describe('context.diversity (MMR post-rank)', () => {
+    it('default lambda = 0.7 is a passthrough when no candidate has an embedding', async () => {
+      // Default config exercises MMR (lambda < 1) but every
+      // memory has `embedding = null` because the test writes
+      // do not run the embedder. With no vectors, similarity is
+      // 0 for every pair and the lambda-weighted MMR collapses
+      // to lambda * score — same ordering as the pre-MMR shape.
+      const { repo, command } = await fixture();
+      const memos = [];
+      for (let i = 0; i < 3; i += 1) {
+        const m = await repo.write(
+          {
+            scope: { type: 'global' },
+            owner: { type: 'local', id: 'self' },
+            kind: { type: 'fact' },
+            tags: [],
+            pinned: false,
+            content: `m-${i}`,
+            summary: null,
+            storedConfidence: 1 - i * 0.1,
+          },
+          { actor },
+        );
+        memos.push(m);
+      }
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Score-ordered (highest confidence first) — MMR did not
+      // rearrange anything because every embedding is null.
+      expect(result.value.results.map((r) => r.memory.id)).toEqual([
+        memos[0]?.id,
+        memos[1]?.id,
+        memos[2]?.id,
+      ]);
+    });
+
+    it('breaks near-duplicate clusters when embeddings are attached', async () => {
+      // M1 and M2 have identical embeddings; M3 is orthogonal.
+      // Pure relevance would rank by score; the recency tie-
+      // break would land them by id-desc when scores match.
+      // With MMR (default lambda = 0.7), the orthogonal M3
+      // should be promoted ahead of the near-duplicate M2.
+      const { repo, command } = await fixture();
+      const m1 = await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'kafka caching alpha',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      await repo.setEmbedding(
+        m1.id,
+        { model: 'test-model', dimension: 3, vector: [1, 0, 0] },
+        { actor },
+      );
+      const m2 = await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'kafka caching beta',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      await repo.setEmbedding(
+        m2.id,
+        { model: 'test-model', dimension: 3, vector: [1, 0, 0] }, // duplicate of m1
+        { actor },
+      );
+      const m3 = await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'pinned floor topic',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      await repo.setEmbedding(
+        m3.id,
+        { model: 'test-model', dimension: 3, vector: [0, 1, 0] }, // orthogonal
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const ids = result.value.results.map((r) => r.memory.id);
+      // The top pick has no predecessors — that's the highest-
+      // scored memory. The id-desc tie-break among the three
+      // tied-confidence rows puts m3 (largest id) first.
+      // Then MMR picks: m3 already in picked set, so among m1
+      // and m2 (both near-duplicates of m3 only via embedding,
+      // but m3's vector is orthogonal — so no penalty here),
+      // pure relevance applies, m2 (largest id of the two)
+      // wins, then m1.
+      expect(ids[0]).toBe(m3.id);
+      // The remaining two are the near-duplicates; their
+      // relative order is m2 before m1 (id-desc on tied score).
+      expect(ids.slice(1).sort()).toEqual([m1.id, m2.id].sort());
+    });
+
+    it('lambda = 1 disables the diversity pass entirely', async () => {
+      const { repo, command } = await fixture({ 'context.diversity.lambda': 1 });
+      const m1 = await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'm1',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      await repo.setEmbedding(
+        m1.id,
+        { model: 'test-model', dimension: 3, vector: [1, 0, 0] },
+        { actor },
+      );
+      const m2 = await repo.write(
+        {
+          scope: { type: 'global' },
+          owner: { type: 'local', id: 'self' },
+          kind: { type: 'fact' },
+          tags: [],
+          pinned: false,
+          content: 'm2',
+          summary: null,
+          storedConfidence: 1,
+        },
+        { actor },
+      );
+      await repo.setEmbedding(
+        m2.id,
+        { model: 'test-model', dimension: 3, vector: [1, 0, 0] }, // identical to m1
+        { actor },
+      );
+      const result = await executeCommand(command, {}, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // At lambda=1, MMR is a passthrough: the ranker's
+      // id-desc tie-break determines order; embeddings don't
+      // influence anything.
+      const ids = result.value.results.map((r) => r.memory.id);
+      expect(ids).toEqual([m2.id, m1.id]);
+    });
   });
 });

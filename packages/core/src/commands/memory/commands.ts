@@ -55,7 +55,12 @@ import {
   MemoryWriteInputSchema,
   MemoryWriteManyInputSchema,
 } from './inputs.js';
-import { assertNoReservedTags, enforceSafetyCaps, rationaleFromKind } from './safety-caps.js';
+import {
+  assertNoReservedTags,
+  enforceSafetyCaps,
+  enforceTopicLine,
+  rationaleFromKind,
+} from './safety-caps.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
 // Dashboard opt-in. The dashboard's UI today consumes
@@ -268,6 +273,12 @@ export function createMemoryCommands(
           deps.configStore,
         );
         if (!cap.ok) return cap;
+        const topic = enforceTopicLine(
+          'memory.write',
+          { kind: input.kind, content: input.content },
+          deps.configStore,
+        );
+        if (!topic.ok) return topic;
       }
       const pinned = input.pinned ?? deps?.configStore?.get('write.defaultPinned') ?? false;
       const storedConfidence =
@@ -356,6 +367,13 @@ export function createMemoryCommands(
             i,
           );
           if (!cap.ok) return cap;
+          const topic = enforceTopicLine(
+            'memory.write_many',
+            { kind: item.kind, content: item.content },
+            deps.configStore,
+            i,
+          );
+          if (!topic.ok) return topic;
         }
       }
       const defaultPinned = deps?.configStore?.get('write.defaultPinned') ?? false;
@@ -474,7 +492,7 @@ export function createMemoryCommands(
       outputSchema: SupersedeOutputSchema,
       metadata: {
         description:
-          'Replace an existing memory with a new one in a single transaction. Use this instead of update when the content changes.\n\nExample:\n\n```json\n{"oldId":"01HYXZ...","next":{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["corrected"],"pinned":false,"content":"Updated fact content.","summary":null,"storedConfidence":0.9}}\n```',
+          'Replace an existing memory with a new one in a single transaction. Use this instead of update when the content changes.\n\nHistory is preserved: the old memory transitions to `superseded` and its `supersededBy` field links to the new memory. The transaction emits a `superseded` audit event on the old id and a matching `created` event on the new id, so `memory.events` shows the chain from either side.\n\nExample:\n\n```json\n{"oldId":"01HYXZ...","next":{"scope":{"type":"global"},"kind":{"type":"fact"},"tags":["corrected"],"pinned":false,"content":"Updated fact content.","summary":null,"storedConfidence":0.9}}\n```',
       },
       handler: async (input, ctx) => {
         if (deps?.configStore !== undefined) {
@@ -489,6 +507,12 @@ export function createMemoryCommands(
             deps.configStore,
           );
           if (!cap.ok) return cap;
+          const topic = enforceTopicLine(
+            'memory.supersede',
+            { kind: input.next.kind, content: input.next.content },
+            deps.configStore,
+          );
+          if (!topic.ok) return topic;
         }
         const pinned = input.next.pinned ?? deps?.configStore?.get('write.defaultPinned') ?? false;
         const storedConfidence =
@@ -887,7 +911,7 @@ export function createMemoryCommands(
             outputSchema: MemoryEventListOutputSchema,
             metadata: {
               description:
-                'Read the audit log: events for one memory (ascending) when id is given, otherwise recent events across all memories (descending).',
+                'Read the audit log: events for one memory (ascending) when id is given, otherwise recent events across all memories (descending).\n\nOptional `types`, `since`, `until`, and `limit` narrow the result set; `since`/`until` filter on the event `at` timestamp (half-open: `at >= since AND at < until`). There is no scope / kind / tag filter — events are not denormalised by those dimensions.',
               mcpName: 'list_memory_events',
             },
             handler: (input) =>
@@ -895,6 +919,8 @@ export function createMemoryCommands(
                 const filter = {
                   ...(input.types !== undefined ? { types: [...input.types] } : {}),
                   ...(input.limit !== undefined ? { limit: input.limit } : {}),
+                  ...(input.since !== undefined ? { since: input.since } : {}),
+                  ...(input.until !== undefined ? { until: input.until } : {}),
                 };
                 return input.id === undefined
                   ? eventRepo.listRecent(filter)

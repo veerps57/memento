@@ -182,7 +182,7 @@ describe('reembedAll', () => {
     expect(provider.calls).toEqual(['alpha']);
   });
 
-  it('skips non-active memories (list filter excludes them)', async () => {
+  it('skips non-active memories by default (active-only list filter)', async () => {
     const handle = await fixture();
     const repo = await makeRepo(handle);
     const a = await repo.write(baseInput('alpha'), { actor });
@@ -193,6 +193,24 @@ describe('reembedAll', () => {
     const result = await reembedAll(repo, provider, { actor });
     expect(result.scanned).toBe(1);
     expect(result.embedded).toEqual([a.id]);
+  });
+
+  it('widens the scan to forgotten / archived under `includeNonActive`', async () => {
+    const handle = await fixture();
+    const repo = await makeRepo(handle);
+    const a = await repo.write(baseInput('alpha'), { actor });
+    const b = await repo.write(baseInput('beta'), { actor });
+    const c = await repo.write(baseInput('gamma'), { actor });
+    await repo.forget(b.id, null, { actor });
+    await repo.archive(c.id, { actor });
+
+    const provider = fakeProvider('bge-small-en-v1.5', 4);
+    const result = await reembedAll(repo, provider, {
+      actor,
+      includeNonActive: true,
+    });
+    expect(result.scanned).toBe(3);
+    expect([...result.embedded].sort()).toEqual([a.id, b.id, c.id].sort());
   });
 
   it('records `error` skips when the provider throws and continues with the rest', async () => {

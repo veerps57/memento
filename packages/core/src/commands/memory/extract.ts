@@ -34,7 +34,7 @@ import type { MemoryRepository } from '../../repository/memory-repository.js';
 import { ulid } from '../../repository/ulid.js';
 import type { MementoSchema } from '../../storage/schema.js';
 import type { Command, CommandContext } from '../types.js';
-import { assertNoReservedTags, enforceSafetyCaps } from './safety-caps.js';
+import { assertNoReservedTags, enforceSafetyCaps, enforceTopicLine } from './safety-caps.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
 
@@ -207,6 +207,13 @@ export function createMemoryExtractCommand(
           i,
         );
         if (!cap.ok) return cap;
+        const topic = enforceTopicLine(
+          'memory.extract',
+          { kind: { type: candidate.kind }, content: candidate.content },
+          cfg,
+          i,
+        );
+        if (!topic.ok) return topic;
       }
 
       const processingMode = cfg.get('extraction.processing');

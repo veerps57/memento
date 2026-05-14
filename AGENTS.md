@@ -55,6 +55,7 @@ Each of these is a short checklist; the canonical reference is the listed file o
 - **Add a config key:** add a `defineKey` entry to `packages/schema/src/config-keys.ts` following the comment block at the top of that file, then run `pnpm docs:generate` to refresh `docs/reference/config-keys.md`. Per-key Zod schemas validate every write; immutable keys must be flagged.
 - **Add a migration:** add the next-numbered migration under `packages/core/src/storage/migrations/` with a matching test under `packages/core/test/storage/migrations/`. Migrations are forward-only ([ADR-0001](docs/adr/0001-sqlite-as-storage-engine.md)).
 - **Stress-test the engine:** run `node scripts/stress-test.mjs` (modes: `quick` / `standard` / `full`) to exercise correctness, write throughput, search/list latency, recall, and `compact` end-to-end against a fresh `/tmp` database. Useful before tagging a release or after large engine changes. The runner emits a markdown report you can diff across runs. See [`docs/guides/stress-test.md`](docs/guides/stress-test.md) for flags, thresholds, and how to read the output.
+- **Measure retrieval quality:** run `node scripts/retrieval-eval.mjs` (default sweep: `N=100,1000`) to measure `Recall@k`, MRR, nDCG@10, and per-arm latency over a fixed labeled query set planted into a fresh in-memory SQLite. Run before/after ranker, candidate-arm, diversity, or weight changes and diff the report. Knobs (`--strategy`, `--lambda`, `--fts-min-score`, etc.) let you A/B a config without editing code. See [`docs/guides/retrieval-eval.md`](docs/guides/retrieval-eval.md) for the flag table and how to read the output.
 - **Add a memento pack:** drop the YAML file under the path named by `packs.bundledRegistryPath` (layout: `<root>/<id>/v<version>.yaml`). The format is `memento-pack/v1`; full spec and authoring flow in [`docs/guides/packs.md`](docs/guides/packs.md). The contract is [ADR-0020](docs/adr/0020-memento-packs.md). Bundled packs are data, not code — adding one does not change the engine.
 
 When editing files under `packages/core/src/commands/**`, `packages/core/src/storage/migrations/**`, `**/*.test.ts`, or `docs/**`, the architectural rules and the pre-PR verification steps below still apply.
@@ -72,6 +73,18 @@ pnpm verify          # <!-- verify-chain:begin -->lint → typecheck → build �
 
 Dedicated contract and property test suites are not part of the verify chain; contract-style coverage is folded into the unit suites and property invariants are checked by example tests. `pnpm test` is the full required test gate.
 
+### Coverage trend
+
+In addition to the pass/fail gates above, run:
+
+```bash
+pnpm test:coverage
+```
+
+Compare the `All files` row against your starting commit. The four overall metrics (lines, branches, functions, statements) must stay equal or **increase**. Per-file drops on a file you touched are also a flag — add the missing tests rather than relax the rule. The 90% thresholds in `vitest.config.ts` are the absolute floor; this rule sets the trend.
+
+This is non-negotiable for any change that touches `packages/*/src/`. Pure-docs and tooling-only changes are exempt.
+
 ## Common pitfalls — record new ones as you find them
 
 This list grows over time. If you trip over something that should have been on it, add it as part of your PR.
@@ -85,6 +98,7 @@ This list grows over time. If you trip over something that should have been on i
 - **Do not invent APIs that don't exist.** Always verify imports and method signatures against the actual codebase. Hallucinated APIs are the #1 failure mode in AI-authored PRs.
 - **Do not bypass `assertNever` exhaustiveness checks.** They exist precisely to catch missed cases when adding new variants.
 - **Do not write `pack:*` tags from non-pack-install code paths.** `pack:` is a reserved tag prefix ([ADR-0020](docs/adr/0020-memento-packs.md)); user-authored writes (`memory.write`, `memory.write_many`, `memory.extract`) reject any tag starting with it. Only the `pack.install` path may stamp the canonical `pack:<id>:<version>` provenance tag.
+- **Do not reference working notes in committed artefacts.** Exploratory drafts, eval reports, dogfood journals, audit prompts, and any file the author marked `DO NOT COMMIT` are private working memory. Source code, tests, comments, commit messages, and committed docs may not cite them by filename, quote from them, or link to them. The canonical record is the code itself, the ADR that justifies a decision, and the commit message in its own terms — if a rationale needs preserving, write it into one of those, not a sidecar note.
 
 ## Out of scope — do not implement
 
@@ -129,6 +143,15 @@ Whether or not the skill is installed:
 - **Cite specific files and line numbers** when explaining your change. If you cannot, you may not have read enough context.
 - **Prefer small, focused PRs.** A 200-line PR that does one thing is far easier to review than a 2000-line PR that does ten things, even if both are correct.
 - **Stop and ask** if you find yourself making more than one architectural decision in a single change. That is a sign the change should be a design proposal first.
+
+### When the user is reviewing each commit
+
+For multi-commit work where the user is reviewing commit-by-commit — pair-programming sessions, interactive agent mode in any tool, a series of stacked PRs:
+
+- **Do not auto-commit.** When the work for a commit is complete, run `pnpm verify` and `pnpm test:coverage`, then **pause and present a review summary** — files changed, tests added, coverage delta vs the starting commit, docs touched — and wait for explicit go-ahead before running `git commit`.
+- **Docs sweep per commit.** Before asking for review, scan `docs/architecture/`, `docs/guides/`, `docs/adr/`, and package READMEs for prose that should reflect the change. Update what drifted; do not punt cleanup to a follow-up commit. The auto-generated `docs/reference/` is regenerated by `pnpm docs:generate` and is not a substitute for the prose docs.
+
+Autonomous batch agents (cloud workers resolving an issue end-to-end, scheduled tasks, CI bots) read these conditionals and skip them — the rules only fire when a human is reviewing.
 
 ## License
 

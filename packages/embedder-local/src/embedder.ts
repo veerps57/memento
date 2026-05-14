@@ -215,6 +215,16 @@ export function createLocalEmbedder(options: LocalEmbedderOptions = {}): Embeddi
       }
       return results;
     },
+    async warmup(): Promise<void> {
+      // Drive the single-flight init so the first user-facing
+      // `embed()` is not stuck behind a model download / pipeline
+      // construction. We discard the resulting `EmbedFn` reference
+      // intentionally — `ensureReady` caches it. Timeouts and byte
+      // caps deliberately do NOT apply here: warmup is fire-and-
+      // forget at boot time and a partial model download must be
+      // allowed to complete.
+      await ensureReady();
+    },
   };
 }
 

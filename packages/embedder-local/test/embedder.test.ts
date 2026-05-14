@@ -108,6 +108,48 @@ describe('createLocalEmbedder', () => {
     expect(v).toHaveLength(8);
   });
 
+  describe('warmup', () => {
+    it('drives loader initialisation without producing a vector', async () => {
+      const provider = createLocalEmbedder({ loader });
+      expect(provider.warmup).toBeDefined();
+      await provider.warmup?.();
+      expect(loader).toHaveBeenCalledTimes(1);
+      // No embed call was issued — warmup runs the init only.
+      expect(embedFn).not.toHaveBeenCalled();
+    });
+
+    it('shares its in-flight init with concurrent embed calls', async () => {
+      const provider = createLocalEmbedder({ loader });
+      const [, vector] = await Promise.all([provider.warmup?.(), provider.embed('first')]);
+      expect(loader).toHaveBeenCalledTimes(1);
+      expect(vector).toHaveLength(DEFAULT_LOCAL_DIMENSION);
+    });
+
+    it('is a no-op on repeat after the cache is warm', async () => {
+      const provider = createLocalEmbedder({ loader });
+      await provider.warmup?.();
+      await provider.warmup?.();
+      await provider.embed('x');
+      expect(loader).toHaveBeenCalledTimes(1);
+      expect(embedFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not consume the configured timeout', async () => {
+      let resolveSlow: ((fn: EmbedFn) => void) | undefined;
+      const slowLoader: LocalEmbedderLoader = () =>
+        new Promise<EmbedFn>((resolve) => {
+          resolveSlow = resolve;
+        });
+      const provider = createLocalEmbedder({ loader: slowLoader, timeoutMs: 50 });
+      const warmupPromise = provider.warmup?.();
+      // Hold the loader past the embed timeout. Warmup should
+      // not time out — it runs without the per-call wallclock.
+      await new Promise((r) => setTimeout(r, 100));
+      resolveSlow?.(embedFn);
+      await expect(warmupPromise).resolves.toBeUndefined();
+    });
+  });
+
   it('retries loader initialisation after a failure', async () => {
     let calls = 0;
     const flakyLoader: LocalEmbedderLoader = async () => {

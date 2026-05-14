@@ -19,6 +19,7 @@ import {
   type MemoryEvent,
   MemoryEventSchema,
   type MemoryId,
+  type Timestamp,
 } from '@psraghuveer/memento-schema';
 import type { Kysely } from 'kysely';
 import type { MementoSchema, MemoryEventsTable } from '../storage/schema.js';
@@ -31,6 +32,10 @@ export interface EventListFilter {
   readonly types?: readonly MemoryEvent['type'][];
   /** Maximum rows to return; defaults to {@link DEFAULT_LIMIT}, capped at {@link MAX_LIMIT}. */
   readonly limit?: number;
+  /** Inclusive lower bound on event `at` (ISO-8601). */
+  readonly since?: Timestamp;
+  /** Exclusive upper bound on event `at` (ISO-8601). Half-open with `since`. */
+  readonly until?: Timestamp;
 }
 
 export interface EventRepository {
@@ -88,6 +93,12 @@ export function createEventRepository(db: Kysely<MementoSchema>): EventRepositor
       if (filter?.types && filter.types.length > 0) {
         query = query.where('type', 'in', filter.types);
       }
+      if (filter?.since !== undefined) {
+        query = query.where('at', '>=', filter.since as unknown as string);
+      }
+      if (filter?.until !== undefined) {
+        query = query.where('at', '<', filter.until as unknown as string);
+      }
       const rows = await query.execute();
       return rows.map(rowToEvent);
     },
@@ -100,6 +111,12 @@ export function createEventRepository(db: Kysely<MementoSchema>): EventRepositor
         .limit(clampLimit(filter?.limit));
       if (filter?.types && filter.types.length > 0) {
         query = query.where('type', 'in', filter.types);
+      }
+      if (filter?.since !== undefined) {
+        query = query.where('at', '>=', filter.since as unknown as string);
+      }
+      if (filter?.until !== undefined) {
+        query = query.where('at', '<', filter.until as unknown as string);
       }
       const rows = await query.execute();
       return rows.map(rowToEvent);

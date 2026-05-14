@@ -19,6 +19,23 @@ Applied first. The query specifies an optional `scopes: Scope[]` list. When omit
 
 `status` is also filtered here. By default, only `active` memories are searchable. Callers can opt into `superseded`, `forgotten`, or `archived` explicitly via `includeStatuses`, primarily for debugging and audit.
 
+## Temporal filters
+
+`memory.search` accepts optional half-open windows on `createdAt` and `lastConfirmedAt`:
+
+```text
+createdAtAfter    — inclusive lower bound on createdAt
+createdAtBefore   — exclusive upper bound on createdAt
+confirmedAfter    — inclusive lower bound on lastConfirmedAt
+confirmedBefore   — exclusive upper bound on lastConfirmedAt
+```
+
+The bounds are pushed into the SQL `WHERE` clause for both the FTS and vector arms, so the candidate-generation caps (`retrieval.candidate.ftsLimit`, `retrieval.candidate.vectorLimit`) apply to the already-narrowed set rather than to the full corpus. Each bound is independent; pair `createdAtAfter` and `createdAtBefore` for a half-open window.
+
+`memory.events` accepts the same shape under different names — `since` (inclusive lower bound on event `at`) and `until` (exclusive upper bound). Use these to scope cross-session forensics ("what did I decide about retrieval between Monday and Wednesday?") without paging through every event in the log.
+
+The bounds never affect *which* status counts as `active` — `now` on the search input only feeds decay scoring. Time-travel reads (status as of a past instant) are out of scope.
+
 ## Candidate generation
 
 ### FTS5 (always available)
@@ -35,15 +52,32 @@ Transient embedding failures (model not yet downloaded, network timeout, OOM dur
 
 When vector search is enabled but a memory has no embedding (e.g., written before vector search was enabled, or the auto-embed hook failed transiently), it is included only via FTS until `memento embedding rebuild` materialises its embedding. If a row's stored embedding model or dimension drifts from the configured provider, the search aborts with a `CONFIG_ERROR` pointing at `memento embedding rebuild` rather than mixing vector spaces (Rule 14: model migration must be deliberate).
 
+The vector arm operates on whichever statuses the caller asked for via `includeStatuses`. Active rows are embedded by default (auto-embed runs on every successful `memory.write`); forgotten and archived rows can be embedded by passing `--include-non-active` to `memento embedding rebuild` (or `includeNonActive: true` on the wire). This is the symmetry move: `memory.read` returns a memory regardless of status, and the vector arm should be able to surface it for the same callers that opted into non-active retrieval. Superseded rows are deliberately excluded — their content has been explicitly replaced and embedding them would just produce a vector for stale content.
+
 The vector backend is selected by `retrieval.vector.backend`, currently one of `{auto, brute-force}`. The brute-force scanner is a single `select id, embedding_json from memories ...` per query, decoded with `EmbeddingSchema`, scored in-memory by cosine similarity. The candidate-generation cap is `retrieval.candidate.vectorLimit` (default 200). The brute-force path is acceptable for stores in the low thousands and degrades linearly above that. A native `sqlite-vec` backend can be added without breaking existing configs.
 
 ### Why both, when both are on
 
 FTS catches lexical matches that embeddings miss (proper nouns, identifiers, exact phrases). Embeddings catch paraphrases that FTS misses. The union is strictly larger than either alone. The ranker collapses the union and re-orders.
 
+### Per-arm candidate thresholds
+
+The candidate-generation caps (`retrieval.candidate.ftsLimit`, `retrieval.candidate.vectorLimit`) bound *how many* hits each arm contributes, not *how strong* those hits must be. Two additional knobs add a per-arm minimum-score floor that fires before ranking:
+
+- `retrieval.candidate.ftsMinScore` — minimum absolute BM25 magnitude. FTS5's BM25 is negative-better; the threshold compares against `|bm25|`. Default `0` (no filtering).
+- `retrieval.candidate.vectorMinCosine` — minimum cosine similarity. Cosine is bounded in `[-1, 1]`. Default `-1` (no filtering).
+
+A candidate survives when at least one arm scores at or above its configured floor. A candidate that contributed only an FTS hit is dropped if `|bm25|` is below `ftsMinScore`; a candidate that contributed only a vector hit is dropped if cosine is below `vectorMinCosine`; a candidate matching both arms survives if either is above. The cut fires only when every signal the candidate produced is weak.
+
+Operators raise these to suppress the noise floor that pollutes top-K on paraphrase queries — most unrelated rows score in a similar mid-range cosine band against neutral query embeddings, and a floor around 0.85 trims that tail without affecting strong hits. The defaults are no-ops so upgrading does not change ranking until an operator opts in.
+
 ## Ranker
 
-The ranker takes candidates and produces a final ordering. The default ranker is a configurable linear combination:
+The ranker takes candidates and produces a final ordering. The strategy is selected by `retrieval.ranker.strategy`; two strategies ship today.
+
+### `linear` (default)
+
+A configurable weighted sum:
 
 ```text
 score = w_fts        * normalize(ftsScore)
@@ -54,9 +88,34 @@ score = w_fts        * normalize(ftsScore)
       + w_pinned     * (pinned ? 1 : 0)
 ```
 
-All weights are `ConfigKey`s under `retrieval.ranker.weights.*`. The default values are documented in the auto-generated [`docs/reference/config-keys.md`](../reference/config-keys.md) and chosen to produce reasonable results out of the box; serious users will tune them.
+The FTS and vector arms are batch-max-normalised — every candidate's score is divided by the largest magnitude in the batch, so the strongest hit on each arm always scores `1`. The four baseline arms (`confidence`, `recency`, `scope`, `pinned`) live in natural `[0, 1]` units. All weights are `ConfigKey`s under `retrieval.ranker.weights.*`.
 
-The ranker is selected by `retrieval.ranker.strategy`. Today the only registered value is `'linear'`; the schema is a one-element enum. The strategy field exists so additional rankers (reciprocal-rank fusion, a learned re-ranker, etc.) can be added by widening the enum without changing the call sites — this is principle 3 (Extensible) in code, not a claim that those strategies ship today.
+### `rrf` (Reciprocal Rank Fusion)
+
+Replaces the batch-max-normalised arms with rank-based contributions:
+
+```text
+score = w_fts        * 1/(k + rank_fts(candidate))
+      + w_vector     * 1/(k + rank_vector(candidate))
+      + w_confidence * effectiveConfidence
+      + w_recency    * recencyBoost(lastConfirmedAt, now)
+      + w_scope      * scopeBoost(scope, queryScope)
+      + w_pinned     * (pinned ? 1 : 0)
+```
+
+`rank_fts` is the candidate's position in the FTS-sorted list (1-indexed; ascending BM25 = most-negative-first). `rank_vector` is the candidate's position in the cosine-sorted list (descending). Candidates that did not match an arm contribute `0` to that arm — their rank is undefined, not infinite. `k` is a dampening constant tunable via `retrieval.ranker.rrf.k`; the literature default `60` is the registry default.
+
+### When to prefer each
+
+`linear` is the default and is the strategy the shipped weight defaults are tuned for. The FTS and vector arms produce values in `[0, 1]` after batch-max normalisation; the four baseline arms live in `[0, 1]` natively. The default weights (`fts=1.0`, `vector=1.0`, `confidence=0.5`, `recency=0.25`, `scope=0.25`, `pinned=0.25`) compose all six on the same scale.
+
+`rrf` produces FTS and vector contributions at a different scale — top-rank values are `1/(k+1) ≈ 0.016` at `k=60`, three orders of magnitude smaller than `linear`'s `1.0`. **Switching `retrieval.ranker.strategy` from `linear` to `rrf` without also rescaling `retrieval.ranker.weights.fts` and `retrieval.ranker.weights.vector` will dramatically reduce the influence of the FTS and vector arms relative to the four baseline arms.** As a starting point, multiply `fts` and `vector` weights by roughly `(k + 1)` to bring the top-rank contribution back into the same band as `linear`'s top-hit contribution. Operators flipping the strategy at runtime should expect a re-tuning pass.
+
+`rrf` is provided as an alternative for operators whose workloads see the `linear` ranker's batch-max normalisation pathology (a single dominant FTS hit collapsing the rest of the batch toward zero). Whether `rrf` outperforms `linear` on a given store depends on the corpus, the query mix, and the weight regime. The two strategies are kept side-by-side so a future eval can promote one default over the other on the basis of measured outcomes, not a-priori reasoning.
+
+Switching strategies is a runtime config change; no reindex required.
+
+The default values for the six weights are documented in the auto-generated [`docs/reference/config-keys.md`](../reference/config-keys.md) and chosen to produce reasonable results out of the box; serious users will tune them.
 
 ### `effectiveConfidence`
 
@@ -73,6 +132,73 @@ A monotonically decreasing function of (now − lastConfirmedAt) shaped by `retr
 ### `scopeBoost`
 
 When the query's effective scope set is layered (session ⊕ branch ⊕ repo ⊕ workspace ⊕ global), more-specific scopes get a small boost. The boost-per-scope-level is `retrieval.scopeBoost`.
+
+### Superseded-predecessor demotion
+
+When a caller opts into `memory.search` with `includeStatuses: ["active", "superseded"]`, the ranker may surface both the active head of a supersession chain and one or more of its predecessors. Without intervention, the predecessor can outrank the head on otherwise-similar arms — its content was correct *at the time it was written*, and the FTS / vector arms don't know which version is "current".
+
+The ranker applies a final multiplier (`retrieval.ranker.weights.supersedingMultiplier`, default `0.5`) to a memory's score when:
+
+1. The memory's `status === 'superseded'`, **and**
+2. The memory's `supersededBy` pointer resolves to another memory in the same result set.
+
+Both rankers (`linear` and `rrf`) honour this rule. The default active-only filter excludes superseded predecessors upstream, so the hook never runs for the common case — only when the caller has explicitly asked for both sides of the chain. A caller fetching a predecessor in isolation (audit-log lookup, `memory.read` walking a supersedes pointer) is unaffected because the successor isn't in the result set. Set the multiplier to `1.0` to disable the demotion entirely.
+
+## Diversity (post-rank)
+
+A separate stage runs after the ranker and before the cursor-window slice. It reorders the ranked list greedily by Maximal Marginal Relevance — each successive pick maximises:
+
+```text
+λ × score - (1 - λ) × max(cosine_to_already_picked)
+```
+
+The first pick has no predecessors, so it's always the ranker's top result regardless of `λ`. From the second pick onward, candidates whose embedding is similar to an already-picked candidate are penalised. Candidates without a stored embedding (FTS-only, rows pending auto-embed) bypass the diversity penalty — they ride the relevance score alone rather than getting a synthetic zero-cosine score that would systematically push them up the page.
+
+### Two surfaces, two defaults
+
+Diversity applies to both `memory.search` and `memory.context`, with separate config namespaces because the surfaces are used differently:
+
+| Surface | Config | Default `lambda` | Rationale |
+|---|---|---|---|
+| `memory.search` | `retrieval.diversity.lambda` | `1.0` (passthrough) | Search is query-driven; the caller usually wants strict relevance — a fact lookup, not a survey. Opt in when paginating cluster-dense topics. |
+| `memory.context` | `context.diversity.lambda` | `0.7` (gentle diversity) | Session-start retrieval is survey-style. The caller asking "what should I know?" wants varied topics, not five paraphrases of the same preference. |
+
+Both also accept `*.diversity.maxDuplicates` (default `5`) — a soft ceiling on the size of any near-duplicate cluster (cosine ≥ 0.9) admitted to the page before further duplicates are skipped.
+
+### Windowing
+
+On `memory.search`, MMR runs over the top `limit × 2` of the ranked list, then concatenates the unmodified tail. The window gives MMR room to swap candidates across the page boundary without admitting O(K²) cost on the full candidate union (which can be hundreds at default caps). The tail-pass-through preserves pagination semantics: a cursor pointing into the tail finds its slice unchanged.
+
+On `memory.context`, there's no pagination — the full ranked list IS the page — so MMR runs over the entire list. No windowing needed.
+
+### Why post-rank rather than a ranker arm
+
+The ranker is a pure function over the candidate set; MMR is greedy and stateful (each pick depends on what came before). Keeping the two stages separate preserves the ranker's replay/audit story and keeps the MMR cost proportional to the page size rather than the candidate-set size.
+
+## Output projection
+
+`memory.search` and `memory.context` accept an optional `projection` input that shapes the response payload:
+
+| Mode | Includes | Use case |
+|---|---|---|
+| `summary` (default) | memory view, `score` | LLM agents, CLI lookups — the common case |
+| `full` | memory view, `score`, `breakdown`, `conflicts` (search only) | explainability UIs, debug tooling, weight tuning |
+
+Default is `summary` because the primary consumer of `memory.search` and `memory.context` is an LLM agent over MCP, and tokens are billed. The per-arm score `breakdown` and the `conflicts` array are diagnostic — they help operators understand and tune ranking, but they're noise for an agent that just wants to use the results. `summary` drops both from the wire (~30-40% byte savings on a typical top-10 page) while keeping the memory body unchanged.
+
+The dashboard and any debug tooling that *do* render the breakdown explicitly request `projection: 'full'`. Both fields are `.optional()` on the response schema so existing TypeScript consumers compile unchanged — they just see `undefined` for the dropped fields under the new default.
+
+A future `id`-only projection (response shape `{ memory: { id }, score }`) was scoped out of this change because it materially changes the memory shape and requires deeper TS-narrowing work in every consumer. Use `summary` when bytes matter today; follow up with `memory.read` if a caller needs deeper detail on a few specific results.
+
+## `memory.context` hints
+
+`memory.context` returns an optional `hint` field — a one-line nudge for the calling assistant — in three cases:
+
+1. **Empty store.** The active corpus is empty; the assistant should start capturing preferences via `write_memory` or `extract_memory`.
+2. **Empty page on a non-empty store.** The configured `scope` / `kinds` / `tags` filter excluded everything; the assistant should narrow differently or use `search_memory`.
+3. **Near-uniform ranking.** The returned page's top-bottom score spread is below `context.hint.uniformSpreadThreshold` (default `0.05`). The ranker has no meaningful signal — the order is essentially the candidate-fetch order. The hint suggests passing a `scopes` filter for layered ranking or using `search_memory` with a topic.
+
+The hint is purely advisory; the `results` array is always populated when there are matches. Assistants that ignore the hint see no behavior change. Setting `context.hint.uniformSpreadThreshold = 0` disables case (3) entirely.
 
 ## Pagination
 

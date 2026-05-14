@@ -90,6 +90,20 @@ export interface ConflictRepository {
   ): Promise<Conflict>;
   read(id: ConflictId): Promise<Conflict | null>;
   list(filter?: ConflictListFilter): Promise<Conflict[]>;
+  /**
+   * Fetch open conflicts for a batch of memory ids in a single
+   * SQL round-trip and group them by the matching memory id. A
+   * conflict whose `newMemoryId` or `conflictingMemoryId` equals
+   * any input id is keyed under EACH side that matched (so a
+   * caller iterating over their input ids gets each conflict on
+   * both sides of the pair when both sides are co-present).
+   *
+   * Returns an empty map for an empty input. The map is bounded
+   * by the input size; the underlying SQL has no row cap because
+   * the caller is the cap (it just iterated a search page bounded
+   * by `retrieval.search.maxLimit`).
+   */
+  listOpenByMemoryIds(ids: readonly MemoryId[]): Promise<ReadonlyMap<string, Conflict[]>>;
   /** All events for one conflict, oldest first. */
   events(id: ConflictId): Promise<ConflictEvent[]>;
   /**
@@ -231,6 +245,46 @@ export function createConflictRepository(
       return rows.map(rowToEvent);
     },
 
+    async listOpenByMemoryIds(ids) {
+      const grouped = new Map<string, Conflict[]>();
+      if (ids.length === 0) {
+        return grouped;
+      }
+      const idStrings = ids.map((id) => id as unknown as string);
+      const rows = await db
+        .selectFrom('conflicts')
+        .selectAll()
+        .where('resolved_at', 'is', null)
+        .where((eb) =>
+          eb.or([
+            eb('new_memory_id', 'in', idStrings),
+            eb('conflicting_memory_id', 'in', idStrings),
+          ]),
+        )
+        .orderBy('opened_at', 'desc')
+        .orderBy('id', 'desc')
+        .execute();
+      // A single conflict whose newMemoryId and conflictingMemoryId
+      // are both in `ids` (rare but legal — agent rewrites a fact
+      // and the contradictory partner happens to be co-present
+      // in the same search page) appears under both keys. The map
+      // value's `Conflict` identity is shared (no clone), so
+      // downstream `===` checks remain meaningful.
+      const idSet = new Set(idStrings);
+      for (const row of rows) {
+        const conflict = rowToConflict(row);
+        const newId = row.new_memory_id;
+        const otherId = row.conflicting_memory_id;
+        if (idSet.has(newId)) {
+          pushTo(grouped, newId, conflict);
+        }
+        if (idSet.has(otherId)) {
+          pushTo(grouped, otherId, conflict);
+        }
+      }
+      return grouped;
+    },
+
     async openPartners(memoryId) {
       const rows = await db
         .selectFrom('conflicts')
@@ -251,6 +305,15 @@ export function createConflictRepository(
       return partners;
     },
   };
+}
+
+function pushTo(map: Map<string, Conflict[]>, key: string, value: Conflict): void {
+  const existing = map.get(key);
+  if (existing === undefined) {
+    map.set(key, [value]);
+  } else {
+    existing.push(value);
+  }
 }
 
 function clampLimit(raw: number | undefined): number {

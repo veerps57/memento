@@ -71,11 +71,29 @@ export const MemorySearchInputSchema = z
     now: TimestampSchema.optional().describe(
       'Override clock for decay calculation. ISO-8601 UTC. Omit to use wall-clock time.',
     ),
+    createdAtAfter: TimestampSchema.optional().describe(
+      'Inclusive lower bound on `createdAt`. ISO-8601 UTC. Filters out memories created before this instant. Pair with `createdAtBefore` for a half-open window.',
+    ),
+    createdAtBefore: TimestampSchema.optional().describe(
+      'Exclusive upper bound on `createdAt`. ISO-8601 UTC. Filters out memories created at or after this instant.',
+    ),
+    confirmedAfter: TimestampSchema.optional().describe(
+      'Inclusive lower bound on `lastConfirmedAt`. ISO-8601 UTC. Useful for "what changed recently?" forensics.',
+    ),
+    confirmedBefore: TimestampSchema.optional().describe(
+      'Exclusive upper bound on `lastConfirmedAt`. ISO-8601 UTC.',
+    ),
     includeEmbedding: z
       .boolean()
       .optional()
       .describe(
         'Whether to include the full embedding vector in results. Defaults to false. Embedding vectors can be large (hundreds of floats); omit or set to false for compact output.',
+      ),
+    projection: z
+      .enum(['full', 'summary'])
+      .optional()
+      .describe(
+        "Response shape. `summary` (default) returns the memory view + score — the lean shape for LLM agents and most CLI callers that don't need ranking diagnostics. `full` adds the per-arm `breakdown` (FTS/vector/confidence/recency/scope/pinned scores) and the `conflicts` array — the explainability shape for dashboards, debug tooling, and operators tuning ranker weights. `summary` is typically ~30-40% smaller than `full` on a top-10 page.",
       ),
   })
   .strict();
