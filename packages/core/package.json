@@ -1,6 +1,6 @@
 {
   "name": "@psraghuveer/memento-core",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "The Memento engine: storage, repositories, scope resolver, scrubber, decay, conflict detection, embedding hook, and the command registry. Transport-agnostic.",
   "keywords": ["memento", "memory", "ai", "assistant", "mcp", "local-first", "sqlite"],
   "license": "Apache-2.0",
