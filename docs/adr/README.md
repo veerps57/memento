@@ -31,6 +31,7 @@ The template is at [`template.md`](template.md). Use it.
 | 0019 | [Import re-stamp policy](0019-import-re-stamp-policy.md) | Accepted |
 | 0020 | [Memento packs — curated YAML bundles for cold-start seeding](0020-memento-packs.md) | Accepted |
 | 0021 | [Install-time embedding (sync) and startup backfill (async)](0021-install-time-embedding-and-startup-backfill.md) | Accepted |
+| 0022 | [Publishing to the official MCP Registry](0022-mcp-registry-publishing.md) | Proposed |
 
 ## When an ADR is required
 
