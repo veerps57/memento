@@ -1,31 +1,37 @@
 name: Publish to MCP Registry
 
-# Fires after the Release workflow successfully publishes to npm and
-# pushes the umbrella `v<X.Y.Z>` tag. The tag push is the signal that
-# a real release just landed; this workflow then publishes the
-# matching `server.json` to registry.modelcontextprotocol.io as
-# `com.runmemento/memento`.
+# Fires when the Release workflow completes successfully and pushes
+# an umbrella v<X.Y.Z> tag (i.e. the CLI was part of the release).
 #
-# Contract: docs/adr/0022-mcp-registry-publishing.md. The first
-# publish for a new namespace is performed manually from the
-# maintainer's laptop after DNS propagates; this workflow handles
-# every subsequent release.
+# We use `workflow_run` instead of `on: push: tags: ["v*"]` because
+# GitHub Actions suppresses downstream workflows when the trigger
+# event is fired by GITHUB_TOKEN — a recursion guard. The Release
+# workflow pushes the umbrella tag with the default token, so a
+# `push: tags` trigger never fires. `workflow_run` sidesteps the
+# suppression without needing a PAT or GitHub App.
+#
+# Contract: docs/adr/0022-mcp-registry-publishing.md and the runbook
+# at docs/ops/mcp-registry-publishing.md. The first publish for a
+# new namespace is performed manually from the maintainer's laptop
+# after DNS propagates; this workflow handles every subsequent
+# release.
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to (re)publish, e.g. v0.6.2"
+        description: "Tag to (re)publish, e.g. v0.6.3"
         required: true
 
-# One publish per tag at a time. We do not cancel in-progress runs:
+# One publish per ref at a time. We do not cancel in-progress runs:
 # a retry from workflow_dispatch is usually launched explicitly to
 # recover from a transient registry or DNS failure, and cancelling
 # the previous attempt would mask diagnostics.
 concurrency:
-  group: mcp-registry-${{ github.ref }}
+  group: mcp-registry-${{ github.event.workflow_run.head_branch || github.event.inputs.tag || github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -43,16 +49,51 @@ jobs:
   publish:
     name: Publish server.json
     runs-on: ubuntu-latest
+    # On workflow_run, only proceed if the upstream Release
+    # succeeded — a failed release means no tag was pushed, no
+    # tarball published, nothing to register. On workflow_dispatch
+    # always proceed (the operator made the call explicitly).
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          # workflow_dispatch: check out the explicitly-named tag.
+          # workflow_run: check out the head commit of the upstream
+          # run — the same commit the umbrella tag will point at.
+          ref: ${{ github.event.inputs.tag || github.event.workflow_run.head_sha }}
+          # Full history + tags are needed so the next step can
+          # find any v* tag pointing at HEAD.
+          fetch-depth: 0
+          fetch-tags: true
 
-      - name: Verify tag matches server.json version
+      - name: Resolve umbrella tag at HEAD
+        id: resolve
         run: |
           set -euo pipefail
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            # workflow_run path: find an umbrella v* tag at HEAD.
+            # changesets/action also pushes per-package tags
+            # (@psraghuveer/memento-core@0.11.0 etc.); the only
+            # one we care about is the unscoped v<X.Y.Z>.
+            TAG=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
+          fi
+          if [ -z "$TAG" ]; then
+            echo "::notice::No umbrella v* tag at HEAD — the Release didn't bump the CLI. Skipping registry publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Resolved tag: ${TAG}"
+          fi
+
+      - name: Verify tag matches server.json version
+        if: steps.resolve.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.resolve.outputs.tag }}"
           EXPECTED="v$(jq -r .version server.json)"
           if [ "${TAG}" != "${EXPECTED}" ]; then
             echo "::error::Tag ${TAG} does not match server.json version ${EXPECTED}. Refusing to publish."
@@ -61,6 +102,7 @@ jobs:
           echo "Tag ${TAG} matches server.json version ${EXPECTED}."
 
       - name: Download and verify mcp-publisher
+        if: steps.resolve.outputs.skip != 'true'
         run: |
           set -euo pipefail
           URL="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/${MCP_PUBLISHER_ARCHIVE}"
@@ -71,6 +113,7 @@ jobs:
           ./mcp-publisher --version
 
       - name: Authenticate (DNS / Ed25519)
+        if: steps.resolve.outputs.skip != 'true'
         env:
           MCP_PRIVATE_KEY: ${{ secrets.MCP_PRIVATE_KEY }}
         run: |
@@ -80,4 +123,5 @@ jobs:
             --private-key "${MCP_PRIVATE_KEY}"
 
       - name: Publish
+        if: steps.resolve.outputs.skip != 'true'
         run: ./mcp-publisher publish

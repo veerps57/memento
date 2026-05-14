@@ -9,7 +9,7 @@ Key properties: local-first (single SQLite file under the user's home directory)
 ## Install
 
 - [npm package](https://www.npmjs.com/package/@psraghuveer/memento): `npx @psraghuveer/memento init` creates the database, runs migrations, and prints copy-paste MCP snippets for Claude Code, Claude Desktop, Cursor, VS Code Agent mode, and OpenCode.
-- [Official MCP Registry entry](https://registry.modelcontextprotocol.io/v0/servers/com.runmemento/memento): Memento is published in the canonical MCP Registry as `com.runmemento/memento`. MCP clients and discovery tools (Smithery, Glama, mcpfinder, PulseMCP, mcp.so) read this registry to surface servers by canonical name.
+- [Official MCP Registry entry](https://registry.modelcontextprotocol.io/v0.1/servers/com.runmemento%2Fmemento/versions): Memento is published in the canonical MCP Registry as `com.runmemento/memento`. MCP clients and discovery tools (Smithery, Glama, mcpfinder, PulseMCP, mcp.so) read this registry to surface servers by canonical name.
 
 ## Documentation
 

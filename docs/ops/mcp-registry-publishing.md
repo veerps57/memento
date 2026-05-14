@@ -9,14 +9,16 @@ A normal release proceeds in this order:
 1. The "Version Packages" changesets PR merges to `main`.
 2. [`release.yml`](../../.github/workflows/release.yml) builds and runs `pnpm release`, which calls `changeset publish` and pushes per-package npm versions.
 3. If the CLI package (`@psraghuveer/memento`) was part of the release, `release.yml` then pushes the umbrella `vX.Y.Z` tag keyed off `packages/cli/package.json.version`.
-4. The tag push triggers [`mcp-registry-publish.yml`](../../.github/workflows/mcp-registry-publish.yml), which verifies the tag matches the `version` field in `server.json`, downloads and checksums `mcp-publisher`, authenticates against the registry via DNS (Ed25519 signing key on the apex of `runmemento.com`), and runs `mcp-publisher publish`.
+4. When the Release workflow completes successfully, [`mcp-registry-publish.yml`](../../.github/workflows/mcp-registry-publish.yml) fires via `workflow_run`, finds the umbrella `v*` tag at the head commit, verifies it matches the `version` field in `server.json`, downloads and checksums `mcp-publisher`, authenticates against the registry via DNS (Ed25519 signing key on the apex of `runmemento.com`), and runs `mcp-publisher publish`.
 
-Per-package tags like `@psraghuveer/memento-core@0.11.0` start with `@`, not `v`, so they do not fire the registry workflow. The MCP registry only tracks the CLI tarball — releases that don't bump the CLI version don't push a new umbrella tag, and the registry listing stays put.
+We use `workflow_run` rather than `on: push: tags: ["v*"]` because GitHub Actions suppresses downstream workflows when the trigger event is fired by `GITHUB_TOKEN` — a recursion guard. The Release workflow pushes the umbrella tag with the default token, so a `push: tags` trigger would never fire. The `workflow_run` event sidesteps the suppression cleanly.
+
+If the Release workflow ran but didn't push an umbrella tag (because only non-CLI packages bumped — e.g. just `@psraghuveer/memento-core`), the registry workflow detects no `v*` tag at HEAD and exits cleanly without publishing. The MCP registry only tracks the CLI tarball, so non-CLI releases need no registry update.
 
 To verify a publish succeeded:
 
 ```bash
-curl -s https://registry.modelcontextprotocol.io/v0/servers/com.runmemento/memento | jq '.version'
+curl -s "https://registry.modelcontextprotocol.io/v0/servers?search=com.runmemento" | jq '.servers[0]["server"]["version"]'
 ```
 
 Manual recovery: re-run `mcp-registry-publish.yml` with `workflow_dispatch` and supply the tag (`vX.Y.Z`). Useful after a transient registry or DNS-resolver failure.
@@ -81,7 +83,7 @@ Executed once when ADR-0022 landed. Captured here for the next maintainer who ne
    mcp-publisher publish
    ```
 
-   The registry entry is live at `https://registry.modelcontextprotocol.io/v0/servers/com.runmemento/memento`. Subsequent releases publish automatically via [`mcp-registry-publish.yml`](../../.github/workflows/mcp-registry-publish.yml).
+   The registry entry is live at `https://registry.modelcontextprotocol.io/v0.1/servers/com.runmemento%2Fmemento/versions`. Subsequent releases publish automatically via [`mcp-registry-publish.yml`](../../.github/workflows/mcp-registry-publish.yml).
 
 ## Key rotation
 
