@@ -13,6 +13,7 @@ import { migration0004MemorySensitive } from './0004_memory_sensitive.js';
 import { migration0005FtsAddTags } from './0005_fts_add_tags.js';
 import { migration0006MemoryEventsImportedType } from './0006_memory_events_imported_type.js';
 import { migration0007MemoriesStatusLcaIndex } from './0007_memories_status_lca_index.js';
+import { migration0008FtsPorterTokenizer } from './0008_fts_porter_tokenizer.js';
 
 export const MIGRATIONS: readonly Migration[] = [
   migration0001InitialSchema,
@@ -22,4 +23,5 @@ export const MIGRATIONS: readonly Migration[] = [
   migration0005FtsAddTags,
   migration0006MemoryEventsImportedType,
   migration0007MemoriesStatusLcaIndex,
+  migration0008FtsPorterTokenizer,
 ];

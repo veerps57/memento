@@ -15,7 +15,9 @@ export {
 } from './embedder.js';
 
 export type {
+  EmbedBatchFn,
   EmbedFn,
+  EmbedRuntime,
   LocalEmbedderLoader,
   LocalEmbedderLoaderContext,
   LocalEmbedderOptions,

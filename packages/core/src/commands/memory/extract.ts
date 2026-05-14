@@ -46,18 +46,36 @@ const DRY_RUN_PLACEHOLDER_ID = '00000000000000000000000000' as unknown as Memory
 
 const ExtractionCandidateSchema = z
   .object({
-    kind: z.enum(MEMORY_KIND_TYPES).describe('Memory kind for this candidate.'),
-    content: z.string().min(1).describe('The memory content to extract.'),
-    tags: z.array(z.string()).optional().describe('Optional tags for this candidate.'),
+    kind: z
+      .enum(MEMORY_KIND_TYPES)
+      .describe(
+        'Memory kind: one of "fact", "preference", "decision", "todo", "snippet" — a plain string enum. NOTE: this is **flat** here (e.g. `"kind": "preference"`), unlike `memory.write` where the same field is a discriminated-union object (`"kind": {"type": "preference"}`). Reusing the write_memory shape will fail validation.',
+      ),
+    content: z
+      .string()
+      .min(1)
+      .describe(
+        'The memory content to extract. For `preference` and `decision` kinds, the first line MUST be `topic: value` (or `topic = value`) followed by a blank line and prose — this is what the conflict detector parses; without it, contradictory preferences silently coexist. Example: `"node-package-manager: pnpm\\n\\nUser prefers pnpm over npm."`. `fact` / `todo` / `snippet` kinds use different conflict heuristics and don\'t require this format.',
+      ),
+    tags: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Optional tags for this candidate. Each tag is normalised (trimmed + lowercased) and validated against `[a-z0-9._:/-]` — spaces, commas, and uppercase are rejected. Pre-process human-prose values (replace spaces/commas with `-`).',
+      ),
     summary: z.string().nullable().optional().describe('Optional one-line summary.'),
     rationale: z
       .string()
       .optional()
-      .describe('Rationale for the decision (recommended for decision kind).'),
+      .describe(
+        'Rationale for the decision — **top-level field, used only with `kind: "decision"`**. NOTE: this differs from `memory.write`, where `rationale` lives inside `kind: {type: "decision", rationale: "..."}`. In extract\'s flat candidate shape, rationale sits beside kind.',
+      ),
     language: z
       .string()
       .optional()
-      .describe('Programming language (recommended for snippet kind).'),
+      .describe(
+        'Programming language hint — **top-level field, used only with `kind: "snippet"`** (e.g. "typescript", "shell"). Like `rationale`, this differs from `memory.write` where `language` lives inside `kind: {type: "snippet", language: "..."}`.',
+      ),
   })
   .strict();
 
@@ -156,7 +174,7 @@ export function createMemoryExtractCommand(
     outputSchema: MemoryExtractOutputSchema,
     metadata: {
       description:
-        'Batch-extract candidate memories from a conversation. The server handles dedup, scrubbing, and writing. The assistant\'s job is reduced to dumping "what seemed worth remembering."\n\nDedup runs at two scopes: (1) **in-batch** — byte-identical candidates within the same call collapse to a single memory (kind-aware fingerprint); (2) **cross-batch** — embeddings are compared against existing active memories via the configured similarity thresholds (≥`extraction.dedup.identicalThreshold` skips, between that and `extraction.dedup.threshold` supersedes, below writes new). When in doubt, include the candidate.\n\nThe response carries a `mode` field. When `mode: "sync"`, the `written`, `skipped`, and `superseded` arrays are authoritative and you can report them directly. When `mode: "async"` (the default per `extraction.processing` config), those arrays are intentionally empty — the server returned a receipt and is processing in background. The accompanying `hint` field explains what to expect; do not retry. Writes land as memories within ~1–5 seconds and can be confirmed with `list_memories` or `search_memory` if needed.\n\nExample:\n\n```json\n{"candidates":[{"kind":"preference","content":"User prefers dark mode in all editors"},{"kind":"fact","content":"The production database is PostgreSQL 15"}]}\n```',
+        'Batch-extract candidate memories from a conversation. The server handles dedup, scrubbing, and writing. The assistant\'s job is reduced to dumping "what seemed worth remembering."\n\n**Candidate shape note** — this command\'s `kind` field is a flat string (`"kind": "fact"`), and `rationale` / `language` are top-level fields. This differs from `memory.write`, where `kind` is a discriminated-union object and those fields nest inside it. Copying the write_memory shape will fail validation with `INVALID_INPUT`.\n\n**Topic-line gotcha** — for `preference` and `decision` candidates, the `content` MUST start with a `topic: value` line followed by a blank line and prose. The conflict detector parses that first line; without it, contradictory preferences silently coexist. The handler returns `INVALID_INPUT` for offending candidates — the whole batch is rejected, not just the bad items.\n\nDedup runs at two scopes: (1) **in-batch** — byte-identical candidates within the same call collapse to a single memory (kind-aware fingerprint); (2) **cross-batch** — embeddings are compared against existing active memories via the configured similarity thresholds (≥`extraction.dedup.identicalThreshold` skips, between that and `extraction.dedup.threshold` supersedes, below writes new). When in doubt, include the candidate.\n\n**Storage defaults** — extracted memories are written at `storedConfidence: 0.8` (lower than `memory.write`\'s 1.0) so they decay faster and get pruned if never confirmed. This biases toward precision: tentative captures don\'t crowd out user-stated facts.\n\nThe response carries a `mode` field. When `mode: "sync"`, the `written`, `skipped`, and `superseded` arrays are authoritative and you can report them directly. When `mode: "async"` (the default per `extraction.processing` config), those arrays are intentionally empty — the server returned a receipt and is processing in background. The accompanying `hint` field explains what to expect; do not retry. Writes land as memories within ~1–5 seconds and can be confirmed with `list_memories` or `search_memory` if needed.\n\nExample (note the flat kind, the topic-line on the preference, and top-level rationale on the decision):\n\n```json\n{"candidates":[\n  {"kind":"preference","content":"editor-theme: dark\\n\\nUser prefers dark mode in all editors."},\n  {"kind":"fact","content":"The production database is PostgreSQL 15."},\n  {"kind":"decision","content":"storage-engine: SQLite\\n\\nChosen for the local-first story; FTS5 built in.","rationale":"Single-file, no daemon, prebuilt for every platform."},\n  {"kind":"snippet","content":"memento read <id>","language":"shell"}\n]}\n```',
       mcpName: 'extract_memory',
     },
     handler: async (input, ctx) => {
