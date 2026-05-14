@@ -1,5 +1,11 @@
 # @psraghuveer/memento
 
+## 0.6.3
+
+### Patch Changes
+
+- 1f7b514: Bake the `mcpName: "com.runmemento/memento"` field into the published tarball so the official MCP Registry can verify this package backs the canonical server entry. The field was added in #58 (ADR-0022) but missed the prior npm publish; this patch ships it. No runtime behavior change.
+
 ## 0.6.2
 
 ### Patch Changes
