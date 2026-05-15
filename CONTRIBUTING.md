@@ -196,15 +196,19 @@ git add docs/reference/
 
 ### 6. Open the PR
 
-Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md). The template asks you to:
+Mirror the [PR template](.github/PULL_REQUEST_TEMPLATE.md) section-by-section. The body must contain all nine sections, in order, without renaming or dropping any:
 
-- State the problem in your own words.
-- Address each of the four principles explicitly.
-- List the alternatives you considered and why you rejected them.
-- Disclose AI involvement, if any.
-- Confirm you have run local verification.
+1. **Problem** — state it in your own words.
+2. **Change** — one precise paragraph; a reviewer should understand the change from this alone.
+3. **Justification against the four principles** — address each explicitly. "N/A" requires a sentence explaining why.
+4. **Alternatives considered** — short description, why attractive, why rejected. Empty is a smell.
+5. **Tests** — which kinds cover the change, or `N/A` with a reason.
+6. **Local verification** — confirm you ran `pnpm verify` and `pnpm docs:generate` if generated docs changed.
+7. **ADR** — required if you make a load-bearing decision (public surface, data model, scope semantics, top-level dependency, a default that affects retrieval/decay/conflict, or reversing a prior decision).
+8. **AI involvement** — required for transparency, whether or not AI was used.
+9. **Linked issues** — `Closes #N` / `Refs #N`, or empty if none.
 
-PRs that skip the template will be asked to fill it in.
+Hand-rolling a PR body that omits or renames sections is the single most common preventable rework. PRs that skip the template structure will be asked to fill it in before review.
 
 ### 7. Review
 
