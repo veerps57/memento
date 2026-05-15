@@ -62,23 +62,28 @@ jobs:
           # complements it by short-circuiting symlink-tree rebuilds.
           cache: pnpm
 
+      # Linux/macOS only: pnpm's `node_modules/.pnpm/` symlink tree
+      # does not survive `actions/cache`'s tar/restore on Windows
+      # (verified in run 25914731985: restored symlinks fail to
+      # resolve `vite` from `@vitejs/plugin-react`, breaking the
+      # landing build). Linux + macOS work cleanly. setup-node's
+      # pnpm-store cache above still applies to every OS — Windows
+      # just pays the full symlink-tree rebuild on every install.
       - name: Cache workspace node_modules
+        if: runner.os != 'Windows'
         id: node-modules-cache
         uses: actions/cache@v4
         with:
           path: |
             node_modules
             packages/*/node_modules
-          # Restoring node_modules across jobs is the speed win on top
-          # of setup-node's pnpm-store cache. Keyed strictly on the
-          # lockfile hash so a dependency bump invalidates cleanly.
-          # `lefthook install` writes into `.git/hooks` and never
-          # touches `node_modules`, so it's safe to skip pnpm install
-          # entirely on cache hits.
           key: nm-${{ runner.os }}-validate-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        # Always run install on Windows (cache disabled). On
+        # Linux/macOS, skip when the cache hit since pnpm install
+        # would be a no-op.
+        if: runner.os == 'Windows' || steps.node-modules-cache.outputs.cache-hit != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Lint (Biome)
@@ -140,20 +145,23 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
 
+      # Linux/macOS only — see comment in the `validate` job above.
+      # Windows pays a fresh symlink-tree rebuild every install.
+      # Per-(OS, Node) cache key for the others: native modules
+      # (better-sqlite3) are ABI-tied to the Node version, so a
+      # Node 22 cache cannot be restored into a Node 24 job.
       - name: Cache workspace node_modules
+        if: runner.os != 'Windows'
         id: node-modules-cache
         uses: actions/cache@v4
         with:
           path: |
             node_modules
             packages/*/node_modules
-          # Per-(OS, Node) cache. Native modules (better-sqlite3) are
-          # ABI-tied to the Node version, so a Node 22 cache cannot be
-          # restored into a Node 24 job. Lockfile-hash keys the rest.
           key: nm-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        if: runner.os == 'Windows' || steps.node-modules-cache.outputs.cache-hit != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Ensure better-sqlite3 native binary
