@@ -84,7 +84,71 @@ export function nodeIO(): CliIO {
     isTTY: Boolean(process.stdout.isTTY),
     isStderrTTY: Boolean(process.stderr.isTTY),
     exit(code: number): never {
-      return process.exit(code);
+      // Crash class we are working around: when both `better-sqlite3`
+      // and `onnxruntime-node` (loaded transitively by the local
+      // embedder) are alive in the same Node process, the natural
+      // exit sequence deterministically aborts with `libc++abi:
+      // terminating due to uncaught exception of type
+      // std::__1::system_error: mutex lock failed: Invalid argument`.
+      // The two native modules' destructors race on a shared mutex
+      // at process teardown. We verified empirically that:
+      //   - `process.exit(code)` triggers the race.
+      //   - `process.reallyExit(code)` (Node's internal equivalent
+      //     of `_exit(2)`) also triggers it — C++ destructors run
+      //     in both paths.
+      //   - `pipeline.dispose()` on the transformers.js extractor
+      //     (ADR-0025) does not release the threads in time.
+      //   - `intraOpNumThreads: 1` does not help.
+      //   - Self-`SIGKILL` bypasses every destructor cleanly.
+      //
+      // The hatch: when the embedder was loaded in this process
+      // (signalled by the `__memento_embedder_loaded` global the
+      // embedder-local package sets on first init), self-SIGKILL
+      // after draining stdio. The cost is that the OS-level exit
+      // code becomes 137 (128 + SIGKILL=9), losing the JS-level
+      // intended code. We accept this because the commands that
+      // actually load the embedder (`dashboard`, `serve`, `pack
+      // install`, `import`) are either interactive (the user reads
+      // stdout, not the exit code) or already produce a structured
+      // result envelope on stdout that callers can parse.
+      //
+      // For commands that never loaded the embedder (most short
+      // commands when warmup hasn't completed), there is no race
+      // and `process.exit` is safe + preserves the exit code.
+      //
+      // See ADR-0026 for the full rationale and the worker-thread
+      // refactor we intend as the proper long-term fix.
+      const embedderLoaded =
+        (globalThis as { __memento_embedder_loaded?: boolean }).__memento_embedder_loaded === true;
+      if (!embedderLoaded) {
+        return process.exit(code);
+      }
+      const kill = (): never => process.kill(process.pid, 'SIGKILL') as never;
+      // Drain stdout/stderr so piped output (CI scripts, `jq`
+      // pipelines on the JSON result snapshot, redirected stderr
+      // logs) is not truncated. `write('', cb)` resolves once the
+      // stream has drained any pending buffered writes — for TTYs
+      // this is effectively immediate; for piped consumers it can
+      // take a tick.
+      let stdoutDone = false;
+      let stderrDone = false;
+      const maybeExit = (): void => {
+        if (stdoutDone && stderrDone) kill();
+      };
+      process.stdout.write('', () => {
+        stdoutDone = true;
+        maybeExit();
+      });
+      process.stderr.write('', () => {
+        stderrDone = true;
+        maybeExit();
+      });
+      // Belt-and-suspenders: if either drain callback never fires
+      // (closed pipe on the consumer end, broken stdio), SIGKILL
+      // anyway on the next tick so the process cannot hang on
+      // busted stdio.
+      setImmediate(kill);
+      return undefined as never;
     },
   };
 }

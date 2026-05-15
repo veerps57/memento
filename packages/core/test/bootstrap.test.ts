@@ -891,6 +891,117 @@ describe('createMementoApp — graceful shutdown', () => {
     expect(shutdownResolved).toBe(true);
   });
 
+  it('calls provider.dispose() after draining and before closing the database', async () => {
+    // The user-reported crash on `memento dashboard` Ctrl-C
+    // persisted after ADR-0024 because the drain only waits for
+    // inference to return — it doesn't tell ONNX to release its
+    // worker threads. ADR-0025 fixes that by calling
+    // `provider.dispose()` from `shutdown()` after the drain.
+    // This test pins the ordering: drain → dispose → close.
+    const events: string[] = [];
+    let resolveBatch: () => void = () => {};
+    const provider: EmbeddingProvider = {
+      model: 'shutdown-dispose-test',
+      dimension: 3,
+      embed: async () => [0.1, 0.2, 0.3],
+      embedBatch: (ts) =>
+        new Promise((resolve) => {
+          resolveBatch = () => {
+            events.push('drain-resolved');
+            resolve(ts.map(() => [0.1, 0.2, 0.3] as readonly number[]));
+          };
+        }),
+      dispose: async () => {
+        events.push('dispose-called');
+      },
+    };
+
+    // Seed an orphan so the startup backfill has something to
+    // embed — that's how we get a promise in the tracker.
+    const seedProvider: EmbeddingProvider = {
+      model: 'shutdown-dispose-test',
+      dimension: 3,
+      embed: async () => [0.1, 0.2, 0.3],
+    };
+    const app1 = await newApp({
+      embeddingProvider: seedProvider,
+      configOverrides: { 'embedding.autoEmbed': false },
+    });
+    await executeCommand(
+      app1.registry.get('memory.write')!,
+      { ...baseWriteInput, content: 'dispose-ordering-orphan' },
+      ctx,
+    );
+    const sharedDb = app1.db;
+    apps.pop();
+
+    const app2 = await createMementoApp({
+      database: sharedDb,
+      embeddingProvider: provider,
+      configOverrides: {
+        'embedding.startupBackfill.enabled': true,
+        'embedding.startupBackfill.shutdownGraceMs': 5000,
+      },
+    });
+    apps.push(app2);
+
+    // Let the backfill enter embedBatch.
+    await new Promise((r) => setTimeout(r, 20));
+
+    const shutdownPromise = app2.shutdown();
+    // While drain is parked, dispose must not have fired yet.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(events).toEqual([]);
+
+    // Release drain → tracker resolves → shutdown moves to phase 2.
+    resolveBatch();
+    await shutdownPromise;
+
+    // Ordering pinned: drain resolved BEFORE dispose was called.
+    expect(events).toEqual(['drain-resolved', 'dispose-called']);
+  });
+
+  it('shutdown is a no-op for providers that do not expose dispose', async () => {
+    // Cloud providers, test fakes, and any embedder without
+    // persistent native state can leave `dispose` undefined.
+    // Shutdown must not throw.
+    const provider: EmbeddingProvider = {
+      model: 'shutdown-no-dispose',
+      dimension: 3,
+      embed: async () => [0.1, 0.2, 0.3],
+    };
+    const app = await newApp({
+      embeddingProvider: provider,
+      configOverrides: { 'embedder.local.warmupOnBoot': false },
+    });
+    // Must not throw, must close cleanly.
+    await app.shutdown();
+  });
+
+  it('shutdown swallows errors thrown by provider.dispose', async () => {
+    // Disposal is best-effort: a failure here is strictly less
+    // harmful than the libc++ crash we are avoiding, so it must
+    // never block the database close.
+    let disposeCalled = false;
+    const provider: EmbeddingProvider = {
+      model: 'shutdown-dispose-throws',
+      dimension: 3,
+      embed: async () => [0.1, 0.2, 0.3],
+      dispose: async () => {
+        disposeCalled = true;
+        throw new Error('simulated ONNX disposal failure');
+      },
+    };
+    const app = await newApp({
+      embeddingProvider: provider,
+      configOverrides: { 'embedder.local.warmupOnBoot': false },
+    });
+    apps.pop();
+    // Must not reject.
+    await app.shutdown();
+    expect(disposeCalled).toBe(true);
+  });
+
   it('awaits in-flight post-write auto-embed before closing the database', async () => {
     // Covers the write-then-Ctrl-C race: a user writes a memory,
     // the post-write auto-embed kicks off, the user hits Ctrl-C

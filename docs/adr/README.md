@@ -33,7 +33,8 @@ The template is at [`template.md`](template.md). Use it.
 | 0021 | [Install-time embedding (sync) and startup backfill (async)](0021-install-time-embedding-and-startup-backfill.md) | Accepted |
 | 0022 | [Publishing to the official MCP Registry](0022-mcp-registry-publishing.md) | Accepted |
 | 0023 | [Graceful shutdown coordination for the startup embedding backfill](0023-graceful-shutdown-for-startup-backfill.md) | Superseded by ADR-0024 |
-| 0024 | [Generalize graceful shutdown to all background work](0024-generalize-graceful-shutdown.md) | Accepted |
+| 0024 | [Generalize graceful shutdown to all background work](0024-generalize-graceful-shutdown.md) | Superseded by ADR-0025 |
+| 0025 | [Dispose the embedder pipeline on shutdown](0025-dispose-embedder-pipeline-on-shutdown.md) | Accepted |
 
 ## When an ADR is required
 
