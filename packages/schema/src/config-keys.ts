@@ -573,20 +573,25 @@ export const CONFIG_KEYS = {
     description:
       'Hard upper bound on the number of memories the startup-backfill pass scans per boot. The pass walks the active corpus newest-first and stops at this cap; remaining stale rows surface on the next boot or via `embedding rebuild`.',
   }),
-  // The startup backfill is fire-and-forget per ADR-0021, which makes
-  // boot fast but leaves an in-flight inference batch when a host
-  // tears down on SIGINT. `MementoApp.shutdown()` awaits the backfill
-  // for this many milliseconds before forcing close. Long enough to
-  // drain a typical embed batch, short enough that Ctrl-C still feels
-  // responsive. Without it, ONNX worker threads inside the embedder
-  // can race with native-module destructors and abort the process
-  // with a `mutex lock failed` libc++ trap.
+  // Fire-and-forget background work — startup backfill (ADR-0021),
+  // embedder warmup, post-write conflict hooks (ADR-0005), and
+  // post-write auto-embed — is tracked by `createMementoApp` and
+  // awaited by `MementoApp.shutdown()` for this many milliseconds
+  // before forcing close. Long enough to drain a typical embed
+  // batch, short enough that Ctrl-C still feels responsive. Without
+  // the wait, ONNX worker threads inside the embedder can race with
+  // native-module destructors and abort the process with a `mutex
+  // lock failed` libc++ trap (ADR-0023 / ADR-0024). The key name
+  // retains the historical `embedding.startupBackfill.` prefix from
+  // its ADR-0023 origin even though the wait now covers all tracked
+  // background work — renaming was rejected at ADR-0024 time to
+  // avoid breaking any operator overrides set against v0.7.x.
   'embedding.startupBackfill.shutdownGraceMs': defineKey({
     schema: z.number().int().min(0).max(60_000),
     default: 3000,
     mutable: true,
     description:
-      'Grace window (ms) `MementoApp.shutdown()` waits for the in-flight startup backfill to drain before closing the database. Set to 0 to skip the wait entirely (back to fire-and-forget shutdown — only safe when the host coordinates teardown another way).',
+      'Grace window (ms) `MementoApp.shutdown()` waits for all tracked background work (startup backfill, embedder warmup, post-write conflict hooks, post-write auto-embed) to drain before closing the database. Set to 0 to skip the wait entirely (back to fire-and-forget shutdown — only safe when the host coordinates teardown another way).',
   }),
 
   // — Scrubber —

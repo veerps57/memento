@@ -1,6 +1,6 @@
 # ADR-0023: Graceful shutdown coordination for the startup embedding backfill
 
-- **Status:** Accepted (amends [ADR-0021](0021-install-time-embedding-and-startup-backfill.md) §Out-of-scope)
+- **Status:** Superseded by [ADR-0024](0024-generalize-graceful-shutdown.md) (amends [ADR-0021](0021-install-time-embedding-and-startup-backfill.md) §Out-of-scope)
 - **Date:** 2026-05-15
 - **Deciders:** Memento Authors
 - **Tags:** lifecycle, embedding, reliability, recovery
