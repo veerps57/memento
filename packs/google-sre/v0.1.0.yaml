@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=https://runmemento.com/schemas/memento-pack-v1.json
+
+format: memento-pack/v1
+id: google-sre
+version: 0.1.0
+title: Google SRE — principles for running reliable services
+description: |
+  Eleven durable principles for reliability engineering, framed for code review, on-call practice, and incident response. The framework is Google's, from "Site Reliability Engineering" (O'Reilly, 2016) and "The Site Reliability Workbook" (O'Reilly, 2018); the engineering applications written here are original.
+author: github.com/veerps57
+license: CC0-1.0
+homepage: https://sre.google/books/
+tags:
+  - reliability
+  - ops
+  - monitoring
+  - incident-response
+defaults:
+  scope:
+    type: global
+memories:
+  - kind: fact
+    content: |
+      framework: google-sre-principles
+
+      The eleven preferences and decisions in this pack are an engineering adaptation of the Google SRE corpus: "Site Reliability Engineering" (Beyer, Jones, Petoff, Murphy, O'Reilly, 2016) and "The Site Reliability Workbook" (Beyer, Murphy, Rensin, Kawahara, Thorne, O'Reilly, 2018), both freely available at https://sre.google/books/. SLOs, error budgets, blameless postmortems, toil reduction, the four golden signals — the framework is Google's; the applications written here are how each principle shows up in service design, alerting, and on-call decisions. Use as heuristics, not absolutes.
+    tags:
+      - meta
+
+  - kind: preference
+    content: |
+      reliability-target: embrace-risk-dont-chase-100-percent
+
+      100% reliability is the wrong target for almost every service. The cost of the last nine of availability grows exponentially while the user-perceived value flattens — users on a mobile network can't tell 99.999% from 99.99%, but the engineering cost difference is real. Pick a reliability target that matches what users actually need and what the business actually pays for; over-investing in reliability is over-investing.
+    tags:
+      - slo
+      - risk
+
+  - kind: preference
+    content: |
+      objectives: slos-first-slas-derived
+
+      Define Service Level Indicators (what you measure: request success rate, latency p99) and Service Level Objectives (the target: 99.9% of requests succeed in 200ms) before you let anyone write a Service Level Agreement. SLOs are an engineering decision about what the service should do; SLAs are a business contract about what happens when it doesn't. Inverting the order — letting Legal write the SLA first — produces targets disconnected from what the system can sustain.
+    tags:
+      - slo
+      - sli
+
+  - kind: preference
+    content: |
+      velocity-vs-reliability: error-budget-as-shared-currency
+
+      The gap between 100% and the SLO is the error budget — the explicit allowance for unreliability the service is allowed to spend on shipping. When the error budget is healthy, ship faster; when it's burned, slow down and invest in reliability. The error budget makes the reliability-vs-velocity trade-off concrete and shared between dev and SRE — it stops "feature velocity" and "reliability" from being two teams arguing past each other.
+    tags:
+      - error-budget
+      - velocity
+
+  - kind: preference
+    content: |
+      operational-load: keep-toil-under-fifty-percent
+
+      Toil is the mundane, repetitive, automatable work that grows linearly with the service — ticket triage, manual restarts, repeated runbook execution. Aim to spend less than 50% of SRE time on toil; the rest goes to engineering work that reduces future toil. When toil exceeds 50%, the team is sliding toward an operations role, not an engineering one; promote the toil to an automation project before it crowds out the work that makes the system better.
+    tags:
+      - toil
+      - automation
+
+  - kind: decision
+    content: |
+      postmortems: blameless-by-default
+
+      Every incident over a defined severity threshold gets a written postmortem that focuses on systems and processes, not individuals.
+    rationale: |
+      Blame produces hiding: engineers who fear blame stop reporting near-misses, stop owning incidents, and stop taking the on-call shifts where mistakes are most likely. The systemic root cause — a missing safeguard, an ambiguous runbook, a coupling that surprised everyone — is what's actually fixable; "Alice deployed the bad commit" is not a root cause, it's a name. Blameless postmortems trade short-term satisfaction for long-term learning, and the math is overwhelmingly on the long-term side.
+    tags:
+      - postmortems
+      - culture
+
+  - kind: preference
+    content: |
+      monitoring: four-golden-signals
+
+      The four signals that catch almost every service problem: latency (how long do successful requests take), traffic (how much demand is on the system), errors (rate of failed requests), saturation (how full is the system). Dashboards and alerts built on these four cover the user-visible behaviour; metrics outside these are usually diagnostic, not detection. Start every new service's observability stack with these four before reaching for anything else.
+    tags:
+      - monitoring
+      - golden-signals
+
+  - kind: preference
+    content: |
+      complexity: simplicity-is-a-reliability-property
+
+      Complex systems fail in more ways than simple ones, and the failure modes of complex systems are harder to predict and harder to debug. Reliability work isn't only about redundancy and retries; it's about deleting the optional complexity that exists "in case we need it" but earns no value today. Every line of code, every config knob, every layer is a potential failure source — keep only the ones that earn their keep.
+    tags:
+      - simplicity
+      - complexity
+
+  - kind: preference
+    content: |
+      alerting: page-on-symptoms-not-causes
+
+      An alert that pages a human is making the claim "a user is being harmed right now and you must act". Page on user-visible symptoms (error rate breach, latency breach, throughput collapse), not on causes (one host's CPU spike, one disk filling up). Causes either resolve themselves or escalate into symptoms; paging on causes generates noise that erodes trust in the alerting system, and a distrusted alert is worse than no alert.
+    tags:
+      - alerting
+      - on-call
+
+  - kind: preference
+    content: |
+      design-posture: hope-is-not-a-strategy
+
+      Hope is not a strategy: every failure mode you can imagine will eventually happen at scale. Design explicitly for the failures — network partitions, dependency outages, full disks, runaway retries, thundering herds, slow leaks — instead of leaving them as "unlikely". The failure mode is in the wild; the only choice is whether you've thought about it before it hits production or after.
+    tags:
+      - resilience
+      - design
+
+  - kind: preference
+    content: |
+      releases: automated-repeatable-and-reversible
+
+      A release process that requires a human to remember a step is a release process that will fail under stress. Automate the build → release → deploy path end-to-end, version every artefact, make rollback as cheap as rollout. The litmus test: can the on-call engineer roll back at 3am without paging anyone else? If no, the release engineering work is not finished.
+    tags:
+      - release-engineering
+      - deployment

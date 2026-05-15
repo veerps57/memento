@@ -6,7 +6,7 @@
 //
 //   - the wiring (registry + ctx + info) handed to serveStdio,
 //   - the `mcp` actor identity (with `agent: 'memento/<version>'`),
-//   - app.close() runs exactly once (covers transport-throws path),
+//   - app.shutdown() runs exactly once (covers transport-throws path),
 //   - error mapping (createApp throw → STORAGE_ERROR; serveStdio
 //     throw → INTERNAL).
 
@@ -107,15 +107,15 @@ describe('runServe', () => {
   });
 
   it('returns INTERNAL when the MCP transport throws and still closes the app', async () => {
-    let closed = false;
+    let shutdownCount = 0;
     const real = await createAppNoVector({ dbPath: ':memory:' });
     const result = await runServe(
       {
         createApp: async () => ({
           ...real,
-          close: () => {
-            closed = true;
-            real.close();
+          shutdown: async () => {
+            shutdownCount += 1;
+            await real.shutdown();
           },
         }),
         migrateStore: rejectMigrateStore,
@@ -129,21 +129,21 @@ describe('runServe', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('INTERNAL');
     expect(result.error.message).toContain('transport boom');
-    // The `finally` block in runServe must run app.close() even
+    // The `finally` block in runServe must run app.shutdown() even
     // on transport failure so the SQLite handle is not leaked.
-    expect(closed).toBe(true);
+    expect(shutdownCount).toBe(1);
   });
 
   it('closes the app on the success path', async () => {
-    let closed = false;
+    let shutdownCount = 0;
     const real = await createAppNoVector({ dbPath: ':memory:' });
     const result = await runServe(
       {
         createApp: async () => ({
           ...real,
-          close: () => {
-            closed = true;
-            real.close();
+          shutdown: async () => {
+            shutdownCount += 1;
+            await real.shutdown();
           },
         }),
         migrateStore: rejectMigrateStore,
@@ -152,7 +152,7 @@ describe('runServe', () => {
       { env: cliEnv(), subargs: [], io: NULL_IO },
     );
     expect(result.ok).toBe(true);
-    expect(closed).toBe(true);
+    expect(shutdownCount).toBe(1);
   });
 
   it('writes a readiness line to stderr when stderr is a TTY', async () => {

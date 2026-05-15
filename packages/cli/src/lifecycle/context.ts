@@ -93,6 +93,6 @@ export async function runContext(
       config: config as Record<ConfigKey, unknown>,
     });
   } finally {
-    app.close();
+    await app.shutdown();
   }
 }

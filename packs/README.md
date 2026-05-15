@@ -4,9 +4,12 @@ Curated YAML bundles of memories that ship with Memento. Each pack lives at `<id
 
 ## What's bundled
 
-| Pack                                                          | Title                                       | Scope    | Memories |
-| ------------------------------------------------------------- | ------------------------------------------- | -------- | -------- |
-| [`engineering-simplicity`](engineering-simplicity/v0.1.0.yaml) | Engineering through the Laws of Simplicity  | global   | 11       |
+| Pack                                                           | Title                                                  | Scope  | Memories |
+| -------------------------------------------------------------- | ------------------------------------------------------ | ------ | -------- |
+| [`engineering-simplicity`](engineering-simplicity/v0.1.0.yaml) | Engineering through the Laws of Simplicity             | global | 11       |
+| [`pragmatic-programmer`](pragmatic-programmer/v0.1.0.yaml)     | The Pragmatic Programmer — heuristics for engineering  | global | 13       |
+| [`twelve-factor-app`](twelve-factor-app/v0.1.0.yaml)           | The Twelve-Factor App — methodology for SaaS services  | global | 13       |
+| [`google-sre`](google-sre/v0.1.0.yaml)                         | Google SRE — principles for running reliable services  | global | 11       |
 
 ## Editing an existing pack
 

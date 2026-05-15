@@ -123,8 +123,29 @@ export interface MementoApp {
    * (`retrieval.vector.enabled = false` or no provider passed).
    */
   readonly embeddingProvider?: EmbeddingProvider;
-  /** Idempotent. Closes the database iff this app opened it. */
+  /**
+   * Idempotent synchronous close. Releases the database handle iff
+   * this app opened it. Does **not** wait for background work — the
+   * startup embedding backfill (ADR-0021) may still be mid-batch when
+   * `close()` returns, which is fine for embedded callers that
+   * coordinate teardown another way (tests, in-process integrations).
+   * Hosts that run signal-driven lifecycle commands (`dashboard`,
+   * `serve`) should prefer {@link MementoApp.shutdown} so the
+   * embedder's native worker threads aren't torn down mid-inference.
+   */
   close(): void;
+  /**
+   * Graceful shutdown for signal-driven lifecycles. Awaits the
+   * in-flight startup backfill (ADR-0021) up to
+   * `embedding.startupBackfill.shutdownGraceMs`, then runs the
+   * standard {@link MementoApp.close} synchronously. Idempotent and
+   * never throws — the backfill is best-effort, so any error it
+   * raises is swallowed exactly as it is during normal operation.
+   * The grace window stops Ctrl-C from racing the embedder's ONNX
+   * worker threads, which otherwise abort the process with
+   * `libc++abi: mutex lock failed: Invalid argument`.
+   */
+  shutdown(): Promise<void>;
 }
 
 /**
@@ -392,9 +413,16 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
   // Off-thread (does not block `createMementoApp`'s return),
   // best-effort (failures swallowed and recoverable via
   // `embedding.rebuild`), single-shot per boot.
+  // Promise captured (not just `void`-discarded) so
+  // `MementoApp.shutdown` can await it before closing the database.
+  // Without the await, a SIGINT during boot can tear down ONNX
+  // worker threads mid-inference and abort the process with a
+  // libc++ mutex trap. The closure's catch swallows errors exactly
+  // as before — the backfill stays best-effort.
+  let pendingBackfill: Promise<void> | null = null;
   if (embeddingProvider !== undefined && configStore.get('embedding.startupBackfill.enabled')) {
     const maxRows = configStore.get('embedding.startupBackfill.maxRows');
-    void (async () => {
+    pendingBackfill = (async () => {
       try {
         await reembedAll(memoryRepository, embeddingProvider, {
           actor: { type: 'cli' },
@@ -436,6 +464,28 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     }
   };
 
+  // Idempotent via `closed`. Awaits the in-flight backfill (if any)
+  // up to the configured grace window, then runs the synchronous
+  // close. `Promise.race` against a timer is the right primitive
+  // here: we want "complete or expire", not "abort the backfill" —
+  // ONNX Runtime doesn't expose cancellation, and a graceful drain
+  // is the only way to avoid the native-thread teardown race.
+  const shutdown = async (): Promise<void> => {
+    if (closed) return;
+    if (pendingBackfill !== null) {
+      const graceMs = configStore.get('embedding.startupBackfill.shutdownGraceMs');
+      if (graceMs > 0) {
+        let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+        const timer = new Promise<void>((resolve) => {
+          timeoutHandle = setTimeout(resolve, graceMs);
+        });
+        await Promise.race([pendingBackfill, timer]);
+        if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+      }
+    }
+    close();
+  };
+
   return {
     registry,
     db,
@@ -446,5 +496,6 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     configRepository,
     ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
     close,
+    shutdown,
   };
 }

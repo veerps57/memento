@@ -113,7 +113,7 @@ export async function runDoctor(
     try {
       checks.push(await checkEmbedder(dbCheck.app));
     } finally {
-      dbCheck.app.close();
+      await dbCheck.app.shutdown();
     }
   }
 

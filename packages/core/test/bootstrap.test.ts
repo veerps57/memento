@@ -689,3 +689,151 @@ describe('createMementoApp — embedder warmup', () => {
     expect(app).toBeDefined();
   });
 });
+
+// — Graceful shutdown ——————————————————————————————————————————
+//
+// The startup embedding backfill (ADR-0021) is fire-and-forget for
+// boot speed, which leaves an in-flight ONNX inference batch when a
+// signal-driven host (`memento dashboard`, `memento serve`) tears
+// down on Ctrl-C. Tearing down the embedder's native worker threads
+// mid-inference aborts the process with `libc++abi: mutex lock
+// failed: Invalid argument`. `MementoApp.shutdown()` exists to
+// avoid that: it awaits the in-flight backfill up to a configurable
+// grace window, then runs the standard synchronous close.
+//
+// Pinning the four observable properties:
+//
+//   1. Shutdown waits for an in-flight backfill before closing.
+//   2. Shutdown returns within the configured grace window even
+//      when the backfill is stuck (never resolves).
+//   3. Shutdown is idempotent.
+//   4. Shutdown is a no-op (effectively instant) when no backfill
+//      was kicked off (no embedder, or backfill disabled).
+
+describe('createMementoApp — graceful shutdown', () => {
+  it('awaits the in-flight startup backfill before closing the database', async () => {
+    // Phase 1: write an orphan with autoEmbed off so the row
+    // lands without a vector.
+    const phase1Provider: EmbeddingProvider = {
+      model: 'shutdown-await-test',
+      dimension: 3,
+      embed: async () => [0.1, 0.2, 0.3],
+    };
+    const app1 = await newApp({
+      embeddingProvider: phase1Provider,
+      configOverrides: { 'embedding.autoEmbed': false },
+    });
+    const writeResult = await executeCommand(
+      app1.registry.get('memory.write')!,
+      { ...baseWriteInput, content: 'shutdown-await-orphan' },
+      ctx,
+    );
+    expect(writeResult.ok).toBe(true);
+    const sharedDb = app1.db;
+    apps.pop();
+
+    // Phase 2: embedBatch returns a promise the test controls.
+    // The backfill enters embedBatch and parks until we release.
+    let releaseBatch: () => void = () => {};
+    const blockingProvider: EmbeddingProvider = {
+      model: 'shutdown-await-test',
+      dimension: 3,
+      embed: async () => [0.1, 0.2, 0.3],
+      embedBatch: (ts) =>
+        new Promise((resolve) => {
+          releaseBatch = () => resolve(ts.map(() => [0.1, 0.2, 0.3] as readonly number[]));
+        }),
+    };
+    const app2 = await createMementoApp({
+      database: sharedDb,
+      embeddingProvider: blockingProvider,
+      configOverrides: {
+        'embedding.startupBackfill.enabled': true,
+        'embedding.startupBackfill.shutdownGraceMs': 5000,
+      },
+    });
+    apps.push(app2);
+
+    // Race shutdown against a probe that flips after a short
+    // yield. If shutdown resolves before the probe fires, the
+    // grace window is being ignored and the test fails loud.
+    let shutdownResolved = false;
+    const shutdownPromise = app2.shutdown().then(() => {
+      shutdownResolved = true;
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(shutdownResolved).toBe(false);
+
+    // Release the batch — backfill resolves — shutdown completes.
+    releaseBatch();
+    await shutdownPromise;
+    expect(shutdownResolved).toBe(true);
+  });
+
+  it('returns within the configured grace window when the backfill is stuck', async () => {
+    // Phase 1: seed an orphan.
+    const phase1Provider: EmbeddingProvider = {
+      model: 'shutdown-timeout-test',
+      dimension: 3,
+      embed: async () => [0.1, 0.2, 0.3],
+    };
+    const app1 = await newApp({
+      embeddingProvider: phase1Provider,
+      configOverrides: { 'embedding.autoEmbed': false },
+    });
+    await executeCommand(
+      app1.registry.get('memory.write')!,
+      { ...baseWriteInput, content: 'shutdown-timeout-orphan' },
+      ctx,
+    );
+    const sharedDb = app1.db;
+    apps.pop();
+
+    // Phase 2: embedBatch never resolves. Without the grace
+    // window, shutdown would hang forever; with it, shutdown
+    // returns after roughly graceMs.
+    const stuckProvider: EmbeddingProvider = {
+      model: 'shutdown-timeout-test',
+      dimension: 3,
+      embed: () => new Promise<readonly number[]>(() => {}),
+      embedBatch: () => new Promise<readonly (readonly number[])[]>(() => {}),
+    };
+    const app2 = await createMementoApp({
+      database: sharedDb,
+      embeddingProvider: stuckProvider,
+      configOverrides: {
+        'embedding.startupBackfill.enabled': true,
+        'embedding.startupBackfill.shutdownGraceMs': 50,
+      },
+    });
+    apps.push(app2);
+
+    const start = Date.now();
+    await app2.shutdown();
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeGreaterThanOrEqual(50);
+    // Generous upper bound so a slow CI box doesn't flake.
+    expect(elapsed).toBeLessThan(2000);
+  });
+
+  it('is idempotent — second shutdown is a no-op', async () => {
+    const app = await newApp();
+    await app.shutdown();
+    // Second call must not throw and must resolve.
+    await app.shutdown();
+  });
+
+  it('is effectively instant when no backfill was kicked off', async () => {
+    // No embedder → bootstrap shortcircuits the backfill kickoff
+    // entirely → shutdown has nothing to await.
+    const app = await newApp();
+    apps.pop(); // shutdown will close; afterEach would double-close.
+    const start = Date.now();
+    await app.shutdown();
+    const elapsed = Date.now() - start;
+    // No await, so this should complete in microtask time. 50ms
+    // is overhead the test environment introduces.
+    expect(elapsed).toBeLessThan(50);
+  });
+});

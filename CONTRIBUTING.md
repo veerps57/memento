@@ -245,6 +245,12 @@ Then **rename the generated file** so it sorts chronologically:
 
 Get the timestamp with `date -u +"%Y-%m-%dT%H%M"`. Example: `.changeset/2026-04-27T1949-fix-init-creates-db-parent-dir.md`. The default whimsical names (`funny-foxes-dance.md`) make "what's the latest changeset?" unanswerable; the timestamp prefix fixes that. The CLI doesn't care about the filename — it reads any `*.md` in `.changeset/`.
 
+### Picking the bump type
+
+Library packages (`@psraghuveer/memento-core`, `-schema`, `-embedder-local`, `-dashboard`) follow standard semver on their public exports: `minor` for new exports or signature changes, `patch` for bug fixes and internal refactors. The CLI (`@psraghuveer/memento`) bumps `minor` only for a coherent feature launch shipping across packages; everything else — additive commands outside a launch, new bundled packs or skills, polish, README updates that ship in the tarball — is `patch`. Pre-1.0, breaking changes still bump `minor` (not `major`) so the release-notes entry is prominent. When in doubt, `patch`.
+
+The full framework, with worked examples drawn from past releases, is in [`.changeset/README.md`](.changeset/README.md#choosing-the-bump-type).
+
 ## Releasing
 
 Releases are automated end-to-end. You should never need to run `npm publish`, `git tag`, or `pnpm publish` by hand.

@@ -573,6 +573,21 @@ export const CONFIG_KEYS = {
     description:
       'Hard upper bound on the number of memories the startup-backfill pass scans per boot. The pass walks the active corpus newest-first and stops at this cap; remaining stale rows surface on the next boot or via `embedding rebuild`.',
   }),
+  // The startup backfill is fire-and-forget per ADR-0021, which makes
+  // boot fast but leaves an in-flight inference batch when a host
+  // tears down on SIGINT. `MementoApp.shutdown()` awaits the backfill
+  // for this many milliseconds before forcing close. Long enough to
+  // drain a typical embed batch, short enough that Ctrl-C still feels
+  // responsive. Without it, ONNX worker threads inside the embedder
+  // can race with native-module destructors and abort the process
+  // with a `mutex lock failed` libc++ trap.
+  'embedding.startupBackfill.shutdownGraceMs': defineKey({
+    schema: z.number().int().min(0).max(60_000),
+    default: 3000,
+    mutable: true,
+    description:
+      'Grace window (ms) `MementoApp.shutdown()` waits for the in-flight startup backfill to drain before closing the database. Set to 0 to skip the wait entirely (back to fire-and-forget shutdown — only safe when the host coordinates teardown another way).',
+  }),
 
   // — Scrubber —
   // Redaction is config-driven so operators can extend or

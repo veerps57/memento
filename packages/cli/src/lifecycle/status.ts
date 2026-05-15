@@ -54,7 +54,7 @@ export async function runStatus(
     const snapshot = await collect(app, input.env.dbPath);
     return ok(snapshot);
   } finally {
-    app.close();
+    await app.shutdown();
   }
 }
 

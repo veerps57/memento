@@ -159,7 +159,7 @@ export async function runImport(
       trustSource: args.value.trustSource,
     });
   } finally {
-    app.close();
+    await app.shutdown();
   }
 }
 

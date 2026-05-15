@@ -1,0 +1,135 @@
+# yaml-language-server: $schema=https://runmemento.com/schemas/memento-pack-v1.json
+
+format: memento-pack/v1
+id: twelve-factor-app
+version: 0.1.0
+title: The Twelve-Factor App — methodology for SaaS services
+description: |
+  The twelve factors for building software-as-a-service applications, framed as durable preferences for cloud-native engineering. The methodology is Adam Wiggins and the Heroku team's (2011, https://12factor.net); the engineering applications written here are original.
+author: github.com/veerps57
+license: CC0-1.0
+homepage: https://12factor.net/
+tags:
+  - cloud-native
+  - saas
+  - ops
+  - architecture
+defaults:
+  scope:
+    type: global
+memories:
+  - kind: fact
+    content: |
+      framework: twelve-factor-app-methodology
+
+      The twelve preferences in this pack are an engineering adaptation of the Twelve-Factor App methodology, originated by Adam Wiggins and the Heroku team (2011, https://12factor.net). The twelve factors — codebase, dependencies, config, backing services, build/release/run, processes, port binding, concurrency, disposability, dev/prod parity, logs, admin processes — are theirs; the applications written here are how each factor shows up in modern cloud-native service decisions. Use as heuristics, not absolutes.
+    tags:
+      - meta
+
+  - kind: preference
+    content: |
+      codebase: one-codebase-many-deploys
+
+      A twelve-factor app has exactly one codebase tracked in revision control, with many deploys (dev, staging, production, per-tenant). Multiple codebases for one app is a distributed-system problem in disguise; shared code across two apps belongs in a library, not in a copy. If you find yourself maintaining "the prod branch" and "the staging branch" as parallel codebases, the branching strategy has drifted off-factor.
+    tags:
+      - codebase
+      - version-control
+
+  - kind: preference
+    content: |
+      dependencies: declare-and-isolate
+
+      Declare every dependency explicitly in a manifest (`package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`) and isolate the install from the system environment (lockfiles, virtualenvs, containers). Never rely on system-wide packages "just being there" — they won't be on the next machine, the next OS version, or the next contributor's laptop. If `which curl` is part of your runtime, it's an undeclared dependency.
+    tags:
+      - dependencies
+      - reproducibility
+
+  - kind: preference
+    content: |
+      config: in-the-environment-not-the-code
+
+      Anything that differs between deploys (database URLs, API keys, hostnames, feature flags) belongs in environment variables, not committed config files. The litmus test: could you open-source the codebase right now without leaking secrets? If no, config has leaked into code. Twelve-factor config is strict environment variables — not language-specific config classes, not nested config trees, not anything that requires re-deploying to change a value.
+    tags:
+      - config
+      - secrets
+
+  - kind: preference
+    content: |
+      backing-services: treat-as-attached-resources
+
+      Databases, message queues, caches, mail providers, third-party APIs — every backing service is an attached resource, accessed by URL or set of credentials stored in config. Swapping a local Postgres for a cloud one should be a config change, not a code change. Code that hardcodes `localhost:5432` or `aws-region: us-east-1` has tied itself to one provider and one location; lift those values to config and the service becomes portable.
+    tags:
+      - services
+      - portability
+
+  - kind: preference
+    content: |
+      lifecycle: separate-build-release-run
+
+      The build stage compiles code into an executable artefact. The release stage combines build with config to produce a release. The run stage executes the release. Keep these stages strictly separate — never modify code at run time, never embed config at build time, never let releases mutate. A release is immutable, identified, and rollback-able; if rolling back means rebuilding, the boundary between stages has collapsed.
+    tags:
+      - lifecycle
+      - deployment
+
+  - kind: preference
+    content: |
+      processes: stateless-and-share-nothing
+
+      App processes are stateless and share nothing. Any data that needs to persist (sessions, uploads, caches that need to survive a restart) lives in a stateful backing service (database, object store, Redis). Sticky sessions, in-process caches that clients depend on, files written to local disk and read back later — these are leaks of state into the process layer, and they break the moment you scale out or restart.
+    tags:
+      - processes
+      - state
+
+  - kind: preference
+    content: |
+      port-binding: export-services-via-port-binding
+
+      The app is self-contained and exports services by binding to a port; it does not rely on injection of a webserver at run time. A twelve-factor app's HTTP listener is part of the app itself, configured by environment (the `PORT` env var). This makes the app a composable building block — one app can become the backing service for another via URL, without extra deployment ceremony.
+    tags:
+      - ports
+      - service-model
+
+  - kind: preference
+    content: |
+      concurrency: scale-out-via-the-process-model
+
+      Scale by adding processes, not by adding threads inside one process. Different workload types (web requests, background jobs, scheduled tasks) become different process types, each scalable independently. Vertical scaling has a ceiling; horizontal scaling via the process model has none. If your scaling strategy is "buy a bigger box", you've stepped outside the twelve-factor envelope.
+    tags:
+      - concurrency
+      - scaling
+
+  - kind: preference
+    content: |
+      disposability: fast-startup-graceful-shutdown
+
+      Processes start in seconds and shut down gracefully on SIGTERM (finish in-flight requests, return jobs to the queue, then exit). Fast startup means deploys, scale-up, and recovery from crashes are cheap; graceful shutdown means rolling deploys don't drop requests. A process that takes a minute to boot or doesn't handle SIGTERM is an operational tax on every deploy.
+    tags:
+      - lifecycle
+      - reliability
+
+  - kind: preference
+    content: |
+      parity: keep-dev-staging-prod-similar
+
+      Minimise the gap between development, staging, and production: same backing services (real Postgres in dev, not SQLite-pretending-to-be-Postgres), same OS, same runtime versions, same deploy mechanism. Every gap is a category of bug that only surfaces in the environment you don't have at your desk. The time-, personnel-, and tools-gaps the twelve-factor authors warned about are still the ones that bite.
+    tags:
+      - environments
+      - parity
+
+  - kind: preference
+    content: |
+      logs: treat-as-event-streams
+
+      An app writes its logs unbuffered to stdout. The execution environment captures, routes, archives, and indexes them — that's not the app's job. Log files on disk, log rotation in the app, log-shipping clients embedded in the app — all of these couple the app to one log-handling strategy and break in containerised, serverless, or platform-as-a-service environments. Stdout is the universal pipe.
+    tags:
+      - logs
+      - ops
+
+  - kind: preference
+    content: |
+      admin: run-admin-tasks-as-one-off-processes
+
+      Database migrations, ad-hoc data fixes, REPL inspections, one-time cleanups — run them as one-off processes, in an identical environment to the regular app processes, against the same release. Admin scripts living outside the app or running with different dependencies are a different program; if a migration runs successfully on the developer's laptop but fails in production, the environments have drifted.
+    tags:
+      - admin
+      - migrations

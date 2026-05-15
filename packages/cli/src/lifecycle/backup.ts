@@ -90,7 +90,7 @@ export async function runBackup(
     // of "did we forget to escape something" bugs.
     app.db.raw.prepare('vacuum into ?').run(absTemp);
   } finally {
-    app.close();
+    await app.shutdown();
   }
 
   // Owner-only perms on the snapshot. Memory content survives

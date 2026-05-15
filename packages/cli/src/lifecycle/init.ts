@@ -195,14 +195,16 @@ export async function runInit(
     await checkDbPathWritable(input.env.dbPath),
   ];
 
-  // Open + migrate. We close immediately — `init` does not
-  // hold the DB beyond the success path.
+  // Open + migrate. We shut down immediately — `init` does not
+  // hold the DB beyond the success path. `shutdown` (not `close`)
+  // so any in-flight startup backfill drains gracefully before
+  // we release the database handle.
   const opened = await openAppForSurface(deps, {
     dbPath: input.env.dbPath,
     appVersion: resolveVersion(),
   });
   if (!opened.ok) return opened;
-  opened.value.close();
+  await opened.value.shutdown();
 
   const clients = renderClientSnippets(dbPath, {
     ...(clientFilter !== undefined ? { clients: clientFilter } : {}),

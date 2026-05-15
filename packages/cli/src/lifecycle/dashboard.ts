@@ -12,7 +12,11 @@
 //      `127.0.0.1`, opens the browser, and blocks until SIGINT
 //      / SIGTERM. Returns the resolved URL/port. Tests inject a
 //      fake that resolves immediately without binding.
-//   4. `app.close()` releases the database handle.
+//   4. `app.shutdown()` drains any in-flight startup-embedding
+//      backfill (ADR-0021) within the configured grace window,
+//      then releases the database handle. The graceful drain
+//      stops Ctrl-C from racing the embedder's ONNX worker
+//      threads and aborting the process with a libc++ mutex trap.
 //
 // Why a lifecycle command and not a registry command:
 //
@@ -141,7 +145,7 @@ export async function runDashboard(
       message: `dashboard launch failed: ${message}`,
     });
   } finally {
-    app.close();
+    await app.shutdown();
   }
 }
 

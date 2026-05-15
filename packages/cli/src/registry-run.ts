@@ -23,7 +23,7 @@
 //   4. The adapter's `run` calls `executeCommand`, which validates
 //      via Zod. Validation failures become `INVALID_INPUT` and
 //      flow through the standard render pipeline.
-//   5. `app.close()` runs in a `finally` so the SQLite handle is
+//   5. `app.shutdown()` runs in a `finally` so the SQLite handle is
 //      released even if rendering or execution throws.
 //
 // Why empty-object as the default: most read-side commands have
@@ -83,7 +83,7 @@ export async function runRegistry(
     const adapter = buildCliAdapter({ registry: app.registry, ctx });
     return await adapter.run(input.commandName, rawInput);
   } finally {
-    app.close();
+    await app.shutdown();
   }
 }
 
