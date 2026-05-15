@@ -45,6 +45,48 @@ This directory drives Memento's release process. Every change that affects a pub
 - `baseBranch: "main"` — used by `changeset status` to determine "what changed since".
 - `linked: []`, `fixed: []` — packages version independently. We will reconsider this after v1 if independent versioning produces too much noise.
 
+## Choosing the bump type
+
+The bump should tell consumers the right thing about what changed in the tarball they're about to install. Two conventions apply because the packages serve two different audiences.
+
+### Library packages (`@psraghuveer/memento-core`, `-schema`, `-embedder-local`, `-dashboard`)
+
+Standard semver applied to the package's **public exports** — what's re-exported from `packages/<pkg>/src/index.ts`. Library consumers write code against these names; the bump tells them whether the upgrade can break their code.
+
+| Change                                                       | Bump  |
+| ------------------------------------------------------------ | ----- |
+| New public export (function, type, schema, config key)       | minor |
+| Change to an existing export's signature or semantics        | minor (pre-1.0 convention — see below) |
+| Bug fix to an existing export, behaviour unchanged           | patch |
+| Internal refactor with no observable change                  | patch (or no changeset if unobservable) |
+
+### CLI (`@psraghuveer/memento`)
+
+The bump reflects what someone running `npx @psraghuveer/memento` experiences when they upgrade. The CLI has no programmatic consumers; the audience is humans reading release notes.
+
+| Change                                                                            | Bump  |
+| --------------------------------------------------------------------------------- | ----- |
+| Coherent feature launch — a new capability shipping across packages (the pack system, the dashboard, embeddings) | minor |
+| Additive change — a new command outside a launch, a new flag, a new bundled pack or skill | patch |
+| Bug fix, polish, or `packages/cli/README.md` / inline-doc updates that ship in the tarball | patch |
+| Breaking change to an existing command (renamed flag, removed default, changed exit code) | minor (pre-1.0 convention) |
+
+### Pre-1.0 convention
+
+We are at `0.x.y`. Per semver §4, anything goes pre-1.0. The repo convention: breaking changes still bump `minor`, not `major`, so the release-notes entry is prominent. Reserve `major` for the 1.0 milestone itself.
+
+### Worked examples from history
+
+- **0.6.0 packs launch** (new `pack.*` commands + schema + dashboard pages + first bundled pack) — `minor` across `memento`, `memento-core`, `memento-schema`, `memento-dashboard`. Coherent launch.
+- **`pack.install` hook fix** — `memento-core: patch`. Bug fix to existing surface.
+- **Install-time embed + startup backfill** — `memento-core: minor`, `memento-schema: minor` (new exports: `embedAndStore`, `MementoApp.embeddingProvider`, new config keys); `memento: patch` (no new CLI commands, behavior fix only).
+- **New `memento skill-path` command** (additive, not part of a launch) — `memento: patch`.
+- **Three new bundled packs** (data only, no new command or schema) — `memento: patch`.
+
+### When in doubt
+
+Default to `patch`. The cost of an under-bump is a less-prominent release-notes entry; the cost of an over-bump is a version number that misleads consumers about what they are getting.
+
 ## When you don't need a changeset
 
 - Pure documentation changes (top-level `README.md`, `/docs/**`, `AGENTS.md`).

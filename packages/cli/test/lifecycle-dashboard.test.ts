@@ -15,7 +15,7 @@
 //     port, host, shouldOpen, version, io)
 //   - the launcher's returned URL/port/host/opened flow into the
 //     snapshot verbatim
-//   - app.close() runs exactly once, including when the
+//   - app.shutdown() runs exactly once, including when the
 //     launcher throws (we catch and rethrow paths only —
 //     production wraps the throw as INTERNAL upstream)
 //   - createApp throw → STORAGE_ERROR (mirrors runServe)
@@ -330,16 +330,16 @@ describe('runDashboard', () => {
   });
 
   it('closes the app exactly once after a successful launch', async () => {
-    let closed = 0;
+    let shutdownCount = 0;
     const real = await createAppNoVector({ dbPath: ':memory:' });
     const { launch } = fakeLauncher();
     const result = await runDashboard(
       {
         createApp: async () => ({
           ...real,
-          close: () => {
-            closed += 1;
-            real.close();
+          shutdown: async () => {
+            shutdownCount += 1;
+            await real.shutdown();
           },
         }),
         migrateStore: rejectMigrateStore,
@@ -349,22 +349,22 @@ describe('runDashboard', () => {
       { env: cliEnv(), subargs: [], io: NULL_IO },
     );
     expect(result.ok).toBe(true);
-    expect(closed).toBe(1);
+    expect(shutdownCount).toBe(1);
   });
 
   it('returns INTERNAL and still closes the app when the launcher throws', async () => {
     // Production hazards: port conflict, killed `open` binary, a
     // broken `@hono/node-server` import. The lifecycle command
     // must not leak the DB handle on any of those — try/finally.
-    let closed = 0;
+    let shutdownCount = 0;
     const real = await createAppNoVector({ dbPath: ':memory:' });
     const result = await runDashboard(
       {
         createApp: async () => ({
           ...real,
-          close: () => {
-            closed += 1;
-            real.close();
+          shutdown: async () => {
+            shutdownCount += 1;
+            await real.shutdown();
           },
         }),
         migrateStore: rejectMigrateStore,
@@ -379,6 +379,6 @@ describe('runDashboard', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('INTERNAL');
     expect(result.error.message).toContain('EADDRINUSE');
-    expect(closed).toBe(1);
+    expect(shutdownCount).toBe(1);
   });
 });

@@ -105,7 +105,7 @@ export async function runPack(
         return await runCreate(app, a, input.io.isTTY === true, deps.createPackPrompter);
     }
   } finally {
-    app.close();
+    await app.shutdown();
   }
 }
 

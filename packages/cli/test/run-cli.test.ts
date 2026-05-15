@@ -478,12 +478,12 @@ describe('runCli: registry projection', () => {
           ...opts,
           configOverrides: { ...opts?.configOverrides, 'retrieval.vector.enabled': false },
         });
-        const originalClose = app.close.bind(app);
+        const originalShutdown = app.shutdown.bind(app);
         return {
           ...app,
-          close: () => {
+          shutdown: async () => {
             closed += 1;
-            return originalClose();
+            await originalShutdown();
           },
         };
       },

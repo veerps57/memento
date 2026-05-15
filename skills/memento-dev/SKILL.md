@@ -140,6 +140,12 @@ Get the timestamp with `date -u +"%Y-%m-%dT%H%M"`. Example: `.changeset/2026-05-
 
 Pure docs / test-only / CI / repo-tooling changes do not need a changeset.
 
+### Picking the bump type
+
+Library packages (`@psraghuveer/memento-core`, `-schema`, `-embedder-local`, `-dashboard`) follow standard semver on their public exports — `minor` for new exports, `patch` for fixes. The CLI (`@psraghuveer/memento`) bumps `minor` only for a coherent feature launch (a new capability shipping across packages); everything else — additive commands outside a launch, new bundled packs/skills, polish, README updates that ship in the tarball — is `patch`. Pre-1.0, breaking changes still bump `minor`, not `major`. Default to `patch` when unsure.
+
+The canonical framework with worked examples is in [`.changeset/README.md`](.changeset/README.md#choosing-the-bump-type). Follow it instead of judging each PR fresh — that's what makes the choice reproducible across sessions.
+
 ## Out of scope — do not implement without an ADR
 
 These are deliberate omissions, documented in [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md). Do not add them as part of an incidental PR:

@@ -135,9 +135,9 @@ describe('runDoctor', () => {
       {
         createApp: async () => ({
           ...real,
-          close: () => {
+          shutdown: async () => {
             closed = true;
-            real.close();
+            await real.shutdown();
           },
         }),
         migrateStore: rejectMigrateStore,

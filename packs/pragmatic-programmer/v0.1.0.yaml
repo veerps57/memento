@@ -1,0 +1,139 @@
+# yaml-language-server: $schema=https://runmemento.com/schemas/memento-pack-v1.json
+
+format: memento-pack/v1
+id: pragmatic-programmer
+version: 0.1.0
+title: The Pragmatic Programmer — heuristics for engineering decisions
+description: |
+  Twelve durable heuristics for code and craft, structured around the tip catalogue from Dave Thomas and Andy Hunt's "The Pragmatic Programmer" (Addison-Wesley, 1999; 20th Anniversary Edition, 2019). The framework and tip names are Hunt and Thomas's; the engineering applications written here are original.
+author: github.com/veerps57
+license: CC0-1.0
+homepage: https://pragprog.com/titles/tpp20/the-pragmatic-programmer-20th-anniversary-edition/
+tags:
+  - engineering
+  - discipline
+  - craftsmanship
+  - judgment
+defaults:
+  scope:
+    type: global
+memories:
+  - kind: fact
+    content: |
+      framework: pragmatic-programmer-tips
+
+      The twelve preferences in this pack are an engineering adaptation of Dave Thomas and Andy Hunt's "The Pragmatic Programmer" (Addison-Wesley, 1999; 20th Anniversary Edition, 2019, https://pragprog.com/titles/tpp20/). The tip names — DRY, orthogonality, tracer bullets, broken windows, programming by coincidence, design by contract — are theirs; the applications written here are how each idea shows up in modern code review, AI-assisted coding, refactoring, and scope decisions. Use as heuristics, not absolutes.
+    tags:
+      - meta
+
+  - kind: preference
+    content: |
+      knowledge-storage: dry-by-default
+
+      Don't Repeat Yourself: every piece of knowledge should have a single, authoritative representation in the system. When two pieces of code, two config files, or two docs describe the same fact, a change to one silently desyncs the other. Duplication isn't only about copy-pasted code — it's about parallel sources of truth for one piece of knowledge. Before adding a third copy of anything (a constant, a validation rule, a comment that mirrors a config), reach for the existing canonical source.
+
+      Caveat: don't reach prematurely. Three similar lines is usually better than a premature abstraction; DRY-ing on the third occurrence makes the duplication real, not on the second.
+    tags:
+      - duplication
+      - design
+
+  - kind: preference
+    content: |
+      coupling: orthogonality-over-cleverness
+
+      Independent components don't affect each other. When the auth subsystem can be replaced without touching the rate limiter, when changing a database driver doesn't ripple into the test runner, the codebase has orthogonality. Orthogonal components compose; tangled ones must be rewritten together. Watch for the symptom "every change spans five files" — that's lost orthogonality talking.
+    tags:
+      - architecture
+      - modularity
+
+  - kind: preference
+    content: |
+      decisions: reversible-by-default
+
+      There are no final decisions, only convenient defaults that should stay easy to revisit. Wire choices so a future-you can swap them with a small, scoped change: feature flags for risky behaviour, interfaces between layers you might rip out, named functions over inline magic. Decisions that genuinely lock you in (a database choice, a wire-format commitment, a vendor SDK threaded through every layer) deserve explicit thought before they harden — not after.
+    tags:
+      - design
+      - reversibility
+
+  - kind: preference
+    content: |
+      construction-strategy: tracer-bullets-over-inside-out
+
+      Build the simplest end-to-end thing that runs through every layer (request → handler → store → response), then iterate width-wise. The tracer-bullet skeleton gives you a working system to refine; an inside-out construction (perfect data layer, perfect domain layer, then wiring) is months of work before anything actually answers a request. Tracer bullets are real code that survives; they're not throwaway prototypes.
+    tags:
+      - construction
+      - scope
+
+  - kind: decision
+    content: |
+      prototypes: never-grow-into-production
+
+      A prototype is throwaway code written to answer a specific question (does this UI flow work, does this algorithm fit in memory, is this API shape usable). The moment a prototype starts handling real load, the answers it was designed to give become irrelevant and its shortcuts become production hazards.
+    rationale: |
+      Prototypes are written with the cuts that make them fast to build: no error handling, no auth, no edge cases, no tests. Those cuts are the point — they're how the prototype produced its answer quickly. Promoting prototype code to production means inheriting every cut as a latent bug. When the prototype's answer is "yes, this approach works", the correct next move is to rebuild the path properly, not to ship the prototype.
+    tags:
+      - construction
+      - quality
+
+  - kind: preference
+    content: |
+      maintenance: no-broken-windows
+
+      Don't leave broken windows — bad designs, wrong decisions, poor code — unrepaired in the codebase. Each one signals that nobody is watching, which makes the next break easier. The fix doesn't have to be heroic: a TODO that names the rot, a comment explaining why a function is wrong, a small targeted PR that cleans one corner. The signal that the team cares is what stops broken windows from multiplying.
+    tags:
+      - maintenance
+      - culture
+
+  - kind: preference
+    content: |
+      quality: good-enough-is-a-requirements-issue
+
+      Quality is a requirement, not a virtue. "Good enough" software is the right target — the question is what *good enough* means for this code in this context. A throwaway script doesn't need the polish of a payment system; a payment system doesn't need the formal verification of avionics. Decide the quality bar with the people who'll live with the consequences before you write code, so the time you spend on polish is the time the system actually needs.
+    tags:
+      - quality
+      - scope
+
+  - kind: preference
+    content: |
+      causation: know-why-the-code-works
+
+      Programming by coincidence — code that works without you knowing why — is the cousin of the working-without-tests trap. If you can't explain why the function returns the right answer, you can't tell whether the next change will break it. When debugging surfaces "I changed this line and now it works", treat that as "I haven't found the bug yet, I've masked it"; keep going until you can name the cause.
+    tags:
+      - debugging
+      - rigor
+
+  - kind: preference
+    content: |
+      contracts: design-by-contract
+
+      Functions and modules have contracts: preconditions the caller must meet, postconditions the function guarantees on return, invariants that hold throughout. Make the contracts explicit — in types where the language supports them, in assertions where it doesn't, in tests where neither suffices. Invisible contracts are the most violated.
+    tags:
+      - design
+      - rigor
+
+  - kind: preference
+    content: |
+      assumptions: dont-assume-it-prove-it
+
+      Every assumption ("this list is non-empty", "this config key is set", "the file exists") is a latent bug until proven. When the cost is small, prove it in the code (assert, type, schema validation). When the cost is high, prove it in a test. "It should never happen" reliably means it happens.
+    tags:
+      - rigor
+      - testing
+
+  - kind: preference
+    content: |
+      refactoring: three-strikes-and-refactor
+
+      First time you write a thing, just write it. Second time you write something similar, wince and write it again. Third time, refactor. The three-strikes rule keeps you from premature abstraction (DRY on the second use is guessing) and from chronic duplication (ignoring the third is laziness). Refactoring is a separate, scoped activity — don't fold it into a bug fix or a feature, because mixing refactor with behaviour change makes the review impossible to do well.
+    tags:
+      - refactoring
+      - discipline
+
+  - kind: preference
+    content: |
+      testability: design-for-the-second-user
+
+      Tests are the first user of every API. If a function is hard to test, it's also hard to use — testability is a design property, not a QA afterthought. Pure functions test trivially; functions that reach into globals, mutate hidden state, or require elaborate setup are telling you they have hidden inputs that should be parameters. Listen to the test pain; the design is asking to be fixed.
+    tags:
+      - testing
+      - design

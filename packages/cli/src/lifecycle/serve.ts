@@ -8,8 +8,12 @@
 //      registry, attaches a `StdioServerTransport`, and blocks
 //      until the transport closes (parent disconnects or peer
 //      sends `close`).
-//   3. `app.close()` runs in a `finally` so the database
-//      handle is released even if the transport throws.
+//   3. `app.shutdown()` runs in a `finally` so the database
+//      handle is released even if the transport throws. The
+//      graceful drain awaits any in-flight startup-embedding
+//      backfill (ADR-0021) before closing — without it, a SIGINT
+//      mid-inference can race the embedder's ONNX worker threads
+//      and abort the process with a libc++ mutex trap.
 //
 // Why a lifecycle command and not a registry command:
 //
@@ -46,7 +50,7 @@
 //   - `serveStdio` throws → `INTERNAL` (transport- or SDK-level
 //     failure; the user-meaningful detail is in the message).
 //
-// Both paths run through `app.close()` exactly once via the
+// Both paths run through `app.shutdown()` exactly once via the
 // `finally` block, including the case where `app` was never
 // assigned because `createApp` itself threw.
 
@@ -142,7 +146,7 @@ export async function runServe(deps: LifecycleDeps, input: LifecycleInput): Prom
       hint: `transport failure logged to ${logPath}.`,
     });
   } finally {
-    app.close();
+    await app.shutdown();
   }
 }
 

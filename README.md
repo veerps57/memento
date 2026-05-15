@@ -43,7 +43,7 @@ A fresh Memento install is empty. Packs are curated YAML bundles of memories you
 memento pack install engineering-simplicity
 ```
 
-That command installs the bundled `engineering-simplicity` pack — eleven memories distilled from John Maeda's *The Laws of Simplicity*. Preview before installing with `memento pack preview <id-or-path>`; list what's installed with `memento pack list`; remove any time with `memento pack uninstall <id> --confirm` (dry-run by default).
+That command installs one of the bundled packs — eleven memories distilled from John Maeda's *The Laws of Simplicity*. Four bundled packs ship out of the box: `engineering-simplicity`, `pragmatic-programmer` (Hunt & Thomas's tips), `twelve-factor-app` (Wiggins / Heroku), and `google-sre` (Google's SRE books). Preview before installing with `memento pack preview <id-or-path>`; list what's installed with `memento pack list`; remove any time with `memento pack uninstall <id> --confirm` (dry-run by default).
 
 Packs are also how you share. Author one from your existing memories with `memento pack create`, then distribute it as a file, an HTTPS URL, or a community contribution. The reserved `pack:<id>:<version>` tag stamps every pack-installed memory so provenance never drifts. Full guide: [docs/guides/packs.md](docs/guides/packs.md). Design rationale: [ADR-0020](docs/adr/0020-memento-packs.md).
 
