@@ -135,19 +135,35 @@ export interface MementoApp {
    */
   close(): void;
   /**
-   * Graceful shutdown for signal-driven lifecycles. Awaits every
-   * tracked background task — post-write conflict hooks
-   * (ADR-0005), post-write auto-embed, the startup backfill
-   * (ADR-0021), and the embedder warmup — up to
-   * `embedding.startupBackfill.shutdownGraceMs`, then runs the
-   * standard {@link MementoApp.close} synchronously. Idempotent
-   * and never throws — each tracked task already swallows its
-   * own errors and the tracker adds a defensive catch on top, so
-   * shutdown's failure mode is "timed out waiting for the work to
-   * drain", not "rejected". The grace window stops Ctrl-C from
-   * racing the embedder's ONNX worker threads, which otherwise
-   * abort the process with `libc++abi: mutex lock failed: Invalid
-   * argument` (ADR-0023 / ADR-0024).
+   * Graceful shutdown for signal-driven lifecycles. Three phases:
+   *
+   *   1. Await every tracked background task — post-write conflict
+   *      hooks (ADR-0005), post-write auto-embed, the startup
+   *      backfill (ADR-0021), and the embedder warmup — up to
+   *      `embedding.startupBackfill.shutdownGraceMs`.
+   *   2. Call `embeddingProvider.dispose()` (if defined) to release
+   *      any non-thread native resources the provider holds — for
+   *      the local embedder this disposes the transformers.js
+   *      pipeline handle. Best-effort: a disposal failure is caught
+   *      and swallowed so the database close (phase 3) always runs.
+   *   3. Run {@link MementoApp.close} synchronously.
+   *
+   * Important: this is NOT what prevents the `libc++abi: mutex lock
+   * failed: Invalid argument` abort on process exit. We proved
+   * empirically (ADR-0025) that the native-destructor race between
+   * `better-sqlite3` and `onnxruntime-node` is not avoidable from
+   * JavaScript — neither `pipeline.dispose()` nor `process.exit`
+   * nor `process.reallyExit` skips the C++ destructors. The CLI's
+   * `io.exit()` self-SIGKILLs the process to bypass them. `shutdown`
+   * exists for correct cleanup of observable state (snapshot
+   * accuracy, file handles, future cloud / GPU providers); the
+   * SIGKILL hatch handles the race itself.
+   *
+   * Idempotent and never throws — each tracked task swallows its
+   * own errors, the tracker adds a defensive catch, and disposal
+   * failures are caught locally. Shutdown's only failure mode is
+   * "timed out waiting for the work to drain" — that does not
+   * propagate.
    */
   shutdown(): Promise<void>;
 }
@@ -514,17 +530,26 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     }
   };
 
-  // Idempotent via `closed`. Drains all tracked background work
-  // (post-write hooks, auto-embed, startup backfill, embedder
-  // warmup) up to the configured grace window, then runs the
-  // synchronous close. `Promise.race` against a timer is the right
-  // primitive here: we want "complete or expire", not "abort the
-  // work" — ONNX Runtime doesn't expose cancellation, and a
-  // graceful drain is the only way to avoid the native-thread
-  // teardown race. The snapshot is taken at the start; tasks that
-  // race in *after* shutdown starts are not waited on, but by then
-  // the host's HTTP/MCP transports are already closed so new tasks
-  // should be vanishingly rare.
+  // Idempotent via `closed`. Three-phase teardown:
+  //
+  //   1. Drain all tracked background work (post-write hooks,
+  //      auto-embed, startup backfill, embedder warmup) up to the
+  //      configured grace window. `Promise.race` against a timer is
+  //      the right primitive — we want "complete or expire", not
+  //      "abort" — because ONNX Runtime doesn't expose mid-inference
+  //      cancellation. The snapshot is taken at the start; tasks
+  //      that race in *after* shutdown starts are not waited on,
+  //      but by then the host's transports are already closed so
+  //      new tasks should be vanishingly rare.
+  //   2. Dispose the embedder. Awaiting the in-flight inference
+  //      (phase 1) is not enough to avoid the libc++ mutex crash:
+  //      ONNX worker threads stay alive after the last embed call
+  //      and race the process-exit destructors. `provider.dispose`
+  //      explicitly tells the pipeline to release its session and
+  //      join the threads (ADR-0025). Swallow errors — disposal is
+  //      best-effort and any failure here is strictly less harmful
+  //      than the crash we're avoiding.
+  //   3. Close the database synchronously.
   const shutdown = async (): Promise<void> => {
     if (closed) return;
     if (pendingBackgroundWork.size > 0) {
@@ -537,6 +562,15 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
         });
         await Promise.race([drain, timer]);
         if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+      }
+    }
+    if (embeddingProvider !== undefined && embeddingProvider.dispose !== undefined) {
+      try {
+        await embeddingProvider.dispose();
+      } catch {
+        // Best-effort: see comment above. We never let a disposal
+        // failure block the database close — that's the bigger
+        // cleanup obligation.
       }
     }
     close();

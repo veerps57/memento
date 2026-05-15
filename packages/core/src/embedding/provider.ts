@@ -71,6 +71,25 @@ export interface EmbeddingProvider {
    * `embed()` surface any underlying failure.
    */
   warmup?(): Promise<void>;
+  /**
+   * Release any persistent native handles the provider holds —
+   * for the local embedder this disposes the ONNX inference
+   * session and joins its worker threads. Called by
+   * `MementoApp.shutdown()` after the in-flight background work
+   * has drained, so the process can exit without racing the
+   * embedder's native destructors.
+   *
+   * Optional — providers that don't hold native state (test fakes,
+   * cloud HTTP-backed providers) can omit it. Implementations MUST
+   * be idempotent and SHOULD swallow errors that surface during
+   * teardown; the caller treats disposal as best-effort.
+   *
+   * Without this, ONNX worker threads survive past the inference
+   * call that loaded them and race the process-exit destructors,
+   * which aborts with `libc++abi: mutex lock failed: Invalid
+   * argument` (ADR-0025).
+   */
+  dispose?(): Promise<void>;
 }
 
 /**

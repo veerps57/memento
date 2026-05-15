@@ -58,6 +58,15 @@ export type EmbedBatchFn = (texts: readonly string[]) => Promise<readonly (reado
 export interface EmbedRuntime {
   readonly embed: EmbedFn;
   readonly embedBatch?: EmbedBatchFn;
+  /**
+   * Release any native handles the runtime owns — for the default
+   * transformers.js loader this calls `pipeline.dispose()` which in
+   * turn releases the underlying ONNX session and joins its worker
+   * threads. Optional: loaders (especially test fakes) without
+   * persistent native state can omit it. See {@link
+   * EmbeddingProvider.dispose} for the lifecycle contract.
+   */
+  readonly dispose?: () => Promise<void>;
 }
 
 /**
@@ -179,13 +188,26 @@ export function createLocalEmbedder(options: LocalEmbedderOptions = {}): Embeddi
   const ensureReady = (): Promise<EmbedRuntime> => {
     if (pending === undefined) {
       const attempt = loader(model, loaderContext);
-      // If the loader rejects, clear the cache so the next call
-      // retries instead of permanently surfacing the same error.
-      attempt.catch(() => {
-        if (pending === attempt) {
-          pending = undefined;
-        }
-      });
+      // Mark the process as "embedder loaded" the moment the load
+      // resolves. The CLI's `io.exit` reads this flag to decide
+      // between `process.exit(code)` (no embedder → safe, exit code
+      // preserved) and `SIGKILL` (embedder loaded → bypass the
+      // better-sqlite3 + onnxruntime-node native-destructor race,
+      // exit code becomes 137). The flag is intentionally set on
+      // the global so the CLI doesn't have to depend on this
+      // package at import-time. See ADR-0026.
+      attempt.then(
+        () => {
+          (globalThis as { __memento_embedder_loaded?: boolean }).__memento_embedder_loaded = true;
+        },
+        () => {
+          // If the loader rejects, clear the cache so the next call
+          // retries instead of permanently surfacing the same error.
+          if (pending === attempt) {
+            pending = undefined;
+          }
+        },
+      );
       pending = attempt;
     }
     return pending;
@@ -263,6 +285,29 @@ export function createLocalEmbedder(options: LocalEmbedderOptions = {}): Embeddi
       // forget at boot time and a partial model download must be
       // allowed to complete.
       await ensureReady();
+    },
+    async dispose(): Promise<void> {
+      // Release the ONNX inference session and its worker threads
+      // so process-exit doesn't race the native destructors. Only
+      // act if a runtime was actually loaded — calling `dispose`
+      // on an embedder that never embedded (or whose loader hasn't
+      // settled) would force the lazy init solely to immediately
+      // tear it down, which is silly and could throw on a failed
+      // load. Resolving the cached promise to peek at whether init
+      // started is the cheap version; we await it (the bootstrap
+      // shutdown has already drained background work, so any
+      // pending init has either resolved or rejected by now).
+      if (pending === undefined) return;
+      let runtime: EmbedRuntime;
+      try {
+        runtime = await pending;
+      } catch {
+        // The cached init rejected. Nothing native to release.
+        return;
+      }
+      if (runtime.dispose !== undefined) {
+        await runtime.dispose();
+      }
     },
   };
 }
@@ -348,6 +393,23 @@ export function createDefaultLoader(): LocalEmbedderLoader {
       return rows;
     };
 
-    return { embed, embedBatch };
+    // Release the ONNX session and its worker threads. Without
+    // this, the threads stay alive after the last inference and
+    // race the native-module destructors at process exit — the
+    // libc++ mutex abort ADR-0025 tracks. `Pipeline.dispose()`
+    // exists at runtime on every pipeline (it's mixed in via the
+    // base class) but the published `.d.ts` only exposes it on a
+    // handful of derived types; `FeatureExtractionPipeline` is not
+    // one of them. We narrow through the library's exported
+    // `Disposable` type so the cast is informative rather than
+    // `any`. `Pipeline.dispose()` returns a Promise that resolves
+    // when the underlying `InferenceSession.release()` completes;
+    // we don't catch in the helper because the caller
+    // (`MementoApp.shutdown`) wraps it.
+    const dispose = async (): Promise<void> => {
+      await (extractor as unknown as { dispose: () => Promise<void> }).dispose();
+    };
+
+    return { embed, embedBatch, dispose };
   };
 }

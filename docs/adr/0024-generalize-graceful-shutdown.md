@@ -1,6 +1,6 @@
 # ADR-0024: Generalize graceful shutdown to all background work
 
-- **Status:** Accepted (supersedes [ADR-0023](0023-graceful-shutdown-for-startup-backfill.md))
+- **Status:** Superseded by [ADR-0025](0025-dispose-embedder-pipeline-on-shutdown.md) (supersedes [ADR-0023](0023-graceful-shutdown-for-startup-backfill.md))
 - **Date:** 2026-05-15
 - **Deciders:** Memento Authors
 - **Tags:** lifecycle, embedding, reliability, recovery

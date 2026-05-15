@@ -152,6 +152,48 @@ describe('createLocalEmbedder', () => {
     });
   });
 
+  describe('dispose', () => {
+    it('calls the runtime dispose after init has settled', async () => {
+      // Pins the ADR-0025 fix: `provider.dispose()` must reach the
+      // loader-supplied `runtime.dispose` so the underlying ONNX
+      // pipeline (`pipeline.dispose()` in the production loader)
+      // releases its session and joins its worker threads.
+      const runtimeDispose = vi.fn(async () => undefined);
+      const disposingLoader: LocalEmbedderLoader = async () => ({
+        embed: embedFn,
+        dispose: runtimeDispose,
+      });
+      const provider = createLocalEmbedder({ loader: disposingLoader });
+      // No init has fired yet — dispose must be a no-op.
+      await provider.dispose?.();
+      expect(runtimeDispose).not.toHaveBeenCalled();
+      // After at least one embed (or warmup), dispose forwards.
+      await provider.embed('seed');
+      await provider.dispose?.();
+      expect(runtimeDispose).toHaveBeenCalledTimes(1);
+    });
+
+    it('is a no-op when the runtime does not expose dispose', async () => {
+      // Test fakes and any loader without persistent native
+      // state can omit dispose. Must not throw.
+      const provider = createLocalEmbedder({ loader });
+      await provider.warmup?.();
+      await provider.dispose?.();
+    });
+
+    it('is a no-op when init rejected', async () => {
+      // If the loader failed, there is no runtime to dispose.
+      // Calling dispose must not surface the original failure
+      // again, and must not throw on its own.
+      const failingLoader: LocalEmbedderLoader = async () => {
+        throw new Error('cold start failed');
+      };
+      const provider = createLocalEmbedder({ loader: failingLoader });
+      await expect(provider.embed('x')).rejects.toThrow('cold start failed');
+      await expect(provider.dispose?.()).resolves.toBeUndefined();
+    });
+  });
+
   it('retries loader initialisation after a failure', async () => {
     let calls = 0;
     const flakyLoader: LocalEmbedderLoader = async () => {
