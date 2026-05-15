@@ -176,8 +176,17 @@
          source of Cloudflare 4xx noise. The .svg is the canonical
          source — see public/favicon.svg + scripts/generate-icons.mjs. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <!-- 48 / 96 / 144 / 192 / 512 satisfy Google's SERP favicon
+         picker, which prefers multiples of 48 pixels. Without
+         explicit <link> entries at these sizes, Google falls back
+         to the SVG (slow / inconsistent) or the default globe. -->
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="icon" type="image/png" sizes="144x144" href="/favicon-144x144.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <!-- iOS / Android "add to home screen" hints. Aligns the
