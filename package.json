@@ -20,6 +20,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && vitest run --config vitest.e2e.config.ts",
+    "test:e2e:run": "vitest run --config vitest.e2e.config.ts",
     "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm test:e2e && pnpm docs:lint && pnpm docs:reflow:check && pnpm docs:links && pnpm docs:check && pnpm format:packs:check && pnpm server-json:check",
     "postinstall": "node scripts/ensure-better-sqlite3.mjs",
     "prepare": "lefthook install",
