@@ -807,12 +807,22 @@ describe('createMementoApp — graceful shutdown', () => {
       embed: () => new Promise<readonly number[]>(() => {}),
       embedBatch: () => new Promise<readonly (readonly number[])[]>(() => {}),
     };
+    // graceMs of 100 with a >= 80 floor and < 2000 ceiling gives
+    // setTimeout 20 ms of slack on both sides — `setTimeout(cb, 100)`
+    // can fire slightly under 100 ms on Linux/macOS due to libuv
+    // timer rounding and `Date.now()` ms-granularity drift (CI hit
+    // a real-world 49 vs 50 off-by-1 on `graceMs: 50`). The intent
+    // is "shutdown waits roughly the configured window", not "fires
+    // at exactly the millisecond" — the floor stays well below the
+    // window so the assertion still proves we waited, just not that
+    // we waited precisely.
+    const graceMs = 100;
     const app2 = await createMementoApp({
       database: sharedDb,
       embeddingProvider: stuckProvider,
       configOverrides: {
         'embedding.startupBackfill.enabled': true,
-        'embedding.startupBackfill.shutdownGraceMs': 50,
+        'embedding.startupBackfill.shutdownGraceMs': graceMs,
       },
     });
     apps.push(app2);
@@ -821,7 +831,7 @@ describe('createMementoApp — graceful shutdown', () => {
     await app2.shutdown();
     const elapsed = Date.now() - start;
 
-    expect(elapsed).toBeGreaterThanOrEqual(50);
+    expect(elapsed).toBeGreaterThanOrEqual(graceMs - 20);
     // Generous upper bound so a slow CI box doesn't flake.
     expect(elapsed).toBeLessThan(2000);
   });
