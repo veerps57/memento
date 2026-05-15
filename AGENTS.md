@@ -137,7 +137,8 @@ Restart Claude Code afterwards. See [`skills/README.md`](skills/README.md#contri
 
 Whether or not the skill is installed:
 
-- **Disclose your involvement** in the PR description (the PR template has a section for this).
+- **Mirror the PR template section-by-section.** When you open a PR, the body MUST contain every section from [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md): Problem, Change, Justification against the four principles, Alternatives considered, Tests, Local verification, ADR, AI involvement, Linked issues. Don't rename sections, don't drop them, don't reorder them. Mark genuinely-absent items as `N/A` with a one-sentence reason — empty is a smell. Hand-rolling a PR body that omits required sections is the single most common preventable rework.
+- **Disclose your involvement** in the PR description (the PR template has an "AI involvement" section for exactly this).
 - **Verify every line you generate.** Hallucinated imports, fabricated API calls, and invented config keys are the most common failure modes.
 - **Run the verification commands locally.** "It looked right" is not verification.
 - **Cite specific files and line numbers** when explaining your change. If you cannot, you may not have read enough context.

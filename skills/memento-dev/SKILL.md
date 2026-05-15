@@ -162,9 +162,13 @@ If you believe one of these belongs in the product, open a [design proposal issu
 - Cite specific files and line numbers when explaining your change. If you cannot, you may not have read enough context.
 - Prefer small, focused PRs. A 200-line PR that does one thing is far easier to review than a 2000-line PR that does ten things, even if both are correct.
 
-## Disclosure (for AI agents)
+## Opening a PR — mirror the template (for AI agents especially)
 
-If you are an AI agent, the [PR template](.github/PULL_REQUEST_TEMPLATE.md) has a section for disclosing AI involvement. Use it. AI-authored PRs are welcome; opaque ones are not.
+The [PR template](.github/PULL_REQUEST_TEMPLATE.md) is not advisory. Every PR body MUST contain every section in it, in order, without renaming: Problem, Change, Justification against the four principles, Alternatives considered, Tests, Local verification, ADR, AI involvement, Linked issues. Mark genuinely-absent items as `N/A` with a one-sentence reason — empty is a smell.
+
+Hand-rolling a PR body that omits required sections is the single most common preventable rework. If you are about to open a PR via `gh pr create --body "..."` or `--body-file`, copy the template content as the starting structure and fill each section in — don't invent your own headers.
+
+The "AI involvement" section in particular is mandatory for AI-authored PRs. AI-authored PRs are welcome; opaque ones are not.
 
 The same gates apply equally to human and AI contributors. "It looked right" is not verification — `pnpm verify` is.
 
