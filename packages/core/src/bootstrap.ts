@@ -142,18 +142,28 @@ export interface MementoApp {
    *      backfill (ADR-0021), and the embedder warmup — up to
    *      `embedding.startupBackfill.shutdownGraceMs`.
    *   2. Call `embeddingProvider.dispose()` (if defined) to release
-   *      the ONNX session and join its worker threads (ADR-0025).
-   *      This is what actually stops the `libc++abi: mutex lock
-   *      failed: Invalid argument` abort — draining the inference
-   *      promise alone is necessary but not sufficient, because
-   *      ONNX threads stay alive after the embed call.
+   *      any non-thread native resources the provider holds — for
+   *      the local embedder this disposes the transformers.js
+   *      pipeline handle. Best-effort: a disposal failure is caught
+   *      and swallowed so the database close (phase 3) always runs.
    *   3. Run {@link MementoApp.close} synchronously.
+   *
+   * Important: this is NOT what prevents the `libc++abi: mutex lock
+   * failed: Invalid argument` abort on process exit. We proved
+   * empirically (ADR-0025) that the native-destructor race between
+   * `better-sqlite3` and `onnxruntime-node` is not avoidable from
+   * JavaScript — neither `pipeline.dispose()` nor `process.exit`
+   * nor `process.reallyExit` skips the C++ destructors. The CLI's
+   * `io.exit()` self-SIGKILLs the process to bypass them. `shutdown`
+   * exists for correct cleanup of observable state (snapshot
+   * accuracy, file handles, future cloud / GPU providers); the
+   * SIGKILL hatch handles the race itself.
    *
    * Idempotent and never throws — each tracked task swallows its
    * own errors, the tracker adds a defensive catch, and disposal
    * failures are caught locally. Shutdown's only failure mode is
-   * "timed out waiting for the work to drain" / "the dispose call
-   * threw" — neither propagates.
+   * "timed out waiting for the work to drain" — that does not
+   * propagate.
    */
   shutdown(): Promise<void>;
 }
