@@ -2,8 +2,14 @@
 // Regenerate the rasterized favicon variants from public/favicon.svg.
 //
 // Output: favicon.ico (32×32), favicon-16x16.png, favicon-32x32.png,
+// favicon-48x48.png, favicon-96x96.png, favicon-144x144.png,
 // apple-touch-icon.png (180×180), apple-touch-icon-precomposed.png
 // (180×180), icon-192.png, icon-512.png — all under public/.
+//
+// The 48 / 96 / 144 sizes exist for Google's favicon picker, which
+// per https://developers.google.com/search/docs/appearance/favicon-in-search
+// recommends multiples of 48 pixels. Without these, Google falls
+// back to the SVG (sometimes) or the default globe icon (often).
 //
 // Why a script (and not a build step): icon files change rarely and
 // rasterization needs a tool with SVG support. Committing the
@@ -54,6 +60,9 @@ const png = (size, name) =>
 
 png(16, 'favicon-16x16.png');
 png(32, 'favicon-32x32.png');
+png(48, 'favicon-48x48.png');
+png(96, 'favicon-96x96.png');
+png(144, 'favicon-144x144.png');
 png(180, 'apple-touch-icon.png');
 png(192, 'icon-192.png');
 png(512, 'icon-512.png');
