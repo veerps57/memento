@@ -20,6 +20,7 @@ jobs:
     # Only meaningful on PRs (push events on main are always allowed).
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Validate branch name
         env:
@@ -33,9 +34,18 @@ jobs:
           fi
           echo "Branch '$BRANCH' OK."
 
-  lint:
-    name: Lint (Biome)
+  validate:
+    # Consolidates every single-OS, single-Node check from `pnpm verify`
+    # (everything except the multi-platform test matrix) into one job so
+    # the install + build runs once. Previously these lived as four
+    # parallel jobs (lint, typecheck, build, docs-lint) each paying
+    # install overhead independently; docs:reflow:check / docs:check /
+    # format:packs:check / server-json:check / docs:links were not run
+    # in CI at all and could land via `git commit --no-verify`. CI is
+    # now a structural mirror of `pnpm verify`.
+    name: Validate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -47,70 +57,81 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version-file: ".nvmrc"
+          # setup-node caches the pnpm content-addressed store. The
+          # additional workspace-`node_modules` cache step below
+          # complements it by short-circuiting symlink-tree rebuilds.
           cache: pnpm
 
+      # Linux/macOS only: pnpm's `node_modules/.pnpm/` symlink tree
+      # does not survive `actions/cache`'s tar/restore on Windows
+      # (verified in run 25914731985: restored symlinks fail to
+      # resolve `vite` from `@vitejs/plugin-react`, breaking the
+      # landing build). Linux + macOS work cleanly. setup-node's
+      # pnpm-store cache above still applies to every OS — Windows
+      # just pays the full symlink-tree rebuild on every install.
+      - name: Cache workspace node_modules
+        if: runner.os != 'Windows'
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: nm-${{ runner.os }}-validate-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install dependencies
+        # Always run install on Windows (cache disabled). On
+        # Linux/macOS, skip when the cache hit since pnpm install
+        # would be a no-op.
+        if: runner.os == 'Windows' || steps.node-modules-cache.outputs.cache-hit != 'true'
         run: pnpm install --frozen-lockfile
 
-      - name: Run Biome
+      - name: Lint (Biome)
         run: pnpm lint
 
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version-file: ".nvmrc"
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run tsc
+      - name: Typecheck (tsc)
         run: pnpm typecheck
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version-file: ".nvmrc"
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+      # Build is required before docs:check (which compares generated
+      # reference docs against the live registry) and before
+      # `pnpm exec vitest` in the test matrix (tests resolve workspace
+      # packages via their published exports, which point at `dist/`).
       - name: Build all packages
         run: pnpm build
 
+      - name: Lint markdown
+        run: pnpm docs:lint
+
+      - name: Check markdown reflow (one paragraph per line)
+        run: pnpm docs:reflow:check
+
+      - name: Check internal markdown links
+        run: pnpm docs:links
+
+      - name: Check generated reference docs are in sync
+        run: pnpm docs:check
+
+      - name: Check bundled packs are canonically formatted
+        run: pnpm format:packs:check
+
+      - name: Check server.json is in sync with the registry
+        run: pnpm server-json:check
+
   test:
-    name: Test (${{ matrix.os }} / Node ${{ matrix.node }})
     # Test runs on the OS × Node-version matrix because Memento ships
-    # via npx on macOS, Linux, and Windows. better-sqlite3 (added in
-    # M2) is a native module, so OS coverage matters more here than
-    # in most JS projects.
+    # via npx on macOS, Linux, and Windows. better-sqlite3 is a native
+    # module, so OS coverage matters more here than in most JS projects.
+    name: Test (${{ matrix.os }} / Node ${{ matrix.node }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node: ["22", "24"]
     runs-on: ${{ matrix.os }}
+    # 25 minutes covers the slowest cell with headroom (Windows test
+    # currently ~140 s plus install). A hung step would otherwise burn
+    # the default 6-hour budget.
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -124,7 +145,23 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
 
+      # Linux/macOS only — see comment in the `validate` job above.
+      # Windows pays a fresh symlink-tree rebuild every install.
+      # Per-(OS, Node) cache key for the others: native modules
+      # (better-sqlite3) are ABI-tied to the Node version, so a
+      # Node 22 cache cannot be restored into a Node 24 job.
+      - name: Cache workspace node_modules
+        if: runner.os != 'Windows'
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: nm-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install dependencies
+        if: runner.os == 'Windows' || steps.node-modules-cache.outputs.cache-hit != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Ensure better-sqlite3 native binary
@@ -132,6 +169,8 @@ jobs:
         # but its prebuild-install silently no-ops in CI's pnpm 10
         # environment, leaving the .node binary absent. Force the
         # prebuild fetch directly inside the resolved package dir.
+        # Safe to run unconditionally — fast no-op when the binary is
+        # already present from a cached node_modules restore.
         shell: bash
         run: |
           set -euo pipefail
@@ -151,55 +190,15 @@ jobs:
         # `@psraghuveer/memento-core`) which resolve via the
         # workspace symlink to `packages/core`. Its `exports`
         # entry points at `./dist/index.js`, so dist/ must exist
-        # before vitest runs.
+        # before either `pnpm test` or the e2e runner.
         run: pnpm build
 
       - name: Run tests
         run: pnpm test
 
       - name: Run end-to-end tests
-        # E2E tests spawn the built `memento` CLI as a child
-        # process and drive it over MCP stdio. Running them on the
-        # full OS x Node matrix is the whole point: the failures
-        # they catch (better-sqlite3 native-module issues, bundler
-        # drops, MCP schema desyncs) are platform-specific.
-        # `pnpm test:e2e` chains the build itself.
-        run: pnpm test:e2e
-
-  docs-lint:
-    name: Markdown lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version-file: ".nvmrc"
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint markdown
-        run: pnpm docs:lint
-
-  link-check:
-    name: Internal link check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Check internal markdown links
-        run: |
-          npx --yes markdown-link-check \
-            --config .github/markdown-link-check.json \
-            $(git ls-files '*.md')
-        # The config file is added when the first link rules need
-        # tuning; until then, the action runs with defaults.
-        continue-on-error: true
+        # `pnpm test:e2e` does a redundant rebuild of a subset of
+        # packages (we already ran `pnpm build` above). The
+        # `test:e2e:run` script skips the rebuild and runs vitest
+        # directly. Saves ~5–15 s per matrix cell.
+        run: pnpm test:e2e:run

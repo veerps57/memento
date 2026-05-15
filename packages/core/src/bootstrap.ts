@@ -135,15 +135,19 @@ export interface MementoApp {
    */
   close(): void;
   /**
-   * Graceful shutdown for signal-driven lifecycles. Awaits the
-   * in-flight startup backfill (ADR-0021) up to
+   * Graceful shutdown for signal-driven lifecycles. Awaits every
+   * tracked background task — post-write conflict hooks
+   * (ADR-0005), post-write auto-embed, the startup backfill
+   * (ADR-0021), and the embedder warmup — up to
    * `embedding.startupBackfill.shutdownGraceMs`, then runs the
-   * standard {@link MementoApp.close} synchronously. Idempotent and
-   * never throws — the backfill is best-effort, so any error it
-   * raises is swallowed exactly as it is during normal operation.
-   * The grace window stops Ctrl-C from racing the embedder's ONNX
-   * worker threads, which otherwise abort the process with
-   * `libc++abi: mutex lock failed: Invalid argument`.
+   * standard {@link MementoApp.close} synchronously. Idempotent
+   * and never throws — each tracked task already swallows its
+   * own errors and the tracker adds a defensive catch on top, so
+   * shutdown's failure mode is "timed out waiting for the work to
+   * drain", not "rejected". The grace window stops Ctrl-C from
+   * racing the embedder's ONNX worker threads, which otherwise
+   * abort the process with `libc++abi: mutex lock failed: Invalid
+   * argument` (ADR-0023 / ADR-0024).
    */
   shutdown(): Promise<void>;
 }
@@ -212,41 +216,73 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
   };
   const maxCandidates = configStore.get('conflict.detector.maxCandidates');
 
+  // Background work tracker — every fire-and-forget async task that
+  // `createMementoApp` kicks off (post-write conflict hooks, auto-embed,
+  // the startup backfill, the embedder warmup) registers here so
+  // `shutdown` can drain the lot before closing the database. Critical
+  // for the ONNX embedder: tearing down its worker threads while one is
+  // mid-inference (or mid-warmup) aborts the process with
+  // `libc++abi: terminating due to uncaught exception of type
+  // std::__1::system_error: mutex lock failed: Invalid argument`. The
+  // set self-prunes — every tracked promise is wrapped in a catch +
+  // finally that removes it on settle — so memory stays bounded over
+  // long-lived sessions even with thousands of writes.
+  const pendingBackgroundWork = new Set<Promise<unknown>>();
+  const trackBackgroundWork = (promise: Promise<unknown>): void => {
+    // Catch defensively so a rejection from a tracked task never
+    // produces an unhandled-promise-rejection warning. Background
+    // work is best-effort by definition; each call site already has
+    // its own error-handling story (most use a try/catch around the
+    // inner body, and `runConflictHook` is non-throwing by contract).
+    const wrapped = promise.catch(() => {});
+    pendingBackgroundWork.add(wrapped);
+    wrapped.finally(() => {
+      pendingBackgroundWork.delete(wrapped);
+    });
+  };
+
   const memoryCommands = createMemoryCommands(
     memoryRepository,
     {
       afterWrite: (memory, ctx) => {
         // Fire-and-forget per ADR-0005. `runConflictHook` is
         // non-throwing — every failure mode is folded into its
-        // returned outcome — so the `void` is safe; observability
-        // for the outcome lands when the logging layer does.
-        void runConflictHook(memory, { memoryRepository, conflictRepository }, hookConfig, {
-          actor: ctx.actor,
-          maxCandidates,
-        });
+        // returned outcome — but we still register the promise with
+        // the background-work tracker so `shutdown` can drain it
+        // before closing native handles.
+        trackBackgroundWork(
+          runConflictHook(memory, { memoryRepository, conflictRepository }, hookConfig, {
+            actor: ctx.actor,
+            maxCandidates,
+          }),
+        );
         // Auto-embed: fire-and-forget, same pattern as conflict hook.
         // Guarded by provider presence + config flag. Errors are
         // swallowed — embedding is best-effort; the memory is already
         // persisted. The user can always run `embedding rebuild` later.
+        // The promise is tracked so a SIGINT during inference does not
+        // race the ONNX worker-thread teardown (ADR-0023 / ADR-0024).
         if (embeddingProvider !== undefined && configStore.get('embedding.autoEmbed')) {
-          void (async () => {
-            try {
-              const vector = await embeddingProvider.embed(memory.content);
-              await memoryRepository.setEmbedding(
-                memory.id,
-                {
-                  model: embeddingProvider.model,
-                  dimension: embeddingProvider.dimension,
-                  vector,
-                },
-                { actor: ctx.actor },
-              );
-            } catch {
-              // Best-effort: embedding failure must never surface
-              // to the caller. The memory is written; vector search
-              // will simply not find it until a successful re-embed.
-            }
-          })();
+          trackBackgroundWork(
+            (async () => {
+              try {
+                const vector = await embeddingProvider.embed(memory.content);
+                await memoryRepository.setEmbedding(
+                  memory.id,
+                  {
+                    model: embeddingProvider.model,
+                    dimension: embeddingProvider.dimension,
+                    vector,
+                  },
+                  { actor: ctx.actor },
+                );
+              } catch {
+                // Best-effort: embedding failure must never surface
+                // to the caller. The memory is written; vector search
+                // will simply not find it until a successful re-embed.
+              }
+            })(),
+          );
         }
       },
     },
@@ -287,28 +323,33 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
     afterWrite: (memory, ctx) => {
       // Same fire-and-forget hook chain as the main write path:
-      // conflict detection + auto-embed.
-      void runConflictHook(memory, { memoryRepository, conflictRepository }, hookConfig, {
-        actor: ctx.actor,
-        maxCandidates,
-      });
+      // conflict detection + auto-embed. Both go through
+      // `trackBackgroundWork` so `shutdown` drains them.
+      trackBackgroundWork(
+        runConflictHook(memory, { memoryRepository, conflictRepository }, hookConfig, {
+          actor: ctx.actor,
+          maxCandidates,
+        }),
+      );
       if (embeddingProvider !== undefined && configStore.get('embedding.autoEmbed')) {
-        void (async () => {
-          try {
-            const vector = await embeddingProvider.embed(memory.content);
-            await memoryRepository.setEmbedding(
-              memory.id,
-              {
-                model: embeddingProvider.model,
-                dimension: embeddingProvider.dimension,
-                vector,
-              },
-              { actor: ctx.actor },
-            );
-          } catch {
-            // Best-effort: same as the main write path.
-          }
-        })();
+        trackBackgroundWork(
+          (async () => {
+            try {
+              const vector = await embeddingProvider.embed(memory.content);
+              await memoryRepository.setEmbedding(
+                memory.id,
+                {
+                  model: embeddingProvider.model,
+                  dimension: embeddingProvider.dimension,
+                  vector,
+                },
+                { actor: ctx.actor },
+              );
+            } catch {
+              // Best-effort: same as the main write path.
+            }
+          })(),
+        );
       }
     },
   });
@@ -363,10 +404,14 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     // see ADR-0021. Conflict detection stays fire-and-forget
     // per ADR-0005.
     afterWrite: (memory, ctx) => {
-      void runConflictHook(memory, { memoryRepository, conflictRepository }, hookConfig, {
-        actor: ctx.actor,
-        maxCandidates,
-      });
+      // Tracked so shutdown drains the hook before tearing down
+      // native handles — same pattern as the main write path.
+      trackBackgroundWork(
+        runConflictHook(memory, { memoryRepository, conflictRepository }, hookConfig, {
+          actor: ctx.actor,
+          maxCandidates,
+        }),
+      );
     },
     // Synchronous batch-embed for fresh pack installs. Closes
     // the race that bit the 0.6.0 / 0.6.1 launches: fire-and-
@@ -413,26 +458,27 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
   // Off-thread (does not block `createMementoApp`'s return),
   // best-effort (failures swallowed and recoverable via
   // `embedding.rebuild`), single-shot per boot.
-  // Promise captured (not just `void`-discarded) so
-  // `MementoApp.shutdown` can await it before closing the database.
-  // Without the await, a SIGINT during boot can tear down ONNX
-  // worker threads mid-inference and abort the process with a
-  // libc++ mutex trap. The closure's catch swallows errors exactly
-  // as before — the backfill stays best-effort.
-  let pendingBackfill: Promise<void> | null = null;
+  // Tracked via `trackBackgroundWork` so `MementoApp.shutdown` can
+  // drain the in-flight pass before closing the database. Without
+  // it, a SIGINT during boot can tear down ONNX worker threads
+  // mid-inference and abort the process with a libc++ mutex trap.
+  // The closure's catch swallows errors exactly as before — the
+  // backfill stays best-effort.
   if (embeddingProvider !== undefined && configStore.get('embedding.startupBackfill.enabled')) {
     const maxRows = configStore.get('embedding.startupBackfill.maxRows');
-    pendingBackfill = (async () => {
-      try {
-        await reembedAll(memoryRepository, embeddingProvider, {
-          actor: { type: 'cli' },
-          batchSize: maxRows,
-        });
-      } catch {
-        // Best-effort: see module header. The user's recovery
-        // path is the explicit `embedding.rebuild` command.
-      }
-    })();
+    trackBackgroundWork(
+      (async () => {
+        try {
+          await reembedAll(memoryRepository, embeddingProvider, {
+            actor: { type: 'cli' },
+            batchSize: maxRows,
+          });
+        } catch {
+          // Best-effort: see module header. The user's recovery
+          // path is the explicit `embedding.rebuild` command.
+        }
+      })(),
+    );
   }
 
   // Optional warmup. Drives the embedder's one-time init (heavy
@@ -447,12 +493,16 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     embeddingProvider.warmup !== undefined &&
     configStore.get('embedder.local.warmupOnBoot')
   ) {
+    // Tracked so `shutdown` drains the warmup before tearing down
+    // the embedder's native handles. This is the same race class
+    // as the startup backfill: warmup loads the ONNX pipeline,
+    // spinning up worker threads that must finish initialising
+    // before the module destructor runs — otherwise libc++ aborts
+    // on a destroyed mutex. The tracker's internal catch makes the
+    // best-effort posture explicit; a failed warmup leaves the
+    // next real `embed()` to surface the underlying error.
     const warmup = embeddingProvider.warmup.bind(embeddingProvider);
-    void warmup().catch(() => {
-      // Best-effort: a failed warmup leaves the next real
-      // `embed()` call to surface the underlying error with
-      // its usual context.
-    });
+    trackBackgroundWork(warmup());
   }
 
   let closed = false;
@@ -464,22 +514,28 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     }
   };
 
-  // Idempotent via `closed`. Awaits the in-flight backfill (if any)
-  // up to the configured grace window, then runs the synchronous
-  // close. `Promise.race` against a timer is the right primitive
-  // here: we want "complete or expire", not "abort the backfill" —
-  // ONNX Runtime doesn't expose cancellation, and a graceful drain
-  // is the only way to avoid the native-thread teardown race.
+  // Idempotent via `closed`. Drains all tracked background work
+  // (post-write hooks, auto-embed, startup backfill, embedder
+  // warmup) up to the configured grace window, then runs the
+  // synchronous close. `Promise.race` against a timer is the right
+  // primitive here: we want "complete or expire", not "abort the
+  // work" — ONNX Runtime doesn't expose cancellation, and a
+  // graceful drain is the only way to avoid the native-thread
+  // teardown race. The snapshot is taken at the start; tasks that
+  // race in *after* shutdown starts are not waited on, but by then
+  // the host's HTTP/MCP transports are already closed so new tasks
+  // should be vanishingly rare.
   const shutdown = async (): Promise<void> => {
     if (closed) return;
-    if (pendingBackfill !== null) {
+    if (pendingBackgroundWork.size > 0) {
       const graceMs = configStore.get('embedding.startupBackfill.shutdownGraceMs');
       if (graceMs > 0) {
         let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+        const drain = Promise.allSettled([...pendingBackgroundWork]).then(() => {});
         const timer = new Promise<void>((resolve) => {
           timeoutHandle = setTimeout(resolve, graceMs);
         });
-        await Promise.race([pendingBackfill, timer]);
+        await Promise.race([drain, timer]);
         if (timeoutHandle !== null) clearTimeout(timeoutHandle);
       }
     }

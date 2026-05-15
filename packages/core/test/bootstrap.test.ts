@@ -692,23 +692,32 @@ describe('createMementoApp — embedder warmup', () => {
 
 // — Graceful shutdown ——————————————————————————————————————————
 //
-// The startup embedding backfill (ADR-0021) is fire-and-forget for
-// boot speed, which leaves an in-flight ONNX inference batch when a
+// `createMementoApp` kicks off four classes of fire-and-forget work
+// — the startup backfill (ADR-0021), the embedder warmup, post-write
+// conflict hooks (ADR-0005), and post-write auto-embed. Any of them
+// can leave an in-flight ONNX inference (or model load) when a
 // signal-driven host (`memento dashboard`, `memento serve`) tears
 // down on Ctrl-C. Tearing down the embedder's native worker threads
-// mid-inference aborts the process with `libc++abi: mutex lock
-// failed: Invalid argument`. `MementoApp.shutdown()` exists to
-// avoid that: it awaits the in-flight backfill up to a configurable
-// grace window, then runs the standard synchronous close.
+// mid-flight aborts the process with `libc++abi: mutex lock failed:
+// Invalid argument`. `MementoApp.shutdown()` drains the lot through
+// a single `pendingBackgroundWork` tracker (ADR-0024 generalises
+// ADR-0023) before running the synchronous close.
 //
-// Pinning the four observable properties:
+// Pinning the observable properties:
 //
 //   1. Shutdown waits for an in-flight backfill before closing.
 //   2. Shutdown returns within the configured grace window even
 //      when the backfill is stuck (never resolves).
 //   3. Shutdown is idempotent.
-//   4. Shutdown is a no-op (effectively instant) when no backfill
-//      was kicked off (no embedder, or backfill disabled).
+//   4. Shutdown is a no-op (effectively instant) when no background
+//      work was kicked off (no embedder, all knobs off).
+//   5. Shutdown waits for the embedder warmup — the exact path that
+//      reproduces the libc++ crash on an empty-store dashboard
+//      session, where there is nothing to backfill but the warmup
+//      is still loading the ONNX pipeline.
+//   6. Shutdown waits for in-flight post-write auto-embed — covers
+//      the case where the user writes a memory and Ctrl-Cs before
+//      the embed call has returned.
 
 describe('createMementoApp — graceful shutdown', () => {
   it('awaits the in-flight startup backfill before closing the database', async () => {
@@ -824,9 +833,10 @@ describe('createMementoApp — graceful shutdown', () => {
     await app.shutdown();
   });
 
-  it('is effectively instant when no backfill was kicked off', async () => {
-    // No embedder → bootstrap shortcircuits the backfill kickoff
-    // entirely → shutdown has nothing to await.
+  it('is effectively instant when no background work was kicked off', async () => {
+    // No embedder → bootstrap shortcircuits backfill, warmup, and
+    // auto-embed all at once → tracker is empty → shutdown skips
+    // the await entirely and runs close synchronously.
     const app = await newApp();
     apps.pop(); // shutdown will close; afterEach would double-close.
     const start = Date.now();
@@ -835,5 +845,99 @@ describe('createMementoApp — graceful shutdown', () => {
     // No await, so this should complete in microtask time. 50ms
     // is overhead the test environment introduces.
     expect(elapsed).toBeLessThan(50);
+  });
+
+  it('awaits the in-flight embedder warmup before closing the database', async () => {
+    // The exact path that reproduces the libc++ crash on
+    // `memento dashboard` against an empty store: backfill is a
+    // no-op (nothing to embed), warmup is the only thing in flight,
+    // and tearing down the embedder mid-load aborts the process.
+    // This test pins the warmup branch of the tracker.
+    let releaseWarmup: () => void = () => {};
+    const blockingProvider: EmbeddingProvider = {
+      model: 'shutdown-await-warmup',
+      dimension: 3,
+      embed: async () => [0.1, 0.2, 0.3],
+      warmup: () =>
+        new Promise<void>((resolve) => {
+          releaseWarmup = resolve;
+        }),
+    };
+    const app = await newApp({
+      embeddingProvider: blockingProvider,
+      configOverrides: {
+        'embedder.local.warmupOnBoot': true,
+        'embedding.startupBackfill.enabled': false,
+        'embedding.autoEmbed': false,
+        'embedding.startupBackfill.shutdownGraceMs': 5000,
+      },
+    });
+    apps.pop();
+
+    // Yield so the warmup gets a chance to enter and register
+    // with the tracker.
+    await new Promise((r) => setTimeout(r, 20));
+
+    let shutdownResolved = false;
+    const shutdownPromise = app.shutdown().then(() => {
+      shutdownResolved = true;
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(shutdownResolved).toBe(false);
+
+    // Release the warmup — tracker drains — shutdown completes.
+    releaseWarmup();
+    await shutdownPromise;
+    expect(shutdownResolved).toBe(true);
+  });
+
+  it('awaits in-flight post-write auto-embed before closing the database', async () => {
+    // Covers the write-then-Ctrl-C race: a user writes a memory,
+    // the post-write auto-embed kicks off, the user hits Ctrl-C
+    // before the embed call has returned. Without tracking the
+    // promise, shutdown closes the database while the embedder
+    // still has work in flight.
+    let releaseEmbed: () => void = () => {};
+    const blockingProvider: EmbeddingProvider = {
+      model: 'shutdown-await-autoembed',
+      dimension: 3,
+      embed: () =>
+        new Promise<readonly number[]>((resolve) => {
+          releaseEmbed = () => resolve([0.1, 0.2, 0.3]);
+        }),
+    };
+    const app = await newApp({
+      embeddingProvider: blockingProvider,
+      configOverrides: {
+        'embedding.autoEmbed': true,
+        'embedder.local.warmupOnBoot': false,
+        'embedding.startupBackfill.enabled': false,
+        'embedding.startupBackfill.shutdownGraceMs': 5000,
+      },
+    });
+    apps.pop();
+
+    // Write a memory — the post-write hook fires fire-and-forget
+    // and registers with the tracker.
+    const writeResult = await executeCommand(
+      app.registry.get('memory.write')!,
+      { ...baseWriteInput, content: 'auto-embed-await-test' },
+      ctx,
+    );
+    expect(writeResult.ok).toBe(true);
+
+    // Yield so the auto-embed promise enters the tracker.
+    await new Promise((r) => setTimeout(r, 20));
+
+    let shutdownResolved = false;
+    const shutdownPromise = app.shutdown().then(() => {
+      shutdownResolved = true;
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(shutdownResolved).toBe(false);
+
+    releaseEmbed();
+    await shutdownPromise;
+    expect(shutdownResolved).toBe(true);
   });
 });
