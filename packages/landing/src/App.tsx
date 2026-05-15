@@ -374,10 +374,45 @@ memory; treat chat as ephemeral.
   skipped:[], superseded:[], mode:"async", batchId, hint, status:
   "accepted"}\` — that is the receipt, not a failure. Writes land
   as memories within seconds; do not retry.
+- \`extract_memory\`'s candidate shape is **flat** — \`kind\` is a
+  string (\`"kind":"fact"\`) and \`rationale\` / \`language\` are
+  top-level fields. This differs from \`write_memory\`, which uses
+  a discriminated-union \`kind\` object (\`"kind":{"type":"fact"}\`)
+  with those fields nested inside. Copying the write_memory shape
+  into an extract candidate produces \`INVALID_INPUT\` and rejects
+  the whole batch.
 - For preferences and decisions, start \`content\` with a single
   \`topic: value\` line followed by prose. Conflict detection
   parses that line; without it, contradictory preferences
-  silently coexist.
+  silently coexist. The same rule applies to both \`write_memory\`
+  and \`extract_memory\`.
+- Distillation is **retrieval indexing**, not summarisation. The
+  future question may ask about any specific date, named entity,
+  proper noun, action, or object that came up — index every
+  concrete reference, don't capture the gist.
+- Preserve specific terms when distilling. Use the speakers' exact
+  words for proper nouns, identity qualifiers, places, dates, and
+  the object of any action. "Raghu researched adoption agencies",
+  not "researched career options". "Transgender woman", not
+  "woman". Don't squash enumerations; emit each item or list them
+  explicitly. When in doubt, include — the server dedups.
+- Capture facts about every named participant, not only the user.
+  If the user mentions someone ("my friend Alex is moving to
+  Berlin for a SAP job"), emit memories attributed to that named
+  person (Alex is moving to Berlin; Alex has a new job at SAP),
+  not collapsed onto the user. The future question may ask about
+  anyone named in the conversation.
+- Emit a candidate for every dated event. If the user mentions an
+  event with an absolute date ("May 7") or a relative one
+  ("yesterday", "last Tuesday"), resolve to an absolute date and
+  emit it in the content. Don't fold dated events into untimed
+  habits — the future "when did X happen?" query can only be
+  answered by a memory that names the date.
+- Capture precursor actions alongside outcomes. When the user
+  describes a sequence ("researched X then chose Y", "tried A and
+  settled on B"), emit both — a candidate for the precursor and a
+  candidate for the outcome. Future questions can target either
+  step; the outcome never erases the precursor.
 - Use the user's preferred name from \`info_system.user.preferredName\`
   when authoring memory content; fall back to "The user" when
   that field is null.

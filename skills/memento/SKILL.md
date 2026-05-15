@@ -53,11 +53,49 @@ If you loaded a memory speculatively and did not end up using it, do not confirm
 
 ### 3. Before you wrap up — extract what surfaced
 
-Call `extract_memory` with a batch of candidates for anything durable that came up in the conversation but was not explicitly written. The server dedups against existing memories using embedding similarity, scrubs secrets, and writes the survivors with lower default confidence (so unconfirmed extractions decay faster than direct user statements).
+Call `extract_memory` with a batch of candidates for anything durable that came up in the conversation but was not explicitly written. The server dedups against existing memories using embedding similarity, scrubs secrets, and writes the survivors with lower default confidence (`storedConfidence: 0.8` vs. `write_memory`'s `1.0`, so unconfirmed extractions decay faster than direct user statements).
 
 When in doubt, include the candidate. The server is the gatekeeper, not you.
 
+**The candidate shape is different from `write_memory`.** `extract_memory` uses a flat candidate: `kind` is a plain string, `rationale` and `language` are top-level fields. `write_memory` uses a discriminated-union object (`kind: {type: "decision", rationale: "..."}`). Copying the write shape into an extract candidate produces `INVALID_INPUT` and rejects the entire batch, not just the offending item.
+
+```json
+{
+  "candidates": [
+    {"kind": "preference", "content": "node-package-manager: pnpm\n\nRaghu prefers pnpm over npm for Node projects."},
+    {"kind": "fact", "content": "The staging cluster lives at gke-staging."},
+    {"kind": "decision",
+     "content": "storage-engine: SQLite\n\nChosen for the single-file local-first story.",
+     "rationale": "No daemon, FTS5 built in, prebuilt binaries on every common platform."},
+    {"kind": "snippet", "content": "memento read <id>", "language": "shell"}
+  ]
+}
+```
+
+Same `topic: value\n\nprose` rule applies to `preference` and `decision` candidates inside `extract_memory` as for `write_memory`. The conflict detector parses the first line; an offending candidate fails validation for the whole batch.
+
 `extract_memory` returns a `mode` field: `'sync'` means the response arrays are authoritative (you can tell the user "I saved 3 things and skipped 1 duplicate" directly); `'async'` (the default per `extraction.processing` config) means the server accepted the batch and is processing in background — the response will look empty (`written: [], skipped: [], superseded: []`) but a `hint` field tells you what to do next, and the work lands as memories within ~1–5 seconds. Don't retry on an async response — it's a fire-and-forget receipt, not an error.
+
+### Distillation craft: preserve specifics, bias toward inclusion
+
+"Distilled, not transcript" does not mean "summarised into generic categories." You are not summarising the conversation for a reader — you are producing **retrieval candidates for unknown future queries**. The right mental frame is "index every concrete reference," not "capture the gist." The future question may ask about any specific date, named entity, proper noun, action, or object that came up — including ones that feel incidental at write time.
+
+Six rules guard against the failure modes that make distilled memory unusable:
+
+1. **Preserve specific words.** Use the speakers' exact terms for proper nouns, named entities, identity qualifiers, places, dates, and the specific object of any action. The future question will use the specific term — a paraphrase makes the memory unfindable.
+   - The user mentions "**adoption agencies**" → "Raghu researched adoption agencies." Not "Raghu researched career options."
+   - The user describes themselves as a "**transgender** woman" → "Raghu is a transgender woman." Not "Raghu identifies as a woman."
+   - The user mentions "the **Wonderland Trail**" → name it. Not "a hiking trail."
+   - The user mentions "**May 7**" → resolve to an absolute date and emit it. Not "in spring."
+2. **Capture facts about every named participant, not only the user.** A conversation may mention or include other people — a friend the user talks about, a colleague, a family member, or a co-speaker in a shared session. Facts those named people share about themselves AND the user's specific observations about them are both worth indexing, each attributed to the right person. The future question may ask about anyone named in the conversation, not just the primary user.
+   - "My friend Alex is moving to Berlin next month for a SAP job" → emit "Alex is moving to Berlin in <month>" AND "Alex has a new job at SAP" (attributed to Alex, not to Raghu).
+   - In a meeting transcript where Sarah said "I have three kids" and the user said "I work from home" → both facts get captured, each attributed to its speaker. Don't bias toward the first speaker, the more talkative one, or the apparent "user" persona.
+3. **Emit a candidate for every dated event — and resolve relative times.** If a message refers to an event with a resolvable date (whether absolute like "May 7" or relative like "yesterday" / "last Tuesday" / "two weeks ago" / "this morning"), emit a candidate for that event with the absolute date in the content. Resolve relative dates against the current date. "The user said yesterday they went to the conference" on 2026-05-08 → "On 2026-05-07, the user attended the conference." Do **not** generalise dated events into untimed habits — "the user attends conferences" loses the date and breaks future temporal queries. When in doubt, emit both: one timed-event candidate AND one general assertion candidate. The future "when did X happen?" question can only be answered by a memory that names the date.
+4. **Capture precursor actions alongside outcomes.** When the user describes a sequence ("researched X then chose Y", "tried A and settled on B", "considered <options> and picked <one>"), emit a candidate for the precursor (the research, the try, the consideration) AND a candidate for the outcome. Future questions can target either step — "what did Raghu research?" and "what did Raghu choose?" have different answers and need different candidates. The outcome never erases the precursor.
+5. **Don't squash enumerations.** If the user lists four activities (hiking, biking, swimming, pottery), emit four facts — or one fact that names all four explicitly — never one fact that says "outdoor activities and crafts." The benchmark for "did you capture this" is: can a later question that asks about exactly one of the four still find it?
+6. **Bias toward inclusion.** When in doubt, emit the candidate. The server dedups via embedding similarity, so two near-equivalent candidates collapse to one row — the cost of over-including is low, the cost of under-including is that the fact is gone. Better 20 precise candidates than 5 broad ones.
+
+Before you finalise a `write_memory` or `extract_memory` call, do one pass over the conversation and check: does every (a) date or time-relative word, (b) proper noun / named entity, (c) action verb with a specific object map to at least one candidate? If a reference is missing, add it. These rules apply equally to direct `write_memory` calls and to `extract_memory` batches — the same paraphrase-loss can happen anywhere an LLM is mediating between conversation and memory.
 
 ## What to write — and what not to
 
@@ -181,10 +219,12 @@ When the four most-touched judgement calls come up, fall back to these one-line 
 
 | Situation | Tool | Why |
 | --- | --- | --- |
-| User explicitly states one durable thing ("remember X"). | `write_memory` | One round-trip. Explicit attribution. |
+| User explicitly states one durable thing ("remember X"). | `write_memory` | One round-trip. Explicit attribution. Synchronous — the response is the receipt. |
 | User explicitly states several durable things in one breath ("remember A, B, and C"). | N × `write_memory` (sequential) | Each is independently true; one failing shouldn't roll the others back. Prefer this over `write_many_memories` unless you actually need atomicity. |
-| End-of-session sweep — things the user mentioned in passing but didn't say "remember". | `extract_memory` | Server dedups, scrubs, lowers confidence (0.8). Async by default — fire and forget. |
-| Bulk-loading from a paste / doc / migration where atomicity matters. | `write_many_memories` | Programmatic surface — rare in normal AI use; reach for it only when you genuinely need "all-or-nothing" semantics. |
+| End-of-session sweep — things the user mentioned in passing but didn't say "remember". | `extract_memory` | Server dedups, scrubs, lowers confidence (0.8). Async by default — the response arrays will be empty by design; the work lands within ~1–5 s. **Candidate shape is flat (`kind: "fact"`), unlike write_memory's nested kind object.** |
+| Bulk-loading from a paste / doc / migration where atomicity matters. | `write_many_memories` | Programmatic surface — rare in normal AI use; reach for it only when you genuinely need "all-or-nothing" semantics. Same nested `kind` shape as `write_memory`. |
+
+**Common confusion**: `write_memory` and `extract_memory` accept different candidate shapes for the same conceptual fields. Write uses a discriminated-union `kind`; extract uses a flat `kind` string with `rationale` / `language` at the top level. The tool descriptions in `tools/list` spell this out — if you're unsure, check them before composing the payload.
 
 ### Which kind?
 

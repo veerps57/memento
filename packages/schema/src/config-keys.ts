@@ -281,10 +281,10 @@ export const CONFIG_KEYS = {
   // code changes (principle 1: configurable defaults).
   'retrieval.fts.tokenizer': defineKey({
     schema: z.enum(['unicode61', 'porter']),
-    default: 'unicode61',
+    default: 'porter',
     mutable: false,
     description:
-      'FTS5 tokenizer for `memories_fts`. Pinned at server start because changing it requires a reindex.',
+      'FTS5 tokenizer for `memories_fts`. `porter` stems tokens (so "colleagues" and "colleague\'s" share a stem and match each other in search) and is chained onto `unicode61` so non-ASCII content still tokenises correctly. `unicode61` alone is exact-token matching with no stemming — choose this only when proper-noun precision matters more than prose recall. Migration 0008 sets the FTS index up with porter; switching to `unicode61` requires a manual `drop table memories_fts` and reindex, which is why the key is immutable.',
   }),
   // BM25 `k1` / `b` are intentionally NOT registered. SQLite
   // FTS5 ships with the default values baked in and exposes no

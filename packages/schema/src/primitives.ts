@@ -94,7 +94,12 @@ export const TagSchema = z
     'A tag string (1–64 chars). Trimmed and lowercased on ingest. Allowed characters: a-z, 0-9, "-", "_", "/", ".", ":". Examples: "project:memento", "lang-typescript", "config".',
   )
   .transform((value) => value.trim().toLowerCase())
-  .pipe(z.string().min(1).max(64).regex(TAG_PATTERN))
+  .pipe(
+    z.string().min(1).max(64).regex(TAG_PATTERN, {
+      message:
+        'Tag must start with a-z or 0-9 and contain only lowercase letters, digits, and `-`, `_`, `/`, `.`, `:`. Spaces, commas, and uppercase letters are not allowed (the value is auto-lowercased on ingest, so writing "Project:Memento" yields "project:memento" — but "April 15, 2026" is rejected because spaces and commas aren\'t in the charset). Pre-process human-prose values: replace runs of disallowed chars with `-` and lowercase.',
+    }),
+  )
   .brand<'Tag'>();
 export type Tag = z.infer<typeof TagSchema>;
 

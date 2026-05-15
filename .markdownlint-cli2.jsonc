@@ -49,5 +49,16 @@
     "MD060": false
   },
   "globs": ["**/*.md"],
-  "ignores": ["**/node_modules/**", "**/CHANGELOG.md", "**/dist/**", "**/coverage/**"]
+  "ignores": [
+    "**/node_modules/**",
+    "**/CHANGELOG.md",
+    "**/dist/**",
+    "**/coverage/**",
+    // Local artifacts from scripts/*.mjs (also in .gitignore). Not
+    // committed, not authored by us — just bench/eval/stress outputs.
+    "bench/**",
+    "bench-output-*/**",
+    "eval-report-*.md",
+    "stress-report-*.md"
+  ]
 }

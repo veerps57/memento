@@ -285,14 +285,25 @@ Optional `types`, `since`, `until`, and `limit` narrow the result set; `since`/`
 
 Batch-extract candidate memories from a conversation. The server handles dedup, scrubbing, and writing. The assistant's job is reduced to dumping "what seemed worth remembering."
 
+**Candidate shape note** — this command's `kind` field is a flat string (`"kind": "fact"`), and `rationale` / `language` are top-level fields. This differs from `memory.write`, where `kind` is a discriminated-union object and those fields nest inside it. Copying the write_memory shape will fail validation with `INVALID_INPUT`.
+
+**Topic-line gotcha** — for `preference` and `decision` candidates, the `content` MUST start with a `topic: value` line followed by a blank line and prose. The conflict detector parses that first line; without it, contradictory preferences silently coexist. The handler returns `INVALID_INPUT` for offending candidates — the whole batch is rejected, not just the bad items.
+
 Dedup runs at two scopes: (1) **in-batch** — byte-identical candidates within the same call collapse to a single memory (kind-aware fingerprint); (2) **cross-batch** — embeddings are compared against existing active memories via the configured similarity thresholds (≥`extraction.dedup.identicalThreshold` skips, between that and `extraction.dedup.threshold` supersedes, below writes new). When in doubt, include the candidate.
+
+**Storage defaults** — extracted memories are written at `storedConfidence: 0.8` (lower than `memory.write`'s 1.0) so they decay faster and get pruned if never confirmed. This biases toward precision: tentative captures don't crowd out user-stated facts.
 
 The response carries a `mode` field. When `mode: "sync"`, the `written`, `skipped`, and `superseded` arrays are authoritative and you can report them directly. When `mode: "async"` (the default per `extraction.processing` config), those arrays are intentionally empty — the server returned a receipt and is processing in background. The accompanying `hint` field explains what to expect; do not retry. Writes land as memories within ~1–5 seconds and can be confirmed with `list_memories` or `search_memory` if needed.
 
-Example:
+Example (note the flat kind, the topic-line on the preference, and top-level rationale on the decision):
 
 ```json
-{"candidates":[{"kind":"preference","content":"User prefers dark mode in all editors"},{"kind":"fact","content":"The production database is PostgreSQL 15"}]}
+{"candidates":[
+  {"kind":"preference","content":"editor-theme: dark\n\nUser prefers dark mode in all editors."},
+  {"kind":"fact","content":"The production database is PostgreSQL 15."},
+  {"kind":"decision","content":"storage-engine: SQLite\n\nChosen for the local-first story; FTS5 built in.","rationale":"Single-file, no daemon, prebuilt for every platform."},
+  {"kind":"snippet","content":"memento read <id>","language":"shell"}
+]}
 ```
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.

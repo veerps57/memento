@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_LOCAL_DIMENSION,
   DEFAULT_LOCAL_MODEL,
+  type EmbedBatchFn,
   type EmbedFn,
   type LocalEmbedderLoader,
   createLocalEmbedder,
@@ -29,7 +30,8 @@ describe('createLocalEmbedder', () => {
     embedFn = vi.fn(async (_text: string) =>
       buildVector(DEFAULT_LOCAL_DIMENSION, 0.1),
     ) as ReturnType<typeof vi.fn> & EmbedFn;
-    loader = vi.fn(async () => embedFn) as ReturnType<typeof vi.fn> & LocalEmbedderLoader;
+    loader = vi.fn(async () => ({ embed: embedFn })) as ReturnType<typeof vi.fn> &
+      LocalEmbedderLoader;
   });
 
   afterEach(() => {
@@ -71,9 +73,9 @@ describe('createLocalEmbedder', () => {
 
   it('forwards the configured model and cacheDir to the loader', async () => {
     const customEmbed: EmbedFn = async () => buildVector(384, 0.1);
-    const customLoader: ReturnType<typeof vi.fn> & LocalEmbedderLoader = vi.fn(
-      async () => customEmbed,
-    );
+    const customLoader: ReturnType<typeof vi.fn> & LocalEmbedderLoader = vi.fn(async () => ({
+      embed: customEmbed,
+    }));
     const provider = createLocalEmbedder({
       loader: customLoader,
       model: 'all-MiniLM-L6-v2',
@@ -95,14 +97,14 @@ describe('createLocalEmbedder', () => {
 
   it('throws when the produced vector length does not match the dimension', async () => {
     const wrongLength: EmbedFn = async () => buildVector(10, 0);
-    const wrongLoader: LocalEmbedderLoader = async () => wrongLength;
+    const wrongLoader: LocalEmbedderLoader = async () => ({ embed: wrongLength });
     const provider = createLocalEmbedder({ loader: wrongLoader });
     await expect(provider.embed('hi')).rejects.toThrow(/length 10, expected 768/);
   });
 
   it('honours an overridden dimension when validating output', async () => {
     const tinyEmbed: EmbedFn = async () => buildVector(8, 0.5);
-    const tinyLoader: LocalEmbedderLoader = async () => tinyEmbed;
+    const tinyLoader: LocalEmbedderLoader = async () => ({ embed: tinyEmbed });
     const provider = createLocalEmbedder({ loader: tinyLoader, dimension: 8 });
     const v = await provider.embed('x');
     expect(v).toHaveLength(8);
@@ -137,8 +139,8 @@ describe('createLocalEmbedder', () => {
     it('does not consume the configured timeout', async () => {
       let resolveSlow: ((fn: EmbedFn) => void) | undefined;
       const slowLoader: LocalEmbedderLoader = () =>
-        new Promise<EmbedFn>((resolve) => {
-          resolveSlow = resolve;
+        new Promise((resolve) => {
+          resolveSlow = (fn: EmbedFn) => resolve({ embed: fn });
         });
       const provider = createLocalEmbedder({ loader: slowLoader, timeoutMs: 50 });
       const warmupPromise = provider.warmup?.();
@@ -157,7 +159,7 @@ describe('createLocalEmbedder', () => {
       if (calls === 1) {
         throw new Error('cold start failed');
       }
-      return embedFn;
+      return { embed: embedFn };
     };
     const provider = createLocalEmbedder({ loader: flakyLoader });
     await expect(provider.embed('first')).rejects.toThrow('cold start failed');
@@ -176,7 +178,7 @@ describe('createLocalEmbedder', () => {
         received = text;
         return buildVector(DEFAULT_LOCAL_DIMENSION, 0);
       };
-      const captureLoader: LocalEmbedderLoader = async () => captureEmbed;
+      const captureLoader: LocalEmbedderLoader = async () => ({ embed: captureEmbed });
       const provider = createLocalEmbedder({ loader: captureLoader, maxInputBytes: 16 });
       await provider.embed('a'.repeat(64));
       expect(received).toBe('a'.repeat(16));
@@ -188,7 +190,7 @@ describe('createLocalEmbedder', () => {
         received = text;
         return buildVector(DEFAULT_LOCAL_DIMENSION, 0);
       };
-      const captureLoader: LocalEmbedderLoader = async () => captureEmbed;
+      const captureLoader: LocalEmbedderLoader = async () => ({ embed: captureEmbed });
       const provider = createLocalEmbedder({ loader: captureLoader, maxInputBytes: 32 });
       await provider.embed('hello');
       expect(received).toBe('hello');
@@ -200,7 +202,7 @@ describe('createLocalEmbedder', () => {
         received = text;
         return buildVector(DEFAULT_LOCAL_DIMENSION, 0);
       };
-      const captureLoader: LocalEmbedderLoader = async () => captureEmbed;
+      const captureLoader: LocalEmbedderLoader = async () => ({ embed: captureEmbed });
       // 'é' is 2 UTF-8 bytes. Cap of 3 bytes leaves space for one
       // 'a' + 'é' = 3 bytes, with no partial codepoint.
       const provider = createLocalEmbedder({ loader: captureLoader, maxInputBytes: 3 });
@@ -217,7 +219,7 @@ describe('createLocalEmbedder', () => {
         new Promise<readonly number[]>((resolve) => {
           setTimeout(() => resolve(buildVector(DEFAULT_LOCAL_DIMENSION, 0)), 200);
         });
-      const slowLoader: LocalEmbedderLoader = async () => slowEmbed;
+      const slowLoader: LocalEmbedderLoader = async () => ({ embed: slowEmbed });
       const provider = createLocalEmbedder({ loader: slowLoader, timeoutMs: 50 });
       await expect(provider.embed('x')).rejects.toThrow(/timed out after 50ms/u);
     });
@@ -226,6 +228,117 @@ describe('createLocalEmbedder', () => {
       const provider = createLocalEmbedder({ loader, timeoutMs: 5_000 });
       const v = await provider.embed('x');
       expect(v).toHaveLength(DEFAULT_LOCAL_DIMENSION);
+    });
+
+    it('applies the timeout to the whole batch as one unit', async () => {
+      // The batch path takes a single wallclock cap — it's one
+      // runtime call from the embedder's perspective, not N.
+      const slowBatch: EmbedBatchFn = (texts) =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve(texts.map(() => buildVector(DEFAULT_LOCAL_DIMENSION, 0))), 200);
+        });
+      const slowLoader: LocalEmbedderLoader = async () => ({
+        embed: embedFn,
+        embedBatch: slowBatch,
+      });
+      const provider = createLocalEmbedder({ loader: slowLoader, timeoutMs: 50 });
+      await expect(provider.embedBatch!(['a', 'b', 'c'])).rejects.toThrow(
+        /batch\[3\] timed out after 50ms/u,
+      );
+    });
+  });
+
+  describe('embedBatch', () => {
+    it('uses the loader-provided batch fn when available (fast path)', async () => {
+      // Each row encodes its input index so the test can assert
+      // order preservation through the slice.
+      const batchFn = vi.fn(async (texts: readonly string[]) =>
+        texts.map((_, i) => buildVector(DEFAULT_LOCAL_DIMENSION, i * 0.01)),
+      );
+      const batchLoader: LocalEmbedderLoader = async () => ({
+        embed: embedFn,
+        embedBatch: batchFn,
+      });
+      const provider = createLocalEmbedder({ loader: batchLoader });
+      const out = await provider.embedBatch!(['a', 'b', 'c']);
+
+      expect(batchFn).toHaveBeenCalledTimes(1);
+      expect(batchFn).toHaveBeenCalledWith(['a', 'b', 'c']);
+      // Single-call path must NOT have been used when the batch fn
+      // is available — that's the whole point of the fast path.
+      expect(embedFn).not.toHaveBeenCalled();
+      expect(out).toHaveLength(3);
+      expect(out[0]![0]).toBeCloseTo(0);
+      expect(out[1]![0]).toBeCloseTo(0.01);
+      expect(out[2]![0]).toBeCloseTo(0.02);
+    });
+
+    it('falls back to sequential embed when the loader omits embedBatch', async () => {
+      // The default `loader` fixture returns only { embed }.
+      const provider = createLocalEmbedder({ loader });
+      const out = await provider.embedBatch!(['a', 'b', 'c']);
+      expect(embedFn).toHaveBeenCalledTimes(3);
+      expect(out).toHaveLength(3);
+    });
+
+    it('returns [] for empty input without invoking the loader', async () => {
+      const batchFn = vi.fn(async () => [] as readonly (readonly number[])[]);
+      const batchLoader = vi.fn(async () => ({
+        embed: embedFn,
+        embedBatch: batchFn,
+      })) as ReturnType<typeof vi.fn> & LocalEmbedderLoader;
+      const provider = createLocalEmbedder({ loader: batchLoader });
+      const out = await provider.embedBatch!([]);
+      expect(out).toEqual([]);
+      // Empty input short-circuits before the runtime is touched.
+      expect(batchLoader).not.toHaveBeenCalled();
+      expect(batchFn).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the batch runtime returns the wrong row count', async () => {
+      // A misbehaving runtime that drops a row would corrupt the
+      // caller's input↔output alignment. Better to fail loud.
+      const dropsRow: EmbedBatchFn = async (texts) =>
+        texts.slice(0, texts.length - 1).map(() => buildVector(DEFAULT_LOCAL_DIMENSION, 0));
+      const badLoader: LocalEmbedderLoader = async () => ({
+        embed: embedFn,
+        embedBatch: dropsRow,
+      });
+      const provider = createLocalEmbedder({ loader: badLoader });
+      await expect(provider.embedBatch!(['a', 'b', 'c'])).rejects.toThrow(
+        /returned 2 vectors for 3 inputs/u,
+      );
+    });
+
+    it('validates each row in the batch against the configured dimension', async () => {
+      const wrongDim: EmbedBatchFn = async (texts) => texts.map(() => buildVector(10, 0));
+      const wrongLoader: LocalEmbedderLoader = async () => ({
+        embed: embedFn,
+        embedBatch: wrongDim,
+      });
+      const provider = createLocalEmbedder({ loader: wrongLoader });
+      // `EmbeddingProvider.embedBatch` is optional in the core
+      // contract but always provided by `createLocalEmbedder`.
+      await expect(provider.embedBatch!(['a'])).rejects.toThrow(/length 10, expected 768/u);
+    });
+
+    it('truncates oversize inputs on the batch path before the runtime sees them', async () => {
+      // The maxInputBytes guard applies to every row, batch or not.
+      let captured: readonly string[] | undefined;
+      const captureBatch: EmbedBatchFn = async (texts) => {
+        captured = texts;
+        return texts.map(() => buildVector(DEFAULT_LOCAL_DIMENSION, 0));
+      };
+      const captureLoader: LocalEmbedderLoader = async () => ({
+        embed: embedFn,
+        embedBatch: captureBatch,
+      });
+      const provider = createLocalEmbedder({
+        loader: captureLoader,
+        maxInputBytes: 4,
+      });
+      await provider.embedBatch!(['short', 'this is too long', 'fits']);
+      expect(captured).toEqual(['shor', 'this', 'fits']);
     });
   });
 });
