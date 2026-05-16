@@ -1,12 +1,16 @@
-# Memento
+<p align="center"> <img src="docs/assets/memento-banner.png" alt="Memento" width="540"> </p>
 
-[![CI](https://github.com/veerps57/memento/actions/workflows/ci.yml/badge.svg)](https://github.com/veerps57/memento/actions/workflows/ci.yml) [![npm](https://img.shields.io/npm/v/@psraghuveer/memento)](https://www.npmjs.com/package/@psraghuveer/memento) [![MCP Registry](https://img.shields.io/badge/MCP_Registry-com.runmemento%2Fmemento-2EA043)](https://registry.modelcontextprotocol.io/v0.1/servers/com.runmemento%2Fmemento/versions) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Node.js: 22.11+](https://img.shields.io/badge/Node.js-22.11%2B-339933)](.nvmrc)
+<p align="center"> <a href="https://github.com/veerps57/memento/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/veerps57/memento/actions/workflows/ci.yml/badge.svg"></a> <a href="https://www.npmjs.com/package/@psraghuveer/memento"><img alt="npm" src="https://img.shields.io/npm/v/@psraghuveer/memento"></a> <a href="https://registry.modelcontextprotocol.io/v0.1/servers/com.runmemento%2Fmemento/versions"><img alt="MCP Registry" src="https://img.shields.io/badge/MCP_Registry-com.runmemento%2Fmemento-2EA043"></a> <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a> <a href=".nvmrc"><img alt="Node.js: 22.11+" src="https://img.shields.io/badge/Node.js-22.11%2B-339933"></a> </p>
 
-> A local-first, LLM-agnostic memory layer for AI assistants — **[runmemento.com](https://runmemento.com)**
+<p align="center"> <strong>A local-first, LLM-agnostic memory layer for AI assistants</strong><br> <a href="https://runmemento.com">runmemento.com</a> </p>
 
 Every AI session starts the same way: re-explaining your preferences, your project's conventions, the decisions you made last week, the dead-ends to avoid. Each tool solves this in its own siloed way (`CLAUDE.md`, `.cursorrules`, `copilot-instructions.md`, ChatGPT Memory) — but you, the human, are the one constant. Your memory shouldn't fragment across vendors.
 
 Memento is one place where that memory lives. It runs an [MCP](https://modelcontextprotocol.io) server over a local SQLite file, so any MCP-capable AI assistant — Claude Desktop, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, a research bot, a custom agent — can read and write durable, structured memory about you, your work, and your decisions. Local-first, no outbound network calls by default, no vendor lock-in.
+
+<p align="center"> <img src="docs/assets/memento-demo.png" alt="Claude Chat answering 'what did we lock-in for the dashboard revamp last week?' by recalling memories from Memento — the assistant uses the Memento integration, calls search and confirm, and returns a structured answer with no re-explanation from the user" width="820"> </p>
+
+<p align="center"> <sub>A fresh chat with no prior context — Memento supplies the memory of what was decided last week.</sub> </p>
 
 ## Quickstart
 

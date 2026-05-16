@@ -29,7 +29,7 @@
     "release": "pnpm build && changeset publish",
     "dev:server": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node packages/cli/dist/cli.js serve",
     "dev:dashboard": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento-dashboard -F @psraghuveer/memento build && node packages/cli/dist/cli.js dashboard --port 3004",
-    "dev:landing": "pnpm -F @psraghuveer/memento-landing dev",
+    "dev:landing": "node scripts/dev-landing.mjs",
     "docs:generate": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node scripts/docs.mjs --write",
     "docs:check": "pnpm -F @psraghuveer/memento-schema -F @psraghuveer/memento-core -F @psraghuveer/memento-server -F @psraghuveer/memento build && node scripts/docs.mjs --check",
     "docs:lint": "markdownlint-cli2",

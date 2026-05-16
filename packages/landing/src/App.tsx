@@ -19,6 +19,7 @@ export default function App(): JSX.Element {
       <main>
         <Hero />
         <Pain />
+        <Recall />
         <HowItWorks />
         <Quickstart />
         <Packs />
@@ -60,56 +61,177 @@ function Hero(): JSX.Element {
   return (
     <section id="top" aria-labelledby="hero-h1" className="scroll-mt-20 border-b border-border">
       <div className="mx-auto w-full max-w-6xl px-4 py-12 md:px-8 md:py-16">
-        <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/memento</p>
-        <h1
-          id="hero-h1"
-          className="max-w-4xl text-4xl font-medium leading-tight tracking-tight text-fg md:text-6xl"
-        >
-          One memory layer for every AI assistant you use.
-        </h1>
-        <p className="mt-6 max-w-prose text-lg text-fg/80">
-          Memento is a local-first, LLM-agnostic memory layer. It runs an{' '}
-          <a
-            href="https://modelcontextprotocol.io"
-            className="text-fg underline decoration-border underline-offset-4 hover:decoration-accent"
-          >
-            MCP
-          </a>{' '}
-          server over a single SQLite file on your machine, so any MCP-capable AI assistant — Claude
-          Desktop, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, a custom agent — can
-          read and write durable, structured memory about you, your work, and your decisions.
-        </p>
-        <p className="mt-4 max-w-prose font-mono text-sm uppercase tracking-widish text-accent">
-          Local. Typed. Audited. Yours.
-        </p>
-        <div className="mt-10 grid max-w-2xl gap-3">
-          <CodeBlock command="npx @psraghuveer/memento init" />
-          <p className="font-mono text-xs text-muted">
-            creates the database, runs migrations, prints copy-paste MCP snippets for your client
-          </p>
-        </div>
-        <div className="mt-8 flex flex-wrap items-center gap-3">
-          <a
-            href="#quickstart"
-            className="inline-flex items-center rounded-md border border-accent bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-colors hover:bg-accent/90"
-          >
-            Get started
-          </a>
-          <a
-            href={GITHUB_URL}
-            className="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm text-fg transition-colors hover:border-fg"
-          >
-            View on GitHub
-          </a>
-          <a
-            href="#how-it-works"
-            className="text-sm text-muted underline decoration-border underline-offset-4 hover:text-fg hover:decoration-fg sm:ml-2"
-          >
-            How it works
-          </a>
+        {/* Two-column on lg+ (text left, deck right); single column
+            below — the deck would compete with the H1 at narrower
+            widths, and the demo screenshot in the Recall section
+            below already carries the visual weight on mobile. */}
+        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-12 xl:gap-16">
+          <div className="min-w-0">
+            <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/memento</p>
+            <h1
+              id="hero-h1"
+              className="text-4xl font-medium leading-tight tracking-tight text-fg md:text-6xl lg:text-5xl xl:text-6xl"
+            >
+              One memory layer for every AI assistant you use.
+            </h1>
+            <p className="mt-6 max-w-prose text-lg text-fg/80">
+              Memento is a local-first, LLM-agnostic memory layer. It runs an{' '}
+              <a
+                href="https://modelcontextprotocol.io"
+                className="text-fg underline decoration-border underline-offset-4 hover:decoration-accent"
+              >
+                MCP
+              </a>{' '}
+              server over a single SQLite file on your machine, so any MCP-capable AI assistant —
+              Claude Desktop, Claude Code, Cursor, GitHub Copilot, Cline, OpenCode, Aider, a custom
+              agent — can read and write durable, structured memory about you, your work, and your
+              decisions.
+            </p>
+            <p className="mt-4 max-w-prose font-mono text-sm uppercase tracking-widish text-accent">
+              Local. Typed. Audited. Yours.
+            </p>
+            <div className="mt-10 grid max-w-2xl gap-3">
+              <CodeBlock command="npx @psraghuveer/memento init" />
+              <p className="font-mono text-xs text-muted">
+                creates the database, runs migrations, prints copy-paste MCP snippets for your
+                client
+              </p>
+            </div>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <a
+                href="#quickstart"
+                className="inline-flex items-center rounded-md border border-accent bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-colors hover:bg-accent/90"
+              >
+                Get started
+              </a>
+              <a
+                href={GITHUB_URL}
+                className="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm text-fg transition-colors hover:border-fg"
+              >
+                View on GitHub
+              </a>
+              <a
+                href="#how-it-works"
+                className="text-sm text-muted underline decoration-border underline-offset-4 hover:text-fg hover:decoration-fg sm:ml-2"
+              >
+                How it works
+              </a>
+            </div>
+          </div>
+          <div className="hidden lg:block">
+            <HeroDeck />
+          </div>
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * Decorative right-column visual for the hero on lg+. Five cards,
+ * one per memory kind (snippet, fact, preference, todo, decision),
+ * staggered down the column with alternating left/right offsets
+ * and small rotations. No overlap — each card is fully readable.
+ * The DECISION card sits at the bottom with an accent ring; it
+ * intentionally echoes the dashboard-revamp memory surfaced in
+ * the demo screenshot below, so the page reads as one coherent
+ * walk through Memento's surface.
+ *
+ * Height matches the left column's rough vertical extent (the
+ * hero copy + CTAs) so the section doesn't read as a tall column
+ * next to a short one. Tune `h-[N]` if hero copy length changes
+ * materially.
+ *
+ * aria-hidden + decorative samples — the cards are sketches, not
+ * truth-bearing. The screen-reader experience is the headline +
+ * description + buttons; this visual is for sighted users only.
+ *
+ * Pure CSS transforms (no JS animation): SSR-clean, dark/light
+ * reactive via existing tokens, ~5KB of HTML over the wire.
+ */
+function HeroDeck(): JSX.Element {
+  return (
+    <div aria-hidden className="relative h-[700px] w-full">
+      <DeckCard
+        kind="snippet"
+        body={'await write_memory({\n  kind: { type: "fact" },\n  content: "...",\n});'}
+        isCode
+        className="absolute left-0 top-0 w-[88%] rotate-[-2deg]"
+      />
+      <DeckCard
+        kind="fact"
+        body="MCP-native — works with any MCP-capable AI client. Local SQLite, no cloud calls."
+        className="absolute right-0 top-[150px] w-[82%] rotate-[2deg]"
+      />
+      <DeckCard
+        kind="preference"
+        topic="node-package-manager: pnpm"
+        body="Raghu prefers pnpm over npm for Node projects."
+        className="absolute left-0 top-[300px] w-[90%] rotate-[-2deg]"
+      />
+      <DeckCard
+        kind="todo"
+        body="Spike timeline rendering for the dashboard revamp."
+        className="absolute right-0 top-[450px] w-[80%] rotate-[2deg]"
+      />
+      <DeckCard
+        kind="decision"
+        topic="dashboard: timeline-first rebuild"
+        body="Memories / Conflicts / Config tabs collapse into filters on a timeline."
+        highlight
+        className="absolute left-0 top-[580px] w-full rotate-[-1deg]"
+      />
+    </div>
+  );
+}
+
+/**
+ * Single card in HeroDeck. Visual language mirrors the dashboard
+ * and Packs cards (rounded-md, border-border, bg-bg/60 surface)
+ * so the deck reads as a peek into the in-product UI, not a
+ * separate marketing decoration. `highlight` swaps to an accent
+ * border + accent eyebrow for the topmost card.
+ *
+ * `topic` (optional) renders the `topic: value` first line that
+ * preference/decision content carries — the structural anchor the
+ * conflict detector reads. Shows the reader what typed memory
+ * actually looks like, without a feature-list bullet.
+ */
+function DeckCard({
+  kind,
+  topic,
+  body,
+  isCode = false,
+  highlight = false,
+  className = '',
+}: {
+  readonly kind: 'fact' | 'preference' | 'decision' | 'todo' | 'snippet';
+  readonly topic?: string;
+  readonly body: string;
+  readonly isCode?: boolean;
+  readonly highlight?: boolean;
+  readonly className?: string;
+}): JSX.Element {
+  const borderCls = highlight ? 'border-accent/60 ring-1 ring-accent/30' : 'border-border';
+  const eyebrowCls = highlight ? 'text-accent' : 'text-muted';
+  return (
+    <div
+      className={`rounded-md border bg-bg/95 p-4 shadow-xl shadow-black/40 ${borderCls} ${className}`}
+    >
+      <p className={`font-mono text-[10px] uppercase tracking-widish ${eyebrowCls}`}>{kind}</p>
+      {topic !== undefined ? (
+        <p className="mt-2 break-words font-mono text-xs text-fg">{topic}</p>
+      ) : null}
+      <p
+        className={`mt-2 ${
+          isCode
+            ? 'whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-fg/80'
+            : 'text-xs leading-snug text-muted'
+        }`}
+      >
+        {body}
+      </p>
+    </div>
   );
 }
 
@@ -132,6 +254,69 @@ function Pain(): JSX.Element {
         <p className="mt-4 max-w-prose text-base text-muted md:text-lg">
           Your memory shouldn't fragment across vendors.
         </p>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The payoff section. Pairs with Pain immediately above: that
+ * section names the problem ("every AI session starts the same
+ * way — re-explaining"), this section answers it with a real
+ * Claude Chat screenshot where Memento supplies the recall. The
+ * narrative beat is intentional — proof reads stronger after the
+ * pain it resolves than packed into the hero.
+ *
+ * width/height match the source PNG so the browser reserves the
+ * slot and avoids CLS; eager loading + async decode keep it on
+ * the critical path since this is the largest above-the-fold
+ * element on most viewports once Pain ends.
+ */
+function Recall(): JSX.Element {
+  return (
+    <section
+      id="recall"
+      aria-labelledby="recall-h2"
+      className="scroll-mt-20 border-b border-border"
+    >
+      <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
+        <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/recall</p>
+        <h2 id="recall-h2" className="max-w-3xl text-3xl font-medium tracking-tight md:text-4xl">
+          Recall, not re-explain.
+        </h2>
+        <p className="mt-6 max-w-prose text-muted">
+          Open a fresh chat. Ask what you decided last week. The assistant just knows — because
+          Memento is the layer underneath, supplying durable, structured memory the chat itself
+          never had.
+        </p>
+        <figure className="mt-12 md:mt-16">
+          {/* Gradient frame. The screenshot floats on a warm
+              amber → cream-yellow diagonal wash — Memento's accent
+              colour pushed to full saturation, since the rest of
+              the page sits on the muted dark theme. Padding gives
+              the screenshot generous margin so the gradient reads
+              as a frame, not a halo. No other decoration competes
+              for attention; the frame is the visual. */}
+          <div
+            className="rounded-2xl p-6 sm:p-10 md:p-14 lg:p-20"
+            style={{
+              background:
+                'linear-gradient(135deg, rgb(232, 184, 108) 0%, rgb(244, 212, 140) 45%, rgb(250, 226, 158) 100%)',
+            }}
+          >
+            <div className="overflow-hidden rounded-lg shadow-2xl shadow-black/40 ring-1 ring-black/10">
+              <img
+                src="/memento-demo.png"
+                alt="Claude Chat answering 'what did we lock-in for the dashboard revamp last week?' by recalling memories from Memento. The assistant invokes the Memento integration, runs search_memory and confirm_memory tool calls, and returns a structured answer about a dashboard rebuild decision — with no re-explanation from the user."
+                width={1978}
+                height={1294}
+                loading="eager"
+                decoding="async"
+                className="block h-auto w-full"
+              />
+            </div>
+          </div>
+        </figure>
       </div>
     </section>
   );
