@@ -19,8 +19,8 @@ import type {
   Scope,
 } from '@psraghuveer/memento-schema';
 import {
-  MEMORY_KIND_TYPES,
   MemoryIdSchema,
+  MemoryKindSchema,
   ScopeSchema,
   err,
   ok,
@@ -34,7 +34,12 @@ import type { MemoryRepository } from '../../repository/memory-repository.js';
 import { ulid } from '../../repository/ulid.js';
 import type { MementoSchema } from '../../storage/schema.js';
 import type { Command, CommandContext } from '../types.js';
-import { assertNoReservedTags, enforceSafetyCaps, enforceTopicLine } from './safety-caps.js';
+import {
+  assertNoReservedTags,
+  enforceSafetyCaps,
+  enforceTopicLine,
+  rationaleFromKind,
+} from './safety-caps.js';
 
 const SURFACES = ['mcp', 'cli'] as const;
 
@@ -44,18 +49,21 @@ const DRY_RUN_PLACEHOLDER_ID = '00000000000000000000000000' as unknown as Memory
 
 // — Input schema —
 
+// ADR-0027: `memory.extract` and `memory.write` share one
+// candidate shape — a discriminated-union `kind` object. The
+// previous flat-kind + top-level `rationale` / `language`
+// divergence was the most-warned-about footgun in the surface
+// (called out in three places in the skill); it is gone.
 const ExtractionCandidateSchema = z
   .object({
-    kind: z
-      .enum(MEMORY_KIND_TYPES)
-      .describe(
-        'Memory kind: one of "fact", "preference", "decision", "todo", "snippet" — a plain string enum. NOTE: this is **flat** here (e.g. `"kind": "preference"`), unlike `memory.write` where the same field is a discriminated-union object (`"kind": {"type": "preference"}`). Reusing the write_memory shape will fail validation.',
-      ),
+    kind: MemoryKindSchema.describe(
+      'What kind of memory this is — same discriminated-union shape as `memory.write`. Discriminated by "type". Options: `{"type":"fact"}`, `{"type":"preference"}`, `{"type":"decision","rationale":"..."}`, `{"type":"todo","due":null}`, `{"type":"snippet","language":"typescript"}`. Per-kind fields (rationale on decision, language on snippet) live INSIDE the kind object — not as top-level siblings.',
+    ),
     content: z
       .string()
       .min(1)
       .describe(
-        'The memory content to extract. For `preference` and `decision` kinds, the first line MUST be `topic: value` (or `topic = value`) followed by a blank line and prose — this is what the conflict detector parses; without it, contradictory preferences silently coexist. Example: `"node-package-manager: pnpm\\n\\nUser prefers pnpm over npm."`. `fact` / `todo` / `snippet` kinds use different conflict heuristics and don\'t require this format.',
+        'The memory content to extract. For `preference` and `decision` kinds, the first line MUST be `topic: value` (or `topic = value`) followed by a blank line and prose — this is what the conflict detector parses; without it, contradictory preferences silently coexist. The server rejects offending writes with `INVALID_INPUT` when `safety.requireTopicLine` is true (the default). Example: `"node-package-manager: pnpm\\n\\nUser prefers pnpm over npm."`. `fact` / `todo` / `snippet` kinds use different conflict heuristics and don\'t require this format.',
       ),
     tags: z
       .array(z.string())
@@ -64,18 +72,6 @@ const ExtractionCandidateSchema = z
         'Optional tags for this candidate. Each tag is normalised (trimmed + lowercased) and validated against `[a-z0-9._:/-]` — spaces, commas, and uppercase are rejected. Pre-process human-prose values (replace spaces/commas with `-`).',
       ),
     summary: z.string().nullable().optional().describe('Optional one-line summary.'),
-    rationale: z
-      .string()
-      .optional()
-      .describe(
-        'Rationale for the decision — **top-level field, used only with `kind: "decision"`**. NOTE: this differs from `memory.write`, where `rationale` lives inside `kind: {type: "decision", rationale: "..."}`. In extract\'s flat candidate shape, rationale sits beside kind.',
-      ),
-    language: z
-      .string()
-      .optional()
-      .describe(
-        'Programming language hint — **top-level field, used only with `kind: "snippet"`** (e.g. "typescript", "shell"). Like `rationale`, this differs from `memory.write` where `language` lives inside `kind: {type: "snippet", language: "..."}`.',
-      ),
   })
   .strict();
 
@@ -174,7 +170,7 @@ export function createMemoryExtractCommand(
     outputSchema: MemoryExtractOutputSchema,
     metadata: {
       description:
-        'Batch-extract candidate memories from a conversation. The server handles dedup, scrubbing, and writing. The assistant\'s job is reduced to dumping "what seemed worth remembering."\n\n**Candidate shape note** — this command\'s `kind` field is a flat string (`"kind": "fact"`), and `rationale` / `language` are top-level fields. This differs from `memory.write`, where `kind` is a discriminated-union object and those fields nest inside it. Copying the write_memory shape will fail validation with `INVALID_INPUT`.\n\n**Topic-line gotcha** — for `preference` and `decision` candidates, the `content` MUST start with a `topic: value` line followed by a blank line and prose. The conflict detector parses that first line; without it, contradictory preferences silently coexist. The handler returns `INVALID_INPUT` for offending candidates — the whole batch is rejected, not just the bad items.\n\nDedup runs at two scopes: (1) **in-batch** — byte-identical candidates within the same call collapse to a single memory (kind-aware fingerprint); (2) **cross-batch** — embeddings are compared against existing active memories via the configured similarity thresholds (≥`extraction.dedup.identicalThreshold` skips, between that and `extraction.dedup.threshold` supersedes, below writes new). When in doubt, include the candidate.\n\n**Storage defaults** — extracted memories are written at `storedConfidence: 0.8` (lower than `memory.write`\'s 1.0) so they decay faster and get pruned if never confirmed. This biases toward precision: tentative captures don\'t crowd out user-stated facts.\n\nThe response carries a `mode` field. When `mode: "sync"`, the `written`, `skipped`, and `superseded` arrays are authoritative and you can report them directly. When `mode: "async"` (the default per `extraction.processing` config), those arrays are intentionally empty — the server returned a receipt and is processing in background. The accompanying `hint` field explains what to expect; do not retry. Writes land as memories within ~1–5 seconds and can be confirmed with `list_memories` or `search_memory` if needed.\n\nExample (note the flat kind, the topic-line on the preference, and top-level rationale on the decision):\n\n```json\n{"candidates":[\n  {"kind":"preference","content":"editor-theme: dark\\n\\nUser prefers dark mode in all editors."},\n  {"kind":"fact","content":"The production database is PostgreSQL 15."},\n  {"kind":"decision","content":"storage-engine: SQLite\\n\\nChosen for the local-first story; FTS5 built in.","rationale":"Single-file, no daemon, prebuilt for every platform."},\n  {"kind":"snippet","content":"memento read <id>","language":"shell"}\n]}\n```',
+        'Batch-extract candidate memories from a conversation. The server handles dedup, scrubbing, and writing. The assistant\'s job is reduced to dumping "what seemed worth remembering."\n\n**Candidate shape (ADR-0027)** — `memory.extract` and `memory.write` share one shape. `kind` is a discriminated-union object: `{"type":"fact"}`, `{"type":"preference"}`, `{"type":"decision","rationale":"..."}`, `{"type":"todo","due":null}`, `{"type":"snippet","language":"typescript"}`. The per-kind fields (`rationale`, `language`) live INSIDE the kind object — not as top-level siblings.\n\n**Topic-line rule** — for `preference` and `decision` candidates, the `content` MUST start with a `topic: value` line followed by a blank line and prose. The conflict detector parses that first line; the server rejects offending writes with `INVALID_INPUT` (gated by `safety.requireTopicLine`, default true). The whole batch is rejected on the first offending candidate, not just the bad item.\n\nDedup runs at two scopes: (1) **in-batch** — byte-identical candidates within the same call collapse to a single memory (kind-aware fingerprint); (2) **cross-batch** — embeddings are compared against existing active memories via the configured similarity thresholds (≥`extraction.dedup.identicalThreshold` skips, between that and `extraction.dedup.threshold` supersedes, below writes new). When in doubt, include the candidate.\n\n**Storage defaults** — extracted memories are written at `storedConfidence: 0.8` (lower than `memory.write`\'s 1.0) so they decay faster and get pruned if never confirmed.\n\n**Processing mode** — the response carries a `mode` field. `extraction.processing` defaults to `auto` (sync for batches ≤ `extraction.syncThreshold`, async above); explicit `sync` and `async` overrides remain. When `mode: "sync"` the `written` / `skipped` / `superseded` arrays are authoritative and you can report them directly. When `mode: "async"` those arrays are intentionally empty — the server accepted the batch and is processing in background; the `hint` field explains what to expect. Do not retry on async receipts.\n\nExample (note the nested kind on every variant):\n\n```json\n{"candidates":[\n  {"kind":{"type":"preference"},"content":"editor-theme: dark\\n\\nUser prefers dark mode in all editors."},\n  {"kind":{"type":"fact"},"content":"The production database is PostgreSQL 15."},\n  {"kind":{"type":"decision","rationale":"Single-file, no daemon, FTS5 built in."},"content":"storage-engine: SQLite\\n\\nChosen for the local-first story."},\n  {"kind":{"type":"snippet","language":"shell"},"content":"memento read <id>"}\n]}\n```',
       mcpName: 'extract_memory',
     },
     handler: async (input, ctx) => {
@@ -219,7 +215,7 @@ export function createMemoryExtractCommand(
             content: candidate.content,
             summary: candidate.summary ?? null,
             tags: candidate.tags ?? [],
-            rationale: candidate.rationale ?? null,
+            rationale: rationaleFromKind(candidate.kind),
           },
           cfg,
           i,
@@ -227,24 +223,38 @@ export function createMemoryExtractCommand(
         if (!cap.ok) return cap;
         const topic = enforceTopicLine(
           'memory.extract',
-          { kind: { type: candidate.kind }, content: candidate.content },
+          { kind: candidate.kind, content: candidate.content },
           cfg,
           i,
         );
         if (!topic.ok) return topic;
       }
 
-      const processingMode = cfg.get('extraction.processing');
+      const configuredMode = cfg.get('extraction.processing');
+      const syncThreshold = cfg.get('extraction.syncThreshold');
       const scope: Scope = input.scope ?? { type: 'global' };
       const autoTag = cfg.get('extraction.autoTag');
       const defaultConfidence = cfg.get('extraction.defaultConfidence');
       const dedupThreshold = cfg.get('extraction.dedup.threshold');
       const identicalThreshold = cfg.get('extraction.dedup.identicalThreshold');
 
+      // ADR-0027: `auto` (the new default) runs sync when the
+      // batch is small enough to keep response-time UX clean; the
+      // explicit `sync` and `async` overrides remain for operators
+      // with strict requirements. Dry-runs are always synchronous
+      // regardless of mode — the caller is asking for a preview,
+      // not a fire-and-forget.
+      const resolvedMode: 'sync' | 'async' =
+        configuredMode === 'auto'
+          ? input.candidates.length <= syncThreshold
+            ? 'sync'
+            : 'async'
+          : configuredMode;
+
       // ADR-0017 §2: when async mode is active and this is not a
       // dry-run, return a receipt immediately and process in
       // background. Dry-run is always synchronous.
-      if (processingMode === 'async' && !input.dryRun) {
+      if (resolvedMode === 'async' && !input.dryRun) {
         const batchId = ulid();
         // Fire background processing — errors are swallowed; they
         // surface as memory events (or not-written memories).
@@ -402,35 +412,32 @@ type CandidateResult =
  * Build the final content string for a candidate. Extracted so
  * the handler can pre-compute contents for batch embedding
  * (ADR-0017) without duplicating the rationale/language logic.
+ *
+ * Reads from the nested kind shape (ADR-0027). `rationale` and
+ * `language` live on the kind, not at the top level.
  */
 function buildContent(candidate: z.infer<typeof ExtractionCandidateSchema>): string {
   let content = candidate.content;
-  if (candidate.kind === 'decision' && candidate.rationale) {
-    content = `${content}\n\nRationale: ${candidate.rationale}`;
+  if (candidate.kind.type === 'decision' && candidate.kind.rationale) {
+    content = `${content}\n\nRationale: ${candidate.kind.rationale}`;
   }
-  if (candidate.kind === 'snippet' && candidate.language) {
-    content = `[${candidate.language}] ${content}`;
+  if (candidate.kind.type === 'snippet' && candidate.kind.language) {
+    content = `[${candidate.kind.language}] ${content}`;
   }
   return content;
 }
 
 /**
- * Build a fully-typed `MemoryKind` from the extraction candidate.
- * The discriminated union requires kind-specific fields.
+ * Promote the extract candidate's nested kind to the canonical
+ * `MemoryKind` shape. After ADR-0027 the candidate's `kind`
+ * already conforms to `MemoryKindSchema`, so this is the
+ * identity — but kept as a named helper so call sites read as
+ * intent ("convert candidate into a write-ready kind") rather
+ * than a bare property access, and so the wrapper survives
+ * future per-kind transformations without churning callers.
  */
 function buildMemoryKind(candidate: z.infer<typeof ExtractionCandidateSchema>): MemoryKind {
-  switch (candidate.kind) {
-    case 'fact':
-      return { type: 'fact' };
-    case 'preference':
-      return { type: 'preference' };
-    case 'decision':
-      return { type: 'decision', rationale: candidate.rationale ?? null };
-    case 'todo':
-      return { type: 'todo', due: null };
-    case 'snippet':
-      return { type: 'snippet', language: candidate.language ?? null };
-  }
+  return candidate.kind;
 }
 
 async function processCandidate(
@@ -460,7 +467,7 @@ async function processCandidate(
   // Dedup check via embedding similarity. When a pre-computed
   // vector is available (ADR-0017 batch-embed pass), skip the
   // per-candidate embed call inside checkDedup.
-  const dedupResult = await checkDedup(content, candidate.kind, scope, {
+  const dedupResult = await checkDedup(content, candidate.kind.type, scope, {
     dedupThreshold,
     identicalThreshold,
     deps,
@@ -756,7 +763,7 @@ function batchFingerprint(
   candidate: z.infer<typeof ExtractionCandidateSchema>,
   builtContent: string,
 ): string {
-  return `${candidate.kind}|${builtContent.normalize('NFC').trim().toLowerCase()}`;
+  return `${candidate.kind.type}|${builtContent.normalize('NFC').trim().toLowerCase()}`;
 }
 
 export { MemoryExtractOutputSchema };

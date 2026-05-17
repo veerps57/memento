@@ -24,6 +24,7 @@ import { statusCommand } from './status.js';
 import { storeMigrateCommand } from './store-migrate.js';
 import type { LifecycleCommand } from './types.js';
 import { uninstallCommand } from './uninstall.js';
+import { verifySetupCommand } from './verify-setup.js';
 
 export const LIFECYCLE_COMMANDS: Record<LifecycleName, LifecycleCommand> = {
   serve: serveCommand,
@@ -42,6 +43,7 @@ export const LIFECYCLE_COMMANDS: Record<LifecycleName, LifecycleCommand> = {
   dashboard: dashboardCommand,
   'skill-path': skillPathCommand,
   pack: packCommand,
+  'verify-setup': verifySetupCommand,
 };
 
 export type {
@@ -126,4 +128,10 @@ export {
   type SkillPathSnapshot,
 } from './skill-path.js';
 export { packCommand, runPack, type PackAction } from './pack.js';
+export {
+  verifySetupCommand,
+  runVerifySetup,
+  type VerifyCheck,
+  type VerifySetupSnapshot,
+} from './verify-setup.js';
 export { openAppForSurface, type OpenAppOptions } from './open-app.js';

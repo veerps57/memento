@@ -48,6 +48,7 @@ import {
   type ServeStdioOptions,
   type SkillPathSnapshot,
 } from './lifecycle/index.js';
+import { createClackInitPrompter } from './lifecycle/init-prompts.js';
 import { createClackPrompter } from './lifecycle/pack-prompts.js';
 import { runRegistry } from './registry-run.js';
 import { renderResult, resolveFormat } from './render.js';
@@ -325,6 +326,7 @@ const DEFAULT_DEPS: RunCliDeps = {
   resolveEmbedder: defaultResolveEmbedder,
   launchDashboard: defaultLaunchDashboard,
   createPackPrompter: createClackPrompter,
+  createInitPrompter: createClackInitPrompter,
 };
 
 /**

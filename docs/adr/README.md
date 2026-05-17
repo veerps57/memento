@@ -35,6 +35,9 @@ The template is at [`template.md`](template.md). Use it.
 | 0023 | [Graceful shutdown coordination for the startup embedding backfill](0023-graceful-shutdown-for-startup-backfill.md) | Superseded by ADR-0024 |
 | 0024 | [Generalize graceful shutdown to all background work](0024-generalize-graceful-shutdown.md) | Superseded by ADR-0025 |
 | 0025 | [Dispose the embedder pipeline on shutdown](0025-dispose-embedder-pipeline-on-shutdown.md) | Accepted |
+| 0026 | [MCP `instructions` as the session-teaching spine](0026-mcp-instructions-as-session-teaching-spine.md) | Accepted |
+| 0027 | [Unified `memory.write` / `memory.extract` surface](0027-unified-memory-write-extract-surface.md) | Accepted |
+| 0028 | [Interactive `init` and the `verify-setup` command](0028-interactive-init-and-verify-setup.md) | Accepted |
 
 ## When an ADR is required
 

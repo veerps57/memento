@@ -33,23 +33,19 @@ export const HOWTO: {
 } = {
   name: 'Install Memento',
   description:
-    'Install Memento on your machine in three steps: initialize the database, connect your AI client over MCP, and teach the assistant when to use Memento via the bundled skill or persona snippet.',
-  // ISO-8601 duration. ~5 minutes end-to-end on a warm npx cache.
-  totalTime: 'PT5M',
+    'Install Memento on your machine in two steps: run init (interactive on a TTY — sets your name, installs the skill, seeds a starter pack), then paste the printed MCP-server snippet into your AI client and restart it. The session-start teaching spine ships with the MCP server itself, so the assistant learns when to call Memento as soon as it connects.',
+  // ISO-8601 duration. ~3 minutes end-to-end on a warm npx cache.
+  totalTime: 'PT3M',
   steps: [
     {
-      name: 'Initialize Memento',
-      text: 'Run `npx @psraghuveer/memento init` in a terminal. This creates the SQLite database under the XDG data directory (typically ~/.local/share/memento/memento.db on POSIX), runs migrations, and prints copy-paste MCP-server snippets for every supported client. The command is idempotent — re-run it any time to reprint the snippets.',
+      name: 'Initialize Memento (interactive)',
+      text: "Run `npx @psraghuveer/memento init` in a terminal. On a TTY, init walks you through three one-keystroke setup questions: your preferred display name (so memories read 'Raghu prefers …' instead of 'The user prefers …'), whether to install the bundled Memento skill into ~/.claude/skills/, and whether to seed your store with one of four starter packs (engineering-simplicity, pragmatic-programmer, twelve-factor-app, google-sre). Then it prints copy-paste MCP-server snippets for every supported client. Idempotent — re-run any time. Pass --no-prompt to suppress the interactive flow for CI / scripts.",
       command: 'npx @psraghuveer/memento init',
     },
     {
       name: 'Connect your AI client',
-      text: "Paste the MCP-server snippet that init printed for your client into that client's MCP config (Claude Desktop's claude_desktop_config.json, Cursor's mcp.json, Cline's settings, OpenCode's config, VS Code Agent's mcp.json), or run the one-line subcommand init prints for Claude Code. Then restart the client so it loads the new MCP server.",
-    },
-    {
-      name: 'Install the Memento skill (or paste the persona)',
-      text: "If your client loads Anthropic-format skills, copy the bundled Memento skill into ~/.claude/skills/ — most skill-capable clients read from there. (A few use a client-specific path; check your client's skill docs.) If your client doesn't load skills, copy the persona snippet from teach-your-assistant.md into your client's persona file. The skill or persona is what tells the assistant when to call Memento's MCP tools — without it, the assistant has the tools but no instinct to use them.",
-      command: 'cp -R "$(npx -y @psraghuveer/memento skill-path)" ~/.claude/skills/',
+      text: "Paste the MCP-server snippet that init printed for your client into that client's MCP config (Claude Desktop's claude_desktop_config.json, Cursor's mcp.json, Cline's settings, OpenCode's config, VS Code Agent's mcp.json), or run the one-line subcommand init prints for Claude Code. Then restart the client so it loads the new MCP server. The session-start teaching spine — when to load context, when to write, when to confirm, the topic:value rule for preferences — ships with the server and is injected into the assistant's system prompt automatically on every connect (ADR-0026). Verify with `npx @psraghuveer/memento verify-setup` — a write/search/cleanup round-trip that proves your assistant can actually use Memento end-to-end.",
+      command: 'npx @psraghuveer/memento verify-setup',
     },
   ],
 };

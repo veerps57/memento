@@ -28,6 +28,7 @@ export function renderHelp(topic?: string): string {
     '  context            Print runtime context (db, version, registered commands)',
     '  doctor             Run diagnostic checks (node version, db, peer deps; --quick, --mcp)',
     '  ping               Spawn `serve` and round-trip an MCP tools/list call',
+    '  verify-setup       Spawn the MCP server and round-trip a write/read (proves the wiring an MCP client uses)',
     '',
     'Operate:',
     '  backup             Point-in-time copy of the database (uses VACUUM INTO)',

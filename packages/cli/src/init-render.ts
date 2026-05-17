@@ -24,7 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { renderBanner } from './banner.js';
-import type { InitSnapshot, SkillInstallInfo } from './lifecycle/init.js';
+import type { InitPromptOutcomes, InitSnapshot, SkillInstallInfo } from './lifecycle/init.js';
 
 export interface InitRenderOptions {
   readonly color: boolean;
@@ -37,7 +37,7 @@ export interface InitRenderOptions {
  * `memento doctor` for verification.
  */
 export function renderInitText(snapshot: InitSnapshot, options: InitRenderOptions): string {
-  const { version, dbPath, dbFromEnv, dbFromDefault, checks, clients, skill } = snapshot;
+  const { version, dbPath, dbFromEnv, dbFromDefault, checks, clients, skill, prompts } = snapshot;
   const memoryWarning = dbPath === ':memory:';
 
   const lines: string[] = [];
@@ -118,14 +118,35 @@ export function renderInitText(snapshot: InitSnapshot, options: InitRenderOption
     lines.push('');
   }
 
+  // ── Interactive prompt outcomes (ADR-0028). Surfaced as the
+  // very first thing the user sees post-init banner, so the
+  // happy-path "✓ name set, ✓ skill installed, ✓ pack seeded"
+  // reads as completion before the snippet-paste step.
+  const promptLines = renderPromptOutcomes(prompts, options);
+  if (promptLines.length > 0) {
+    lines.push('');
+    lines.push(bold('What we just set up', options));
+    lines.push(...promptLines);
+  }
+
   // ── Step 3 ── Teach the assistant when to use Memento. Always
   // rendered: skill branch when the rendered client set includes
   // at least one Anthropic-skill-capable client; persona branch
   // for pure third-party setups (Cursor / VS Code Agent / OpenCode).
   lines.push(bold('Step 3 — Teach your assistant when to use Memento', options));
   lines.push('');
+  // Suppress the "install the skill" copy-paste block when the
+  // interactive flow already installed it (or detected it was
+  // current). The skill section is still printed in shortened
+  // form so the user knows the surface exists.
+  const skillResolved =
+    prompts.installSkill?.kind === 'installed' || prompts.installSkill?.kind === 'already-current';
   if (skill.capableClients.length > 0) {
-    lines.push(...renderSkillSection(skill, options));
+    if (skillResolved) {
+      lines.push(...renderSkillSectionResolved(prompts.installSkill, options));
+    } else {
+      lines.push(...renderSkillSection(skill, options));
+    }
   } else {
     lines.push(...renderPersonaOnlySection(options));
   }
@@ -249,6 +270,107 @@ function renderSkillSection(skill: SkillInstallInfo, options: InitRenderOptions)
   lines.push(`${dim('No skill support?', options)} paste the persona snippet from docs/guides/`);
   lines.push('  teach-your-assistant.md into the client persona file instead.');
   lines.push('');
+  return lines;
+}
+
+/**
+ * Render the trimmed Step 3 used when the interactive flow
+ * already installed the skill (or detected it was current).
+ * One line ack + the "different skills directory?" footnote
+ * still — the user may share their store with multiple clients
+ * that use different skill paths.
+ */
+function renderSkillSectionResolved(
+  outcome: NonNullable<InitPromptOutcomes['installSkill']>,
+  options: InitRenderOptions,
+): string[] {
+  const lines: string[] = [];
+  const header = '── Memento skill ──';
+  lines.push(bold(header, options));
+  lines.push('');
+  if (outcome.kind === 'installed') {
+    lines.push(
+      `${green('✓', options)} skill installed at ${displayHomePath(outcome.target)}/memento.`,
+    );
+  } else if (outcome.kind === 'already-current') {
+    lines.push(
+      `${green('✓', options)} skill already current at ${displayHomePath(outcome.target)}/memento.`,
+    );
+  }
+  lines.push(
+    `${dim('Different skills directory?', options)} most clients read from \`~/.claude/skills/\`,`,
+  );
+  lines.push("  but a few use a client-specific path. If your client doesn't pick the skill up,");
+  lines.push('  copy `~/.claude/skills/memento/` into the directory it reads.');
+  lines.push('');
+  return lines;
+}
+
+/**
+ * Render the "what we just set up" block summarising the
+ * per-prompt outcomes from the interactive flow. Each field is
+ * skipped (the line just isn't emitted) when its outcome is
+ * `null` — distinct from `skip`, which means the user was
+ * asked and declined and we DO want to acknowledge the
+ * decision so the user knows the prompt happened.
+ *
+ * Returns an empty array when nothing was prompted (every
+ * outcome is `null`), so callers can suppress the surrounding
+ * header.
+ */
+function renderPromptOutcomes(prompts: InitPromptOutcomes, options: InitRenderOptions): string[] {
+  const lines: string[] = [];
+
+  const name = prompts.preferredName;
+  if (name !== null) {
+    if (name.kind === 'set') {
+      lines.push(`${green('✓', options)} preferred name set to "${name.value}".`);
+    } else if (name.kind === 'skip') {
+      lines.push(`${dim('•', options)} preferred name left unset (you can set it later with`);
+      lines.push('  `memento config set user.preferredName "<your name>"`).');
+    } else if (name.kind === 'failed') {
+      lines.push(`${yellow('!', options)} preferred name not set: ${name.message}`);
+    }
+  }
+
+  const skill = prompts.installSkill;
+  if (skill !== null) {
+    if (skill.kind === 'installed') {
+      lines.push(
+        `${green('✓', options)} Memento skill installed at ${displayHomePath(skill.target)}/memento.`,
+      );
+    } else if (skill.kind === 'already-current') {
+      lines.push(
+        `${green('✓', options)} Memento skill already up to date at ${displayHomePath(skill.target)}/memento.`,
+      );
+    } else if (skill.kind === 'skip') {
+      lines.push(
+        `${dim('•', options)} skill install skipped (re-run \`memento init\` to install).`,
+      );
+    } else if (skill.kind === 'unavailable') {
+      lines.push(`${yellow('!', options)} skill bundle unavailable: ${skill.reason}.`);
+    } else if (skill.kind === 'failed') {
+      lines.push(`${yellow('!', options)} skill install failed: ${skill.message}`);
+    }
+  }
+
+  const pack = prompts.starterPack;
+  if (pack !== null) {
+    if (pack.kind === 'installed') {
+      lines.push(
+        `${green('✓', options)} starter pack \`${pack.packId}\` installed (${pack.itemCount} memor${pack.itemCount === 1 ? 'y' : 'ies'}).`,
+      );
+    } else if (pack.kind === 'skip') {
+      lines.push(
+        `${dim('•', options)} starter pack declined (browse with \`memento pack list\` and install later).`,
+      );
+    } else if (pack.kind === 'failed') {
+      lines.push(
+        `${yellow('!', options)} pack install failed (\`${pack.packId}\`): ${pack.message}`,
+      );
+    }
+  }
+
   return lines;
 }
 

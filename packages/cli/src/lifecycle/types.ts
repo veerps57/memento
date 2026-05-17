@@ -108,6 +108,13 @@ export interface LifecycleDeps {
    * `pack` never call it.
    */
   readonly createPackPrompter?: () => import('./pack-prompts.js').PackCreatePrompter;
+  /**
+   * Factory for `memento init`'s interactive prompter
+   * (ADR-0028). Production wires the `@clack/prompts`-backed
+   * implementation; tests pass a scripted fake. Optional only
+   * because lifecycle commands other than `init` never call it.
+   */
+  readonly createInitPrompter?: () => import('./init-prompts.js').InitPrompter;
 }
 
 /**

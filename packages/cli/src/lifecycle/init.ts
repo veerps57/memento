@@ -68,10 +68,12 @@
 //   - `--client foo` with an unknown id surfaces as
 //     `INVALID_INPUT` before the database is opened.
 
-import { existsSync } from 'node:fs';
-import { constants, access, lstat, mkdir, unlink } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
+import { constants, access, cp, lstat, mkdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
+import type { MementoApp } from '@psraghuveer/memento-core';
+import { executeCommand } from '@psraghuveer/memento-core';
 import { type Result, err, ok } from '@psraghuveer/memento-schema';
 
 import { resolveDefaultDbPath } from '../db-path.js';
@@ -84,6 +86,7 @@ import {
 } from '../init-clients.js';
 import { resolveSkillSourceDir, suggestedSkillTargetDir } from '../skill-source.js';
 import { resolveVersion } from '../version.js';
+import type { InitPrompter, StarterPackChoice } from './init-prompts.js';
 import { openAppForSurface } from './open-app.js';
 import type { LifecycleCommand, LifecycleDeps, LifecycleInput } from './types.js';
 
@@ -115,6 +118,41 @@ export interface SkillInstallInfo {
   readonly source: string | null;
   /** Suggested target directory for the skill (display-only). */
   readonly suggestedTarget: string;
+}
+
+/**
+ * Per-prompt outcome captured during the interactive flow
+ * (ADR-0028). Surfaced in {@link InitSnapshot.prompts} so the
+ * renderer can show what was done and JSON consumers can react
+ * programmatically (e.g. CI snapshots that pin the
+ * "skill-installed-on-fresh-host" branch).
+ *
+ * `null` on a field means the prompt was not run (non-TTY,
+ * `--no-prompt`, or `createInitPrompter` not wired by the host)
+ * — distinct from `skip`, which means the user was asked and
+ * declined.
+ */
+export interface InitPromptOutcomes {
+  readonly preferredName:
+    | { readonly kind: 'set'; readonly value: string }
+    | { readonly kind: 'skip' }
+    | { readonly kind: 'cancelled' }
+    | { readonly kind: 'failed'; readonly message: string }
+    | null;
+  readonly installSkill:
+    | { readonly kind: 'installed'; readonly target: string }
+    | { readonly kind: 'already-current'; readonly target: string }
+    | { readonly kind: 'skip' }
+    | { readonly kind: 'cancelled' }
+    | { readonly kind: 'unavailable'; readonly reason: string }
+    | { readonly kind: 'failed'; readonly message: string }
+    | null;
+  readonly starterPack:
+    | { readonly kind: 'installed'; readonly packId: string; readonly itemCount: number }
+    | { readonly kind: 'skip' }
+    | { readonly kind: 'cancelled' }
+    | { readonly kind: 'failed'; readonly packId: string; readonly message: string }
+    | null;
 }
 
 /** Stable contract for `memento init`. */
@@ -151,6 +189,14 @@ export interface InitSnapshot {
    * which signals the renderer to suppress the skill section.
    */
   readonly skill: SkillInstallInfo;
+  /**
+   * Per-prompt outcomes from the interactive flow (ADR-0028).
+   * Always populated; each field is `null` when the prompt was
+   * not run (non-TTY, `--no-prompt`, or the host did not wire
+   * `createInitPrompter`). The renderer uses this to suppress
+   * sections whose work is already done.
+   */
+  readonly prompts: InitPromptOutcomes;
 }
 
 // Keep in sync with `engines.node` in the workspace root
@@ -170,7 +216,7 @@ export async function runInit(
 ): Promise<Result<InitSnapshot>> {
   const parsed = parseSubargs(input.subargs);
   if (!parsed.ok) return parsed;
-  const { clients: clientFilter, name } = parsed.value;
+  const { clients: clientFilter, name, noPrompt } = parsed.value;
 
   const dbPath = resolveDbPathForSnippet(input.env.dbPath);
   // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
@@ -195,31 +241,89 @@ export async function runInit(
     await checkDbPathWritable(input.env.dbPath),
   ];
 
-  // Open + migrate. We shut down immediately — `init` does not
-  // hold the DB beyond the success path. `shutdown` (not `close`)
-  // so any in-flight startup backfill drains gracefully before
-  // we release the database handle.
+  // ADR-0028: open the app and hold it through the interactive
+  // prompt phase. Previously we shut down immediately because
+  // `init` was print-only; now `init` can side-effect the config
+  // store (preferredName) and the memory store (starter pack)
+  // when the user opts in.
   const opened = await openAppForSurface(deps, {
     dbPath: input.env.dbPath,
     appVersion: resolveVersion(),
   });
   if (!opened.ok) return opened;
-  await opened.value.shutdown();
-
-  const clients = renderClientSnippets(dbPath, {
-    ...(clientFilter !== undefined ? { clients: clientFilter } : {}),
-    ...(name !== undefined ? { name } : {}),
-  });
+  const app = opened.value;
 
   // Skill section is gated on the rendered set: only show it
   // when at least one capable client is present. We still
   // resolve the source even when capable is empty, because the
   // shape stays stable across snapshots.
-  const capableClients = clients.filter((c) => c.supportsSkills).map((c) => c.id);
+  const clientsForSkill = renderClientSnippets(dbPath, {
+    ...(clientFilter !== undefined ? { clients: clientFilter } : {}),
+    ...(name !== undefined ? { name } : {}),
+  });
+  const capableClients = clientsForSkill.filter((c) => c.supportsSkills).map((c) => c.id);
+  const skillSource = resolveSkillSourceDir();
+  const suggestedTarget = suggestedSkillTargetDir();
+
+  let prompts: InitPromptOutcomes = {
+    preferredName: null,
+    installSkill: null,
+    starterPack: null,
+  };
+
+  // Interactive flow: enabled when stdout is a TTY, the operator
+  // did not pass `--no-prompt`, AND the host (CLI runtime / tests)
+  // wired a prompter factory. The third condition is what keeps
+  // test fixtures that don't supply `createInitPrompter` from
+  // silently flipping into interactive mode and stalling on a
+  // missing stdin.
+  const interactive = input.io.isTTY && !noPrompt && deps.createInitPrompter !== undefined;
+  if (interactive) {
+    try {
+      const prompter = (deps.createInitPrompter as () => InitPrompter)();
+      prompter.intro?.(`memento ${resolveVersion()} — first-time setup`);
+      prompts = await runInteractivePrompts({
+        app,
+        prompter,
+        skillSource,
+        suggestedTarget,
+        showSkillPrompt: capableClients.length > 0,
+      });
+      prompter.outro?.('Ready. Snippets below.');
+    } catch (cause) {
+      // Prompter blew up unrelated to a single prompt's logic
+      // (e.g. clack crashed). Render the snippets anyway —
+      // `init`'s base contract still holds.
+      const message = describe(cause);
+      prompts = {
+        preferredName: { kind: 'failed', message },
+        installSkill: { kind: 'failed', message },
+        // Starter-pack failure carries a packId for the
+        // happy-path failure mode (install ran and crashed); on
+        // a prompter crash we don't know which pack was picked,
+        // so attribute to '(unknown)'.
+        starterPack: { kind: 'failed', packId: '(unknown)', message },
+      };
+    }
+  }
+
+  // `shutdown` (not `close`) so any in-flight startup backfill
+  // — which auto-embed kicks off — drains gracefully.
+  await app.shutdown();
+
+  // Re-render the snippets after prompts so the renderer sees a
+  // consistent snapshot. (The set is pure of the prompt
+  // outcomes, but keeping the render step at the end mirrors
+  // the snapshot's logical order.)
+  const clients = renderClientSnippets(dbPath, {
+    ...(clientFilter !== undefined ? { clients: clientFilter } : {}),
+    ...(name !== undefined ? { name } : {}),
+  });
+
   const skill: SkillInstallInfo = {
     capableClients,
-    source: resolveSkillSourceDir(),
-    suggestedTarget: suggestedSkillTargetDir(),
+    source: skillSource,
+    suggestedTarget,
   };
 
   return ok({
@@ -230,17 +334,270 @@ export async function runInit(
     checks,
     clients,
     skill,
+    prompts,
   });
+}
+
+/**
+ * Run the three interactive prompts and apply each opted-in
+ * side effect. Errors are captured per-prompt — a failure in
+ * one prompt (e.g. config.set rejecting the supplied name)
+ * does not skip the next two. The outcomes object is what the
+ * renderer uses to suppress already-resolved sections.
+ *
+ * Side effects per prompt:
+ *
+ *   - preferredName / 'set' → `config.set user.preferredName <value>`
+ *   - installSkill / 'install' → `cp -R <source> <target>/`
+ *   - starterPack / 'install' → `pack.install` for the picked id
+ *
+ * Each side-effect is best-effort: a failure surfaces as a
+ * `failed` outcome on that field, but `init`'s success path
+ * still returns the snapshot so the user sees the snippets and
+ * can re-run `init` (or invoke the affected subcommand
+ * directly) to recover.
+ */
+async function runInteractivePrompts(opts: {
+  readonly app: MementoApp;
+  readonly prompter: InitPrompter;
+  readonly skillSource: string | null;
+  readonly suggestedTarget: string;
+  /** Suppress the skill prompt when no capable client is in the rendered set. */
+  readonly showSkillPrompt: boolean;
+}): Promise<InitPromptOutcomes> {
+  const { app, prompter, skillSource, suggestedTarget, showSkillPrompt } = opts;
+
+  // — preferredName —
+  const existingNameRaw = app.configStore.get('user.preferredName');
+  const existingName = typeof existingNameRaw === 'string' ? existingNameRaw : null;
+  let preferredName: InitPromptOutcomes['preferredName'];
+  const nameResponse = await prompter.promptPreferredName(existingName);
+  if (nameResponse.kind === 'cancelled') {
+    preferredName = { kind: 'cancelled' };
+  } else if (nameResponse.kind === 'skip') {
+    preferredName = { kind: 'skip' };
+  } else {
+    // Narrow: nameResponse.kind === 'set' guarantees value is
+    // defined per InitPrompter's contract, but TS only sees the
+    // optional `value` on PreferredNameOutcome. Stamp the assert
+    // here once instead of relaxing the contract.
+    const value = nameResponse.value ?? '';
+    const setResult = await runConfigSet(app, 'user.preferredName', value);
+    preferredName = setResult.ok
+      ? { kind: 'set', value }
+      : { kind: 'failed', message: setResult.error.message };
+  }
+
+  // — installSkill —
+  let installSkill: InitPromptOutcomes['installSkill'];
+  if (!showSkillPrompt) {
+    installSkill = null;
+  } else if (skillSource === null) {
+    installSkill = {
+      kind: 'unavailable',
+      reason:
+        'bundled skill source not present on this install (dev checkout without `pnpm build`?)',
+    };
+  } else {
+    const currentlyInstalled = isSkillCurrent(skillSource, suggestedTarget);
+    if (currentlyInstalled) {
+      installSkill = { kind: 'already-current', target: suggestedTarget };
+    } else {
+      const skillResponse = await prompter.promptInstallSkill({
+        sourcePath: skillSource,
+        targetDir: suggestedTarget,
+      });
+      if (skillResponse.kind === 'cancelled') {
+        installSkill = { kind: 'cancelled' };
+      } else if (skillResponse.kind === 'skip') {
+        installSkill = { kind: 'skip' };
+      } else if (skillResponse.kind === 'already-current') {
+        installSkill = { kind: 'already-current', target: suggestedTarget };
+      } else {
+        const copyResult = await copySkillBundle(skillSource, suggestedTarget);
+        installSkill = copyResult.ok
+          ? { kind: 'installed', target: suggestedTarget }
+          : { kind: 'failed', message: copyResult.error.message };
+      }
+    }
+  }
+
+  // — starterPack —
+  let starterPack: InitPromptOutcomes['starterPack'];
+  // Show the starter-pack prompt only when the store is empty —
+  // a user with an existing store doesn't need a "seed with..."
+  // suggestion that would dump duplicates next to their work.
+  const storeIsEmpty = await isStoreEmpty(app);
+  if (!storeIsEmpty) {
+    starterPack = null;
+  } else {
+    const choices = enumerateStarterPackChoices();
+    if (choices.length === 0) {
+      starterPack = null;
+    } else {
+      const packResponse = await prompter.promptStarterPack(choices);
+      if (packResponse.kind === 'cancelled') {
+        starterPack = { kind: 'cancelled' };
+      } else if (packResponse.kind === 'skip') {
+        starterPack = { kind: 'skip' };
+      } else {
+        const packId = packResponse.packId as string;
+        const installResult = await runPackInstall(app, packId);
+        if (installResult.ok) {
+          starterPack = {
+            kind: 'installed',
+            packId,
+            itemCount: (installResult.value as { itemCount?: number }).itemCount ?? 0,
+          };
+        } else {
+          starterPack = { kind: 'failed', packId, message: installResult.error.message };
+        }
+      }
+    }
+  }
+
+  return { preferredName, installSkill, starterPack };
+}
+
+async function runConfigSet(app: MementoApp, key: string, value: string): Promise<Result<unknown>> {
+  const command = app.registry.get('config.set');
+  if (!command) {
+    return err({ code: 'INTERNAL', message: 'config.set command is not registered' });
+  }
+  return executeCommand(command, { key, value }, { actor: { type: 'cli' } });
+}
+
+async function runPackInstall(app: MementoApp, packId: string): Promise<Result<unknown>> {
+  const command = app.registry.get('pack.install');
+  if (!command) {
+    return err({ code: 'INTERNAL', message: 'pack.install command is not registered' });
+  }
+  return executeCommand(
+    command,
+    { source: { type: 'bundled', id: packId } },
+    { actor: { type: 'cli' } },
+  );
+}
+
+async function isStoreEmpty(app: MementoApp): Promise<boolean> {
+  // Treat "empty" generously: zero active memories is empty. We
+  // intentionally don't count superseded / archived / forgotten
+  // rows here — a user who has actively worked with memento and
+  // then archived everything is not in the same state as a
+  // fresh install.
+  //
+  // `memory.list` returns a top-level array of memory views
+  // (not an object envelope), per MemoryListOutputSchema. Don't
+  // wrap it.
+  try {
+    const command = app.registry.get('memory.list');
+    if (!command) return false;
+    const result = await executeCommand(
+      command,
+      { status: 'active', limit: 1 },
+      { actor: { type: 'cli' } },
+    );
+    if (!result.ok) return false;
+    return Array.isArray(result.value) && result.value.length === 0;
+  } catch {
+    // Defensive: any failure here just suppresses the
+    // starter-pack prompt rather than blocking init.
+    return false;
+  }
+}
+
+/**
+ * The four bundled packs shipped with the CLI tarball. Hardcoded
+ * here rather than discovered at runtime because (a) the set is
+ * small and well-known, (b) the user sees the ids verbatim and
+ * we want them stable, and (c) it lets the prompt render with
+ * the human title without spinning up a pack-registry read.
+ *
+ * Titles match the pack manifests; if a manifest's title drifts,
+ * `pack.preview` is authoritative and the prompt's wording is
+ * cosmetic. Adding a new bundled pack adds a row here.
+ */
+function enumerateStarterPackChoices(): readonly StarterPackChoice[] {
+  return [
+    {
+      id: 'engineering-simplicity',
+      title: "John Maeda's Laws of Simplicity, applied to engineering decisions",
+    },
+    {
+      id: 'pragmatic-programmer',
+      title: 'Heuristics from "The Pragmatic Programmer"',
+    },
+    { id: 'google-sre', title: 'SRE principles from the Google SRE book' },
+    {
+      id: 'twelve-factor-app',
+      title: 'The twelve-factor app methodology',
+    },
+  ];
+}
+
+/**
+ * Check whether the bundled skill at `source` is already
+ * installed at `target/memento` byte-for-byte by `SKILL.md`. We
+ * compare the SKILL.md content rather than file timestamps
+ * because a freshly-`cp -R`'d copy on a different machine has
+ * "newer" timestamps but identical bytes.
+ *
+ * Returns `false` on any read error (target missing, permission
+ * denied) — the caller treats `false` as "prompt the user".
+ */
+function isSkillCurrent(source: string, targetDir: string): boolean {
+  try {
+    const sourceFile = path.join(source, 'SKILL.md');
+    const targetFile = path.join(targetDir, 'memento', 'SKILL.md');
+    if (!existsSync(targetFile)) return false;
+    const sourceBytes = readFileSync(sourceFile);
+    const targetBytes = readFileSync(targetFile);
+    return sourceBytes.equals(targetBytes);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Copy the bundled skill directory into `targetDir/memento`,
+ * recursively, replacing any existing copy. Uses Node 22's
+ * stable `fs.cp` so this is just `cp -R <source> <target>/memento`
+ * in async form.
+ *
+ * Idempotent — the caller has already established the target is
+ * either absent or stale (via {@link isSkillCurrent}).
+ */
+async function copySkillBundle(
+  source: string,
+  targetDir: string,
+): Promise<Result<{ target: string }>> {
+  try {
+    await mkdir(targetDir, { recursive: true, mode: 0o700 });
+    const target = path.join(targetDir, 'memento');
+    await cp(source, target, { recursive: true, force: true });
+    return ok({ target });
+  } catch (cause) {
+    return err({
+      code: 'STORAGE_ERROR',
+      message: `failed to install Memento skill into ${targetDir}/memento: ${describe(cause)}`,
+    });
+  }
 }
 
 interface InitSubargs {
   readonly clients?: readonly InitClientId[];
   readonly name?: string;
+  /**
+   * ADR-0028: when true, suppresses the interactive flow even on
+   * a TTY. Behavior matches the historical print-only contract.
+   */
+  readonly noPrompt: boolean;
 }
 
 function parseSubargs(subargs: readonly string[]): Result<InitSubargs> {
   let clients: readonly InitClientId[] | undefined;
   let name: string | undefined;
+  let noPrompt = false;
   for (let i = 0; i < subargs.length; i += 1) {
     const arg = subargs[i] as string;
     const [flag, inlineValue] = splitFlag(arg);
@@ -262,14 +619,28 @@ function parseSubargs(subargs: readonly string[]): Result<InitSubargs> {
       name = value;
       continue;
     }
+    if (flag === '--no-prompt') {
+      // Boolean flag — `--no-prompt=anything` is rejected to
+      // prevent users from accidentally writing
+      // `--no-prompt=true` and being surprised by the parser.
+      if (inlineValue !== undefined) {
+        return err({
+          code: 'INVALID_INPUT',
+          message: '--no-prompt is a boolean flag; do not pass a value (got --no-prompt=...)',
+        });
+      }
+      noPrompt = true;
+      continue;
+    }
     return err({
       code: 'INVALID_INPUT',
-      message: `unknown argument '${arg}' for 'init' (accepted: --client <id[,id…]>, --name <key>)`,
+      message: `unknown argument '${arg}' for 'init' (accepted: --client <id[,id…]>, --name <key>, --no-prompt)`,
     });
   }
   return ok({
     ...(clients !== undefined ? { clients } : {}),
     ...(name !== undefined ? { name } : {}),
+    noPrompt,
   });
 }
 

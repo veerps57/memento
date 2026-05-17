@@ -38,6 +38,7 @@ import {
 import type { AnyCommand, CommandContext, CommandRegistry } from '@psraghuveer/memento-core';
 import { deriveMcpName, executeCommand } from '@psraghuveer/memento-core';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { MEMENTO_INSTRUCTIONS } from './instructions.js';
 
 /**
  * Implementation info reported on the MCP `initialize` handshake.
@@ -45,10 +46,20 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
  * Defaults to `@psraghuveer/memento-server` at version `0.0.0`; hosts that
  * embed the adapter (a future `npx memento serve`) override
  * these so clients see a meaningful `serverInfo`.
+ *
+ * `instructions` (ADR-0026) is the optional override for the
+ * canonical {@link MEMENTO_INSTRUCTIONS} spine emitted on the
+ * `initialize` response. Omit to ship the canonical spine
+ * verbatim. Operators who want "spine + addendum" concatenate
+ * `\`${MEMENTO_INSTRUCTIONS}\\n\\n${addendum}\`` and pass that
+ * string; the override replaces the constant entirely rather
+ * than appending, so the caller controls both halves
+ * explicitly.
  */
 export interface ServerInfo {
   readonly name: string;
   readonly version: string;
+  readonly instructions?: string;
 }
 
 /**
@@ -365,6 +376,13 @@ export function buildMementoServer(options: BuildMementoServerOptions): Server {
   );
   const tools: readonly Tool[] = mcpCommands.map(commandToTool);
 
+  // ADR-0026: emit the canonical session-start teaching spine on
+  // every `initialize` response so clients that honour the field
+  // (every spec-compliant MCP client) inject it into the
+  // assistant's system prompt without the user needing to install
+  // a skill or paste a persona snippet. The skill remains the
+  // load-on-intent enrichment surface; the spine carries what
+  // every session needs.
   const server = new Server(
     { name: info.name, version: info.version },
     {
@@ -373,6 +391,7 @@ export function buildMementoServer(options: BuildMementoServerOptions): Server {
         resources: { subscribe: true, listChanged: true },
         prompts: {},
       },
+      instructions: info.instructions ?? MEMENTO_INSTRUCTIONS,
     },
   );
 
