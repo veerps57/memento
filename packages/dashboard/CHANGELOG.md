@@ -1,5 +1,13 @@
 # @psraghuveer/memento-dashboard
 
+## 0.4.7
+
+### Patch Changes
+
+- Updated dependencies [c0433c2]
+  - @psraghuveer/memento-core@0.16.0
+  - @psraghuveer/memento-schema@0.13.0
+
 ## 0.4.6
 
 ### Patch Changes

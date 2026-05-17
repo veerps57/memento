@@ -1,5 +1,13 @@
 # @psraghuveer/memento-embedder-local
 
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies [c0433c2]
+  - @psraghuveer/memento-core@0.16.0
+  - @psraghuveer/memento-schema@0.13.0
+
 ## 0.7.0
 
 ### Minor Changes
