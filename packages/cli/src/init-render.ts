@@ -272,9 +272,6 @@ function renderSkillSection(skill: SkillInstallInfo, options: InitRenderOptions)
     );
   }
   lines.push('');
-  lines.push(`${dim('No skill support?', options)} paste the persona snippet from docs/guides/`);
-  lines.push('  teach-your-assistant.md into the client persona file instead.');
-  lines.push('');
   return lines;
 }
 
