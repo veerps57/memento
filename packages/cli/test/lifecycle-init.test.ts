@@ -361,6 +361,42 @@ describe('runInit', () => {
 describe('runInit interactive prompts (ADR-0028)', () => {
   const TTY_IO: CliIO = { ...NULL_IO, isTTY: true };
 
+  /**
+   * Run `fn` with `os.homedir()` resolving to `tmpRoot` instead
+   * of the developer / runner's real home directory. Restores
+   * the original env on return — even when `fn` throws.
+   *
+   * `os.homedir()` reads `HOME` on POSIX and `USERPROFILE` on
+   * Windows; both must be sandboxed for the override to work
+   * on every CI matrix slot. Sandboxing only one (the historical
+   * mistake) makes the test pass locally and fail on the other
+   * OS, and — worse — pollutes the runner's real home with the
+   * leftover skill bundle, which then leaks into subsequent tests
+   * in the same file run.
+   */
+  async function withSandboxedHome<T>(tmpRoot: string, fn: () => Promise<T>): Promise<T> {
+    // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
+    const originalHome = process.env['HOME'];
+    // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
+    const originalUserProfile = process.env['USERPROFILE'];
+    // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
+    process.env['HOME'] = tmpRoot;
+    // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
+    process.env['USERPROFILE'] = tmpRoot;
+    try {
+      return await fn();
+    } finally {
+      // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
+      if (originalHome !== undefined) process.env['HOME'] = originalHome;
+      // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
+      else process.env['HOME'] = '';
+      // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
+      if (originalUserProfile !== undefined) process.env['USERPROFILE'] = originalUserProfile;
+      // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
+      else process.env['USERPROFILE'] = '';
+    }
+  }
+
   it('skips prompts when stdout is not a TTY even if prompter is wired', async () => {
     const result = await runInit(
       {
@@ -462,111 +498,95 @@ describe('runInit interactive prompts (ADR-0028)', () => {
 
   it('installs the skill bundle when prompt returns "install"', async () => {
     const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'memento-init-skill-'));
-    // Point HOME at a fresh tmpdir so suggestedSkillTargetDir
-    // lands under the test root — we can then check the copy
-    // happened without touching the developer's real home.
-    //
-    // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
-    const originalHome = process.env['HOME'];
-    // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
-    process.env['HOME'] = tmpRoot;
     try {
-      const dbPath = path.join(tmpRoot, 'memento.db');
-      const result = await runInit(
-        {
-          createApp: createAppNoVector,
-          migrateStore: rejectMigrateStore,
-          serveStdio: rejectServeStdio,
-          createInitPrompter: () => ({
-            async promptPreferredName() {
-              return { kind: 'skip' };
-            },
-            async promptInstallSkill() {
-              return { kind: 'install' };
-            },
-            async promptStarterPack() {
-              return { kind: 'skip' };
-            },
-          }),
-        },
-        { env: cliEnv({ dbPath }), subargs: [], io: TTY_IO },
-      );
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      const skillOutcome = result.value.prompts.installSkill;
-      expect(skillOutcome?.kind).toBe('installed');
-      // Verify the file copy happened — SKILL.md should now be
-      // present under the suggested target.
-      const targetSkillMd = path.join(tmpRoot, '.claude', 'skills', 'memento', 'SKILL.md');
-      expect(existsSync(targetSkillMd)).toBe(true);
+      await withSandboxedHome(tmpRoot, async () => {
+        const dbPath = path.join(tmpRoot, 'memento.db');
+        const result = await runInit(
+          {
+            createApp: createAppNoVector,
+            migrateStore: rejectMigrateStore,
+            serveStdio: rejectServeStdio,
+            createInitPrompter: () => ({
+              async promptPreferredName() {
+                return { kind: 'skip' };
+              },
+              async promptInstallSkill() {
+                return { kind: 'install' };
+              },
+              async promptStarterPack() {
+                return { kind: 'skip' };
+              },
+            }),
+          },
+          { env: cliEnv({ dbPath }), subargs: [], io: TTY_IO },
+        );
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        const skillOutcome = result.value.prompts.installSkill;
+        expect(skillOutcome?.kind).toBe('installed');
+        // Verify the file copy happened — SKILL.md should now be
+        // present under the suggested target.
+        const targetSkillMd = path.join(tmpRoot, '.claude', 'skills', 'memento', 'SKILL.md');
+        expect(existsSync(targetSkillMd)).toBe(true);
+      });
     } finally {
-      // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
-      if (originalHome !== undefined) process.env['HOME'] = originalHome;
-      // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
-      else process.env['HOME'] = '';
       rmSync(tmpRoot, { recursive: true, force: true });
     }
   });
 
   it('detects an already-current skill copy without re-copying', async () => {
     const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'memento-init-skill-current-'));
-    // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
-    const originalHome = process.env['HOME'];
-    // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
-    process.env['HOME'] = tmpRoot;
     try {
-      const dbPath = path.join(tmpRoot, 'memento.db');
-      // First run installs the skill.
-      const first = await runInit(
-        {
-          createApp: createAppNoVector,
-          migrateStore: rejectMigrateStore,
-          serveStdio: rejectServeStdio,
-          createInitPrompter: () => ({
-            async promptPreferredName() {
-              return { kind: 'skip' };
-            },
-            async promptInstallSkill() {
-              return { kind: 'install' };
-            },
-            async promptStarterPack() {
-              return { kind: 'skip' };
-            },
-          }),
-        },
-        { env: cliEnv({ dbPath }), subargs: [], io: TTY_IO },
-      );
-      expect(first.ok).toBe(true);
-      // Second run should detect already-current and NOT call
-      // the install branch of the prompt. Use a prompter that
-      // throws if install is hit.
-      const second = await runInit(
-        {
-          createApp: createAppNoVector,
-          migrateStore: rejectMigrateStore,
-          serveStdio: rejectServeStdio,
-          createInitPrompter: () => ({
-            async promptPreferredName() {
-              return { kind: 'skip' };
-            },
-            async promptInstallSkill() {
-              throw new Error('install prompt must not run when skill is already current');
-            },
-            async promptStarterPack() {
-              return { kind: 'skip' };
-            },
-          }),
-        },
-        { env: cliEnv({ dbPath }), subargs: [], io: TTY_IO },
-      );
-      expect(second.ok).toBe(true);
-      if (!second.ok) return;
-      expect(second.value.prompts.installSkill?.kind).toBe('already-current');
+      await withSandboxedHome(tmpRoot, async () => {
+        const dbPath = path.join(tmpRoot, 'memento.db');
+        // First run installs the skill.
+        const first = await runInit(
+          {
+            createApp: createAppNoVector,
+            migrateStore: rejectMigrateStore,
+            serveStdio: rejectServeStdio,
+            createInitPrompter: () => ({
+              async promptPreferredName() {
+                return { kind: 'skip' };
+              },
+              async promptInstallSkill() {
+                return { kind: 'install' };
+              },
+              async promptStarterPack() {
+                return { kind: 'skip' };
+              },
+            }),
+          },
+          { env: cliEnv({ dbPath }), subargs: [], io: TTY_IO },
+        );
+        expect(first.ok).toBe(true);
+        // Second run should detect already-current and NOT call
+        // the install branch of the prompt. Use a prompter that
+        // throws if install is hit.
+        const second = await runInit(
+          {
+            createApp: createAppNoVector,
+            migrateStore: rejectMigrateStore,
+            serveStdio: rejectServeStdio,
+            createInitPrompter: () => ({
+              async promptPreferredName() {
+                return { kind: 'skip' };
+              },
+              async promptInstallSkill() {
+                throw new Error('install prompt must not run when skill is already current');
+              },
+              async promptStarterPack() {
+                return { kind: 'skip' };
+              },
+            }),
+          },
+          { env: cliEnv({ dbPath }), subargs: [], io: TTY_IO },
+        );
+        expect(second.ok).toBe(true);
+        if (!second.ok) return;
+        expect(second.value.prompts.installSkill?.kind).toBe('already-current');
+      });
     } finally {
-      // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
-      if (originalHome !== undefined) process.env['HOME'] = originalHome;
-      // biome-ignore lint/complexity/useLiteralKeys: TS noPropertyAccessFromIndexSignature requires bracket access
-      else process.env['HOME'] = '';
       rmSync(tmpRoot, { recursive: true, force: true });
     }
   });
@@ -638,30 +658,44 @@ describe('runInit interactive prompts (ADR-0028)', () => {
   });
 
   it('captures cancelled outcomes per-prompt', async () => {
-    const result = await runInit(
-      {
-        createApp: createAppNoVector,
-        migrateStore: rejectMigrateStore,
-        serveStdio: rejectServeStdio,
-        createInitPrompter: () => ({
-          async promptPreferredName() {
-            return { kind: 'cancelled' };
+    // Sandboxed home prevents the skill-install prompt from
+    // being short-circuited by an already-current skill at the
+    // runner's real `~/.claude/skills/memento` (e.g. a contributor
+    // who has installed the skill, or a CI worker carrying state
+    // from a previous suite). Without the sandbox, the
+    // `installSkill: 'cancelled'` assertion silently flips to
+    // `'already-current'` on those hosts.
+    const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'memento-init-cancelled-'));
+    try {
+      await withSandboxedHome(tmpRoot, async () => {
+        const result = await runInit(
+          {
+            createApp: createAppNoVector,
+            migrateStore: rejectMigrateStore,
+            serveStdio: rejectServeStdio,
+            createInitPrompter: () => ({
+              async promptPreferredName() {
+                return { kind: 'cancelled' };
+              },
+              async promptInstallSkill() {
+                return { kind: 'cancelled' };
+              },
+              async promptStarterPack() {
+                return { kind: 'cancelled' };
+              },
+            }),
           },
-          async promptInstallSkill() {
-            return { kind: 'cancelled' };
-          },
-          async promptStarterPack() {
-            return { kind: 'cancelled' };
-          },
-        }),
-      },
-      { env: cliEnv(), subargs: [], io: TTY_IO },
-    );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.prompts.preferredName?.kind).toBe('cancelled');
-    expect(result.value.prompts.installSkill?.kind).toBe('cancelled');
-    expect(result.value.prompts.starterPack?.kind).toBe('cancelled');
+          { env: cliEnv(), subargs: [], io: TTY_IO },
+        );
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.prompts.preferredName?.kind).toBe('cancelled');
+        expect(result.value.prompts.installSkill?.kind).toBe('cancelled');
+        expect(result.value.prompts.starterPack?.kind).toBe('cancelled');
+      });
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 
   it('reports starter-pack failure with the offending packId', async () => {
