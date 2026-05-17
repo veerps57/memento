@@ -402,25 +402,31 @@ function Quickstart(): JSX.Element {
       <div className="mx-auto w-full max-w-6xl px-4 py-20 md:px-8 md:py-24">
         <p className="mb-4 font-mono text-xs uppercase tracking-widish text-muted">~/quickstart</p>
         <h2 id="quickstart-h2" className="text-3xl font-medium tracking-tight md:text-4xl">
-          Two steps, then you're done.
+          Three steps, then you're done.
         </h2>
         {/* `minmax(0, 1fr)` clamps each column's min-content so a long
             unbreakable token in a step's CodeBlock (e.g. the package
             name + serve args) cannot push the grid past the viewport
             on mobile. Standard CSS-grid mobile trap. */}
-        <ol className="mt-12 grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-2">
+        <ol className="mt-12 grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-3">
           <Step
             n={1}
             title="Run init (interactive)"
-            body="Creates the SQLite database, runs migrations, then walks you through three one-keystroke questions on a TTY — your preferred name (so memories read 'Raghu prefers …' not 'The user prefers …'), install the bundled skill into ~/.claude/skills/, and seed a starter pack so your store is non-empty on day one. Then prints copy-paste MCP snippets for every supported client. Pass --no-prompt for CI."
+            body="Creates the SQLite database, runs migrations, then walks you through three one-keystroke questions on a TTY — your preferred name, install the bundled skill into ~/.claude/skills/, and seed a starter pack so your store is non-empty on day one. Then prints copy-paste MCP snippets for every supported client. Pass --no-prompt for CI."
             command="npx @psraghuveer/memento init"
           />
           <Step
             n={2}
             title="Connect your AI client"
-            body="Paste the JSON snippet into your client's MCP config (Claude Desktop, Cursor, Cline, OpenCode, VS Code Agent…) — or use the one-line subcommand init prints for Claude Code. Restart the client. The session-start teaching spine ships with the MCP server (ADR-0026); clients that honour the optional `instructions` field inject it into the assistant's system prompt automatically. For clients that ignore the field (Claude Chat web today), paste the persona snippet below into the client's custom-instructions slot to land the same contract."
+            body="Paste the JSON snippet into your client's MCP config (file location varies by client), or run the one-line subcommand init prints where the client ships one. Restart the client so it loads the new MCP server. Then verify the wire with `memento verify-setup` — spawns the server as a subprocess and round-trips a write/search/cleanup."
             command={null}
             preview={<SnippetPreview />}
+          />
+          <Step
+            n={3}
+            title="Paste the persona snippet into custom instructions"
+            body="The persona snippet below is the one teaching surface guaranteed to reach the assistant's system prompt on every message — the MCP `instructions` spine (ADR-0026) is optional on the client side and current implementations vary in whether they surface it; the bundled skill is intent-triggered so it doesn't fire on neutral first messages. Paste the snippet into wherever your client stores user-defined system prompt content — CLAUDE.md, .cursorrules, a 'Custom Instructions' textarea, etc."
+            command={null}
           />
         </ol>
         <PersonaSnippet />
@@ -601,7 +607,7 @@ function PersonaSnippet(): JSX.Element {
     <div className="mt-10 rounded-md border border-border bg-bg/40 p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <h3 className="text-base font-medium text-fg">
-          Persona snippet — fallback for clients that honour neither MCP `instructions` nor skills
+          Persona snippet — the universal always-on teaching surface
         </h3>
         <a
           href={`${GITHUB_URL}/blob/main/docs/guides/teach-your-assistant.md`}
@@ -611,12 +617,14 @@ function PersonaSnippet(): JSX.Element {
         </a>
       </div>
       <p className="mt-2 max-w-prose text-sm text-muted">
-        Some MCP clients pick up Memento's server-emitted teaching spine automatically (ADR-0026);
-        others — including Claude Chat at <code className="text-fg">claude.ai</code> web today —
-        silently ignore the field. The bundled skill layers on the deeper distillation curriculum
-        for clients that load Anthropic-format skills (Claude Code, Claude Desktop). Paste this
-        snippet into your client's custom-instructions slot to guarantee the contract reaches your
-        assistant regardless of which surfaces it honours — this is the universal fallback.
+        The MCP spec defines an optional <code className="text-fg">instructions</code> field that
+        servers can use to inject session-start guidance, but client implementations of that field
+        vary considerably. The bundled skill is intent-triggered and doesn't fire on neutral first
+        messages. The persona snippet is the only teaching surface guaranteed to land in your
+        assistant's system prompt on every message — paste it into wherever your client stores
+        user-defined system prompt content (the field name varies — CLAUDE.md, .cursorrules, a
+        "Custom Instructions" textarea in the client's settings UI, etc.) so the teaching contract
+        reaches the assistant regardless of which optional surfaces your client implements.
       </p>
       <div className="mt-4">
         <JsonBlock json={PERSONA_SNIPPET} />

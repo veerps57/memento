@@ -129,16 +129,23 @@ export function renderInitText(snapshot: InitSnapshot, options: InitRenderOption
     lines.push(...promptLines);
   }
 
-  // ── Step 3 ── Teach the assistant when to use Memento. Always
-  // rendered: skill branch when the rendered client set includes
-  // at least one Anthropic-skill-capable client; persona branch
-  // for pure third-party setups (Cursor / VS Code Agent / OpenCode).
+  // ── Step 3 ── Teach the assistant when to use Memento.
+  // Persona snippet is recommended FIRST (it's the only teaching
+  // surface guaranteed to reach the assistant's system prompt on
+  // every message — the MCP `instructions` spine is optional on
+  // the client side and the bundled skill is intent-triggered).
+  // Then we render the skill section when at least one
+  // skill-capable client is in the filtered set, as on-intent
+  // enrichment over the persona snippet.
   lines.push(bold('Step 3 — Teach your assistant when to use Memento', options));
   lines.push('');
-  // Suppress the "install the skill" copy-paste block when the
-  // interactive flow already installed it (or detected it was
-  // current). The skill section is still printed in shortened
-  // form so the user knows the surface exists.
+  lines.push(...renderPersonaSnippetReco(options));
+
+  // Skill section is on-intent enrichment, layered on top of the
+  // persona snippet. Suppress the "install the skill" copy-paste
+  // block when the interactive flow already installed it (or
+  // detected it was current) — the section still prints in
+  // shortened form so the user knows the surface exists.
   const skillResolved =
     prompts.installSkill?.kind === 'installed' || prompts.installSkill?.kind === 'already-current';
   if (skill.capableClients.length > 0) {
@@ -147,8 +154,6 @@ export function renderInitText(snapshot: InitSnapshot, options: InitRenderOption
     } else {
       lines.push(...renderSkillSection(skill, options));
     }
-  } else {
-    lines.push(...renderPersonaOnlySection(options));
   }
 
   lines.push(`${dim('Tip:', options)} clients with `);
@@ -375,23 +380,44 @@ function renderPromptOutcomes(prompts: InitPromptOutcomes, options: InitRenderOp
 }
 
 /**
- * Render the "persona-only" variant of step 3.
+ * Render the persona-snippet recommendation that opens Step 3.
  *
- * Used when the rendered client set has no client carrying
- * `supportsSkills: true` — keeps step 3 present so the user
- * sees that wiring on its own isn't enough. Generic phrasing on
- * purpose: we don't enumerate which clients lack skill support,
- * since that drifts as the ecosystem moves and is the user's
- * concern, not ours.
+ * The persona snippet is the **universal always-on teaching
+ * surface** — the only one guaranteed to reach the assistant's
+ * system prompt on every message. The MCP `instructions` spine
+ * is optional on the client side (implementations vary in
+ * whether they surface it); the bundled skill is
+ * intent-triggered (it doesn't fire on neutral first messages).
+ * Paste-into-custom-instructions is therefore the recommended
+ * primary step; the skill section that follows is on-intent
+ * enrichment for skill-capable clients.
+ *
+ * Generic phrasing on purpose — we don't enumerate which clients
+ * implement what, because the ecosystem moves faster than we can
+ * keep that current.
  */
-function renderPersonaOnlySection(options: InitRenderOptions): string[] {
+function renderPersonaSnippetReco(options: InitRenderOptions): string[] {
   const lines: string[] = [];
-  lines.push('Memento exposes the MCP tools; your assistant still needs a persona that tells it');
-  lines.push('*when* to write, recall, supersede, and confirm memories. The selected clients');
-  lines.push("don't load Anthropic-format skills, so paste the persona snippet from");
   lines.push(
-    `${dim('docs/guides/teach-your-assistant.md', options)} into your client's persona file.`,
+    `${bold('Paste the persona snippet into your client', options)}'${bold('s custom-instructions slot', options)} ${dim('(universal, always-on)', options)}`,
   );
+  lines.push('');
+  lines.push('The MCP `instructions` spine that ships with the server is optional on the client');
+  lines.push(
+    'side — implementations vary in whether they surface it to the assistant. The bundled',
+  );
+  lines.push("skill (below, when applicable) is intent-triggered, so it doesn't fire on neutral");
+  lines.push(
+    'first messages. The persona snippet is the only teaching surface guaranteed to reach',
+  );
+  lines.push("the assistant's system prompt on every message.");
+  lines.push('');
+  lines.push(
+    `Copy the snippet from ${dim('docs/guides/teach-your-assistant.md', options)} and paste it into`,
+  );
+  lines.push("wherever your client stores user-defined system prompt content — the field's name");
+  lines.push("varies by client (`CLAUDE.md`, `.cursorrules`, a 'Custom Instructions' textarea in");
+  lines.push("the client's settings UI, etc.).");
   lines.push('');
   return lines;
 }

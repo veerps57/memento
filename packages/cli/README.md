@@ -26,7 +26,7 @@ Requires Node.js >= 22.11.
 
 ## Quickstart
 
-Two steps from zero to a working memory layer:
+Three steps from zero to a working memory layer:
 
 ### 1. Run `init`
 
@@ -38,11 +38,13 @@ Creates the SQLite database under the XDG default, runs migrations, walks you th
 
 ### 2. Connect your AI client
 
-`init` prints, for each client, either a one-line subcommand (e.g. `claude mcp add memento …` for Claude Code) or a JSON snippet to merge into the client's MCP config (Claude Desktop, Cursor, Cline, VS Code Agent mode, OpenCode). Pick the one for your client, paste it, then **restart the client** so it loads the new MCP server.
+`init` prints either a one-line subcommand (where the client ships one) or a JSON snippet to merge into the client's MCP config. Pick the one for your client, paste it, then **restart the client** so it loads the new MCP server.
 
 Per-client walkthrough: [docs/guides/mcp-client-setup.md](https://github.com/veerps57/memento/blob/main/docs/guides/mcp-client-setup.md).
 
-That's it. Memento's MCP server emits a [session-start teaching spine](https://github.com/veerps57/memento/blob/main/packages/server/src/instructions.ts) on the `initialize` handshake (ADR-0026). MCP clients that honour the field inject it into the assistant's system prompt; others (including Claude Chat at `claude.ai` web today) ignore it and fall back to schema-embedded session-start hints. The bundled skill (installed during `init`) layers on the deeper distillation curriculum when your client supports Anthropic-format skills. The persona snippet in [teach-your-assistant.md](https://github.com/veerps57/memento/blob/main/docs/guides/teach-your-assistant.md) is the **universal fallback** — paste it into your client's custom-instructions or system-prompt slot if the spine + skill don't reach your assistant.
+### 3. Paste the persona snippet into your client's custom-instructions slot
+
+Memento ships three teaching surfaces — an MCP `instructions` spine on the wire (ADR-0026), a bundled skill for skill-capable clients, and the persona snippet. Of the three, **only the persona snippet is guaranteed to reach the assistant's system prompt on every message** — the MCP spec leaves `instructions` optional and current client implementations vary in whether they surface it; the skill is intent-triggered so it doesn't fire on neutral first messages. Copy the persona snippet from [teach-your-assistant.md](https://github.com/veerps57/memento/blob/main/docs/guides/teach-your-assistant.md) and paste it into your client's custom-instructions / system-prompt slot (the field's name varies — `CLAUDE.md`, `.cursorrules`, "Custom Instructions" in the client's settings UI, etc.).
 
 Verify the wiring end-to-end:
 
@@ -50,7 +52,7 @@ Verify the wiring end-to-end:
 npx @psraghuveer/memento verify-setup
 ```
 
-This round-trips a write/search/cleanup through the MCP transport and confirms your assistant can actually use Memento.
+Spawns the server as a subprocess and round-trips a write/search/cleanup through the MCP transport to confirm your assistant can actually use Memento.
 
 ## What Memento gives you
 
