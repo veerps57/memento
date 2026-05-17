@@ -24,7 +24,11 @@ For each client, `init` prints either a one-line subcommand (e.g. `claude mcp ad
 
 ### 3. Teach your assistant when to use Memento
 
-Memento ships the MCP tools; the assistant still needs to know *when* to call them. If your client loads Anthropic-format skills, install the bundled [skill](../../skills/memento/SKILL.md) — one `cp -R`, printed by `init`, copies the bundle into `~/.claude/skills/` (the path most skill-capable clients read from; a few use a client-specific directory, check the client's skill docs and re-target the `cp` if needed). If your client doesn't support skills, paste the persona snippet from [`teach-your-assistant.md`](teach-your-assistant.md) into the client's persona file (`.cursorrules`, custom system prompt, etc.).
+Memento ships the MCP tools; the assistant still needs to know *when* to call them. Three teaching surfaces, ordered by reliability:
+
+- **Persona snippet (universal, always-on).** Paste the snippet from [`teach-your-assistant.md`](teach-your-assistant.md) into wherever your client stores user-defined system prompt content — the field name varies (`CLAUDE.md`, `.cursorrules`, "Custom Instructions" in your client's settings UI, etc.). On a TTY, `memento init` offers to auto-write this block into detected file-based clients (Claude Code / OpenCode / Cline) for you; just press `Y` at the prompt. This is the only teaching surface guaranteed to reach the assistant's system prompt on every message.
+- **Bundled skill (on-intent enrichment for skill-capable clients).** If your client loads Anthropic-format skills, install the bundled [skill](../../skills/memento/SKILL.md). One `cp -R`, printed by `init`, copies it into `~/.claude/skills/`. The skill fires on memory-relevant intent and layers the deeper distillation curriculum over the persona snippet.
+- **MCP `instructions` spine (best-effort future-proofing).** The MCP server emits a session-start teaching spine on every `initialize` handshake (ADR-0026). Client implementations of the optional `instructions` field vary; treat the spine as a free bonus on clients that surface it, harmless on clients that drop it.
 
 The full per-client walkthrough (Cline, custom paths, troubleshooting) is below.
 

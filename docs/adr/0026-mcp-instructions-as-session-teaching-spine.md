@@ -15,11 +15,11 @@ Memento's tools work the moment a client connects. The harder problem is teachin
 
 Both surfaces require the user to do something *after* `memento init`. Both fail open: skip them and Memento is dead weight, the store stays empty, the assistant never re-asks for what it learned yesterday.
 
-The Model Context Protocol provides a third surface we have not used: the `instructions` field on the `initialize` response. Servers return a string at handshake time; the client injects it into the assistant's system prompt verbatim. Every spec-compliant client supports it; the MCP TypeScript SDK we already depend on ([`@modelcontextprotocol/sdk@1.29`](../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.29.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/cjs/server/index.d.ts)) exposes it as `ServerOptions.instructions`. We pass `{ name, version, capabilities }` to the `Server` constructor and leave `instructions` unset — closing the only in-band channel a server has to teach its client.
+The Model Context Protocol provides a third surface we have not used: the `instructions` field on the `initialize` response. Servers return a string at handshake time; clients that honour the field inject it into the assistant's system prompt verbatim. The field is *optional* on the client side — the MCP TypeScript SDK we already depend on ([`@modelcontextprotocol/sdk@1.29`](../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.29.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/cjs/server/index.d.ts)) exposes it as `ServerOptions.instructions`, but implementations choose whether to surface it. Post-launch observation: client implementations of the field vary considerably; across the current generation of MCP clients tested, the spine is typically not injected into the assistant's system prompt — it reaches the wire but rarely reaches the model. We pass `{ name, version, capabilities }` to the `Server` constructor and leave `instructions` unset — closing the only in-band channel a server has to teach the subset of clients that eventually honour the field.
 
 ## Decision
 
-`buildMementoServer` emits a server-owned, version-stamped `instructions` string at handshake. Every MCP client that honours the field — which is every spec-compliant client — sees it injected into the assistant's system prompt at session start, regardless of skill support, regardless of whether a persona file is configured.
+`buildMementoServer` emits a server-owned, version-stamped `instructions` string at handshake. Clients that honour the field see it injected into the assistant's system prompt at session start, regardless of skill support, regardless of whether a persona file is configured. Clients that ignore the field fall back to schema-embedded session-start hints (the per-tool descriptions) plus the persona snippet the user can paste into a custom-instructions slot. The spine is **best-effort future-proofing**, not a guarantee — observed reach in current client implementations is low — but emission is free on the wire, harmless on clients that drop it, and a free win when implementations catch up. The persona snippet remains the universal always-on teaching channel; the skill remains the load-on-intent enrichment surface.
 
 The body is a tight spine — roughly 60 lines — drawn from the same source the skill is built on, but limited to the **session-start contract** rather than the full distillation curriculum:
 
@@ -36,13 +36,13 @@ The spine is exported as a public constant `MEMENTO_INSTRUCTIONS` from `@psraghu
 
 The skill remains the deeper-load surface: when the user's first message trips its frontmatter trigger, the skill loads the full distillation curriculum (precursor-action capture, named-participant attribution, the dated-event rule, the kind / scope decision trees). The spine carries what every session needs; the skill carries what some sessions need.
 
-The persona snippet becomes the explicit fallback for the rare client that honours neither field nor skill. The guide is rewritten to position the three surfaces as a single hierarchy: `instructions` (every client, every session) → skill (Anthropic-format clients, intent-triggered) → persona snippet (manual paste, last resort).
+The persona snippet — pasted by the user into the client's custom-instructions slot — is the universal always-on teaching surface across every client. The guide positions the three surfaces by reliability of reach: persona snippet (universal; always loaded) → skill (skill-capable clients, intent-triggered) → MCP `instructions` spine (best-effort future-proofing on the wire; surfaced to the system prompt only by clients that implement the optional field).
 
 ## Consequences
 
 ### Positive
 
-- Every spec-compliant MCP client now teaches its assistant at session start, with no user action beyond pasting the MCP config snippet.
+- Every MCP client that honours the optional `instructions` field now teaches its assistant at session start, with no user action beyond pasting the MCP config snippet. Clients that don't honour the field are no worse off than before — the persona snippet (the universal teaching channel) and the skill (load-on-intent) cover the contract regardless.
 - The teaching ships with the server, so it cannot drift from the actual tool surface — adding a tool with a new shape updates `MEMENTO_INSTRUCTIONS` in the same PR.
 - Skills become enrichment rather than load-bearing baseline. Clients that don't support skills no longer fall to the persona snippet as their only teaching surface.
 - The "first tool call errors" failure mode (persona prescribes a call before tool schemas are loaded) goes away — the spine recommends discovery-first calls (`info_system`, `get_memory_context`) that are part of the SDK-bundled schema set every client loads upfront.

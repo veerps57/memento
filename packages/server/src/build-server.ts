@@ -377,12 +377,13 @@ export function buildMementoServer(options: BuildMementoServerOptions): Server {
   const tools: readonly Tool[] = mcpCommands.map(commandToTool);
 
   // ADR-0026: emit the canonical session-start teaching spine on
-  // every `initialize` response so clients that honour the field
-  // (every spec-compliant MCP client) inject it into the
-  // assistant's system prompt without the user needing to install
-  // a skill or paste a persona snippet. The skill remains the
-  // load-on-intent enrichment surface; the spine carries what
-  // every session needs.
+  // every `initialize` response. The MCP spec makes the field
+  // optional on the client side — clients that honour it inject
+  // the spine into the assistant's system prompt; others ignore
+  // it. Treat as best-effort future-proofing; the persona snippet
+  // pasted into the client's custom-instructions slot is the
+  // universal always-on surface, and the bundled skill is
+  // load-on-intent enrichment for skill-capable clients.
   const server = new Server(
     { name: info.name, version: info.version },
     {

@@ -2,21 +2,27 @@
 
 Memento exposes a set of MCP tools (`write_memory`, `search_memory`, `confirm_memory`, `get_memory_context`, etc.) but it does not, by itself, teach an AI assistant *when* to use them. That part is up to you.
 
-There are three teaching surfaces, in priority order. **You only need the first one** — the others are enrichment for clients that load them.
+There are three teaching surfaces, in **reliability order — most-reliable first**. The first one is mandatory for guaranteed behaviour; the others are bonuses when the client supports them.
 
-## 1. Server-emitted `instructions` (every client, automatic) — ADR-0026
+## 1. Persona snippet (universal — paste into your client's custom-instructions slot)
 
-Memento's MCP server returns a ~60-line `instructions` string on the `initialize` handshake. Every spec-compliant MCP client (Claude Code, Claude Desktop, Cursor, VS Code Agent, OpenCode, Cline, …) injects this string into the assistant's system prompt verbatim, with no user action. You wired this when you pasted the MCP-server snippet from `memento init`.
+The persona snippet below is the **only teaching surface guaranteed to reach your assistant on every message**, regardless of which optional MCP features your client implements. Paste it into wherever your client stores user-defined system prompt content — the field's name varies by client (`CLAUDE.md`, `.cursorrules`, `copilot-instructions.md`, a "Custom Instructions" textarea in the client's settings UI, etc.). It mirrors the session-start spine — kept here so you can paste-and-forget rather than discovering the rules empirically.
 
-The spine covers the session-start contract: when to load context, when to write, when to confirm, when to supersede, the `topic: value` first-line rule, the silent-plumbing rule, and the secrets prohibition. If your client honours the field, your assistant already has the contract. The canonical text lives in [`packages/server/src/instructions.ts`](../../packages/server/src/instructions.ts) — operators who want to override it can pass `info.instructions` when constructing the server, or prepend / append their own addendum via string concatenation.
+This is the one step that turns Memento from a connected-but-silent server into an assistant that actually uses it on every conversation.
 
-## 2. The bundled skill (Anthropic-format clients, on-intent) — load-on-demand enrichment
+## 2. Bundled skill (Anthropic-format-skill-capable clients — on-intent)
 
 If your AI client loads [Anthropic-format skills](https://docs.claude.com/en/docs/agents/skills), install [`skills/memento/`](../../skills/memento/SKILL.md). The skill carries the deeper distillation curriculum — named-participant attribution, dated-event capture, precursor-action capture, kind / scope decision trees, the worked end-to-end example — that does not need to load every session. `memento init` will prompt to install the skill into `~/.claude/skills/` interactively; you can also run `cp -R "$(npx -y @psraghuveer/memento skill-path)" ~/.claude/skills/` by hand. Most skill-capable clients read from `~/.claude/skills/<name>/SKILL.md`; a few use a client-specific path (check your client's skill docs and re-target the install if the skill doesn't pick up after a restart). See [`skills/README.md`](../../skills/README.md) for install detail.
 
-## 3. The persona snippet (last resort, clients that load neither) — manual paste
+**The skill is intent-triggered.** It loads when your first message matches the skill's frontmatter description (memory-relevant terms like "remember", "what do I prefer", "I always …"). On a neutral first message that doesn't match the trigger, the skill won't load — which is the design (skills aren't supposed to load for every session). That's why the persona snippet above is the always-on surface; the skill layers richer rules on top when intent calls for them.
 
-A handful of clients honour neither the MCP `instructions` field nor Anthropic-format skills. For those, the persona snippet below is the supported alternative. Paste it into the client's persona file (`CLAUDE.md`, `.cursorrules`, `copilot-instructions.md`, OpenCode prompt, custom system prompt). It mirrors the spine — kept here so you can paste-and-forget rather than discovering the rules empirically.
+## 3. Server-emitted `instructions` spine (best-effort, varies by client implementation) — ADR-0026
+
+Memento's MCP server emits a session-start teaching spine on the `initialize` handshake. The MCP spec defines `instructions` as an **optional** field on the client side — implementations vary considerably in whether they surface the value to the assistant's system prompt. In testing across multiple current clients, the field is typically not injected; the spine reaches the wire but rarely reaches the model. Treat this surface as **future-proofing**: present on every connect, harmless on clients that drop it, may pay off when client implementations catch up.
+
+The spine covers the session-start contract: when to load context, when to write, when to confirm, when to supersede, the `topic: value` first-line rule, the silent-plumbing rule, and the secrets prohibition. The canonical text lives in [`packages/server/src/instructions.ts`](../../packages/server/src/instructions.ts) — operators who want to override it can pass `info.instructions` when constructing the server, or prepend / append their own addendum via string concatenation.
+
+**Disambiguating test for your own client**: paste the MCP config, restart the client, then in a brand-new conversation send a task-shaped neutral first message (e.g. *"What's a good approach for organising a TypeScript monorepo?"*). If the assistant's first 1–2 tool calls are `info_system` + `get_memory_context`, the spine is reaching the system prompt. If it jumps straight to answering with no memento tool calls, the spine is being ignored — the persona snippet above is the path that guarantees coverage.
 
 The fragments below are deliberately short and opinionated. Adapt them to your usage.
 

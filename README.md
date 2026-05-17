@@ -14,7 +14,7 @@ Memento is one place where that memory lives. It runs an [MCP](https://modelcont
 
 ## Quickstart
 
-Two steps from zero to a working memory layer:
+Three steps from zero to a working memory layer:
 
 ### 1. Run `init` (interactive on a TTY)
 
@@ -32,13 +32,17 @@ Then prints copy-paste MCP snippets for every supported client. Idempotent — r
 
 ### 2. Connect your AI client
 
-`init` prints, for each client, either a one-line subcommand (e.g. `claude mcp add memento …` for Claude Code) or a JSON snippet to merge into the client's MCP config (Claude Desktop, Cursor, Cline, VS Code Agent mode, OpenCode). Pick the one for your client, paste it, then **restart the client** so it loads the new MCP server.
+`init` prints either a one-line subcommand (where the client ships one) or a JSON snippet to merge into the client's MCP config. Pick the one for your client, paste it, then **restart the client** so it loads the new MCP server.
 
 The full per-client walkthrough lives in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md).
 
-That's it. Memento's MCP server emits a [session-start teaching spine](packages/server/src/instructions.ts) on every `initialize` handshake (ADR-0026), so every spec-compliant client gets the contract — when to load context, when to write, when to confirm — injected into the assistant's system prompt with no further wiring. The bundled skill (if installed) layers on the deeper distillation curriculum when the user's intent triggers it; the persona snippet in [docs/guides/teach-your-assistant.md](docs/guides/teach-your-assistant.md) is the fallback for the rare client that honours neither.
+### 3. Paste the persona snippet into your client's custom-instructions slot
 
-Verify the whole loop end-to-end with `npx @psraghuveer/memento verify-setup` — it round-trips a write/search/cleanup through the MCP transport and confirms your assistant can actually use Memento. Then try a fresh session: *"Remember that I prefer pnpm over npm for Node projects."* In the next session, ask *"What's my preferred package manager?"* and the assistant should recall it without you re-explaining.
+Memento ships three teaching surfaces — an MCP `instructions` spine on the wire, a bundled skill for skill-capable clients, and the persona snippet. Of the three, **only the persona snippet is guaranteed to reach the assistant's system prompt on every message** — the MCP spec leaves `instructions` optional and client implementations vary in whether they surface it; the skill is intent-triggered so it doesn't fire on neutral first messages. Copy the persona snippet from [`docs/guides/teach-your-assistant.md`](docs/guides/teach-your-assistant.md) and paste it into your client's custom-instructions / system-prompt slot (the field's name varies — `CLAUDE.md`, `.cursorrules`, "Custom Instructions" in the client's settings UI, etc.).
+
+That's it. Verify the wire works end-to-end with `npx @psraghuveer/memento verify-setup` — a write/search/cleanup round-trip that proves your assistant can actually call Memento.
+
+Then try a fresh session: *"Remember that I prefer pnpm over npm for Node projects."* In the next session, ask *"What's my preferred package manager?"* and the assistant should recall it without you re-explaining.
 
 ## Seed your store with a pack
 
@@ -80,11 +84,11 @@ You can also point at an existing database with the `MEMENTO_DB` environment var
 
 **Verify the install** by running `npx @psraghuveer/memento doctor` (add `--quick` to skip the DB and embedder probes; add `--mcp` to also scan known MCP client config files). For a one-screen summary of what's in your store, `npx @psraghuveer/memento status`. To inspect what your install can do — registered commands, current config, database location — without speaking MCP, run `npx @psraghuveer/memento context`. To smoke-test the MCP transport end-to-end, `npx @psraghuveer/memento ping`.
 
-**Wiring Memento into an MCP client** (Claude Desktop, Claude Code, Cursor, Cline, OpenCode, VS Code Agent mode, …) is covered step by step in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md). The TL;DR is the three-step quickstart above: `init`, paste the snippet, install the skill or paste the persona.
+**Wiring Memento into an MCP client** (Claude Desktop, Claude Code, Cursor, Cline, OpenCode, VS Code Agent mode, …) is covered step by step in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md). The TL;DR is the three-step quickstart above: `init`, paste the MCP-server snippet, paste the persona snippet.
 
 **Vector retrieval** (paraphrase matching on top of FTS) is on by default. The first search triggers a one-time model download (~110 MB) into `$XDG_CACHE_HOME/memento/models` (or `~/.cache/memento/models` / `%LOCALAPPDATA%\memento\Cache\models`); after that, both FTS and vector arms run automatically. If the model has not yet downloaded, search degrades gracefully to FTS-only. For configuration options and library-wiring details, see [docs/guides/embeddings.md](docs/guides/embeddings.md).
 
-**Operating the store** day-to-day — `compact`, `backup`, `status`, scheduling — is covered in [docs/guides/operations.md](docs/guides/operations.md). The conflict workflow is in [docs/guides/conflicts.md](docs/guides/conflicts.md). To prime an AI assistant on how to use Memento well, see [docs/guides/teach-your-assistant.md](docs/guides/teach-your-assistant.md) — or, if your client supports Anthropic skills (Claude Code, Cowork), install the bundled [skill](skills/memento/SKILL.md) for a no-config alternative.
+**Operating the store** day-to-day — `compact`, `backup`, `status`, scheduling — is covered in [docs/guides/operations.md](docs/guides/operations.md). The conflict workflow is in [docs/guides/conflicts.md](docs/guides/conflicts.md). To prime an AI assistant on how to use Memento well, see [docs/guides/teach-your-assistant.md](docs/guides/teach-your-assistant.md) — and, if your client loads Anthropic-format skills, install the bundled [skill](skills/memento/SKILL.md) as on-intent enrichment over the persona snippet.
 
 **See and curate your store in a browser.** `npx @psraghuveer/memento dashboard` launches a local-first web UI that reads against your `MEMENTO_DB`: memory counts by kind and scope, audit trail, conflict triage, config inspection, installed packs. Localhost-only, gated by a per-launch random token in the URL the launcher hands the browser, no telemetry. The dashboard is a sibling package ([`@psraghuveer/memento-dashboard`](packages/dashboard/)) shipped under [ADR-0018](docs/adr/0018-dashboard-package.md); see [docs/guides/dashboard.md](docs/guides/dashboard.md) for the full walkthrough.
 

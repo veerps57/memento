@@ -33,9 +33,9 @@ export const HOWTO: {
 } = {
   name: 'Install Memento',
   description:
-    'Install Memento on your machine in two steps: run init (interactive on a TTY — sets your name, installs the skill, seeds a starter pack), then paste the printed MCP-server snippet into your AI client and restart it. The session-start teaching spine ships with the MCP server itself, so the assistant learns when to call Memento as soon as it connects.',
-  // ISO-8601 duration. ~3 minutes end-to-end on a warm npx cache.
-  totalTime: 'PT3M',
+    "Install Memento on your machine in three steps: run init (interactive on a TTY — sets your name, installs the skill, seeds a starter pack), paste the printed MCP-server snippet into your AI client and restart it, then paste the persona snippet into the client's custom-instructions slot so the teaching contract reaches your assistant on every message.",
+  // ISO-8601 duration. ~5 minutes end-to-end on a warm npx cache.
+  totalTime: 'PT5M',
   steps: [
     {
       name: 'Initialize Memento (interactive)',
@@ -44,8 +44,12 @@ export const HOWTO: {
     },
     {
       name: 'Connect your AI client',
-      text: "Paste the MCP-server snippet that init printed for your client into that client's MCP config (Claude Desktop's claude_desktop_config.json, Cursor's mcp.json, Cline's settings, OpenCode's config, VS Code Agent's mcp.json), or run the one-line subcommand init prints for Claude Code. Then restart the client so it loads the new MCP server. The session-start teaching spine — when to load context, when to write, when to confirm, the topic:value rule for preferences — ships with the server and is injected into the assistant's system prompt automatically on every connect (ADR-0026). Verify with `npx @psraghuveer/memento verify-setup` — a write/search/cleanup round-trip that proves your assistant can actually use Memento end-to-end.",
+      text: "Paste the MCP-server snippet that init printed into your client's MCP config (the file location varies by client), or run the one-line subcommand init prints where the client ships one. Then restart the client so it loads the new MCP server. Verify the wire end-to-end with `npx @psraghuveer/memento verify-setup` — spawns the server as a subprocess and round-trips a write/search/cleanup through the MCP transport.",
       command: 'npx @psraghuveer/memento verify-setup',
+    },
+    {
+      name: "Paste the persona snippet into your client's custom-instructions slot",
+      text: "Memento ships three teaching surfaces — an MCP `instructions` spine on the wire (ADR-0026), a bundled skill for skill-capable clients, and the persona snippet. The MCP spec leaves `instructions` optional on the client side and current implementations vary in whether they surface it; the skill is intent-triggered so it doesn't fire on neutral first messages. The persona snippet is the only surface guaranteed to reach the assistant's system prompt on every message — paste it into wherever your client stores user-defined system prompt content (the field name varies — CLAUDE.md, .cursorrules, a 'Custom Instructions' textarea in the client's settings UI, etc.). The full snippet lives in docs/guides/teach-your-assistant.md and is also rendered on this page below.",
     },
   ],
 };
