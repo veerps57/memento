@@ -36,7 +36,7 @@ The spine is exported as a public constant `MEMENTO_INSTRUCTIONS` from `@psraghu
 
 The skill remains the deeper-load surface: when the user's first message trips its frontmatter trigger, the skill loads the full distillation curriculum (precursor-action capture, named-participant attribution, the dated-event rule, the kind / scope decision trees). The spine carries what every session needs; the skill carries what some sessions need.
 
-The persona snippet becomes the explicit fallback for the rare client that honours neither field nor skill. The guide is rewritten to position the three surfaces as a single hierarchy: `instructions` (every client, every session) → skill (Anthropic-format clients, intent-triggered) → persona snippet (manual paste, last resort).
+The persona snippet — pasted by the user into the client's custom-instructions slot — is the universal always-on teaching surface across every client. The guide positions the three surfaces by reliability of reach: persona snippet (universal; always loaded) → skill (skill-capable clients, intent-triggered) → MCP `instructions` spine (best-effort future-proofing on the wire; surfaced to the system prompt only by clients that implement the optional field).
 
 ## Consequences
 
