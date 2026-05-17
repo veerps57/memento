@@ -116,6 +116,18 @@ export interface CreateMemoryContextCommandDeps {
   readonly db: Kysely<MementoSchema>;
   readonly memoryRepository: MemoryRepository;
   readonly configStore: ConfigStore;
+  /**
+   * Optional `{model, dimension}` of the host's active embedder.
+   * When supplied, the per-row `embeddingStatus` projection
+   * distinguishes `'present'` (model + dim match) from `'stale'`
+   * (mismatch — `embedding.rebuild` would re-embed). When
+   * omitted, embedded rows fall back to `'present'` because
+   * staleness has no comparison point.
+   */
+  readonly configuredEmbedder?: {
+    readonly model: string;
+    readonly dimension: number;
+  };
   readonly clock?: () => string;
 }
 
@@ -132,7 +144,7 @@ export function createMemoryContextCommand(
     outputSchema: MemoryContextOutputSchema,
     metadata: {
       description:
-        'Load the most relevant memories for the current session without a search query. Uses ranked retrieval based on confidence, recency, scope, pinned status, and confirmation frequency.\n\nCall at the start of a task to load context. No arguments required — returns the top memories from config-driven defaults.\n\nEvery result\'s memory carries an `embeddingStatus` field (`"present"` | `"pending"` | `"disabled"`) so callers can tell whether a row contributed via vector similarity at all.\n\nExamples:\n\n- Default: `{}`\n- Scoped: `{"scopes":[{"type":"repo","remote":"github.com/org/app"},{"type":"global"}]}`\n- Filtered: `{"kinds":["preference","decision"],"limit":10}`',
+        'Load the most relevant memories for the current session without a search query. Uses ranked retrieval based on confidence, recency, scope, pinned status, and confirmation frequency.\n\nCall at the start of a task to load context. No arguments required — returns the top memories from config-driven defaults.\n\nEvery result\'s memory carries an `embeddingStatus` field (`"present"` | `"stale"` | `"pending"` | `"disabled"`) so callers can tell whether a row contributed via vector similarity at all. `stale` means the embedding exists but its model/dim mismatches the configured embedder (run `embedding.rebuild` to refresh).\n\nExamples:\n\n- Default: `{}`\n- Scoped: `{"scopes":[{"type":"repo","remote":"github.com/org/app"},{"type":"global"}]}`\n- Filtered: `{"kinds":["preference","decision"],"limit":10}`',
       mcpName: 'get_memory_context',
     },
     handler: async (input) => {
@@ -280,7 +292,11 @@ export function createMemoryContextCommand(
         const page = ranked.slice(0, limit);
         const results = page.map((r) => {
           const view = projectMemoryView(r.memory, redact) as MemoryView;
-          const embeddingStatus = computeEmbeddingStatus(r.memory, deps.configStore);
+          const embeddingStatus = computeEmbeddingStatus(
+            r.memory,
+            deps.configStore,
+            deps.configuredEmbedder,
+          );
           const memory = { ...view, embedding: null, embeddingStatus };
           if (projection === 'full') {
             return { memory, score: r.score, breakdown: r.breakdown };

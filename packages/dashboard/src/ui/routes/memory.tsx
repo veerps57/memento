@@ -17,9 +17,11 @@ import { Link } from '@tanstack/react-router';
 import { useMemo, useRef, useState } from 'react';
 
 import {
+  type EmbeddingStatus,
   type MemoryKindName,
   type MemoryRow,
   type MemoryStatus,
+  useEmbeddingRebuild,
   useMemoryList,
   useMemorySearch,
 } from '../hooks/useMemory.js';
@@ -49,6 +51,15 @@ interface BrowseFilters {
    */
   readonly kinds: ReadonlySet<MemoryKindName>;
   readonly pinnedOnly: boolean;
+  /**
+   * When true, narrow visible rows to those whose stored
+   * embedding mismatches the configured embedder
+   * (`embeddingStatus === 'stale'`). The wire-level filter does
+   * not exist on `memory.list`; narrowing is client-side, so
+   * the count reflects "stale in the current page" rather than
+   * a global tally. The rebuild banner uses the same predicate.
+   */
+  readonly staleOnly: boolean;
   readonly query: string;
 }
 
@@ -56,6 +67,7 @@ const INITIAL_FILTERS: BrowseFilters = {
   statuses: new Set(['active']),
   kinds: new Set(),
   pinnedOnly: false,
+  staleOnly: false,
   query: '',
 };
 
@@ -88,7 +100,7 @@ export function MemoryListPage(): JSX.Element {
   // Reset the page size when the filter / search changes — the
   // user's intent has shifted and the previous "I have loaded
   // 600 archived" doesn't carry over to "loading active".
-  const filterKey = `${statusKey}|${kindKey}|${filters.pinnedOnly ? '1' : '0'}|${trimmedQuery}`;
+  const filterKey = `${statusKey}|${kindKey}|${filters.pinnedOnly ? '1' : '0'}|${filters.staleOnly ? '1' : '0'}|${trimmedQuery}`;
   const lastFilterKey = useRef(filterKey);
   if (lastFilterKey.current !== filterKey) {
     lastFilterKey.current = filterKey;
@@ -129,14 +141,20 @@ export function MemoryListPage(): JSX.Element {
   const rows: readonly MemoryRow[] = useMemo(() => {
     if (searchEnabled) {
       const out: readonly MemoryRow[] = (search.data?.results ?? []).map((r) => r.memory);
-      return filters.pinnedOnly ? out.filter((m) => m.pinned) : out;
+      const afterPinned = filters.pinnedOnly ? out.filter((m) => m.pinned) : out;
+      return filters.staleOnly
+        ? afterPinned.filter((m) => m.embeddingStatus === 'stale')
+        : afterPinned;
     }
     const base = list.data ?? [];
     // Apply client-side narrowing for any axis where the user
     // has picked 2+ values (the engine couldn't filter for the
     // union — see the wire* computations above). When 0 or 1
     // value is selected the engine already did the filter, so
-    // pass-through.
+    // pass-through. The `staleOnly` axis has no engine-side
+    // equivalent — `memory.list` does not accept an
+    // `embeddingStatus` filter — so it always narrows
+    // client-side from whatever the engine returned.
     const narrowedByStatus =
       filters.statuses.size > 1
         ? base.filter((m) => filters.statuses.has(m.status as MemoryStatus))
@@ -145,11 +163,35 @@ export function MemoryListPage(): JSX.Element {
       filters.kinds.size > 1
         ? narrowedByStatus.filter((m) => filters.kinds.has(m.kind.type as MemoryKindName))
         : narrowedByStatus;
-    const sorted = [...narrowedByKind].sort((a, b) =>
+    const narrowedByStale = filters.staleOnly
+      ? narrowedByKind.filter((m) => m.embeddingStatus === 'stale')
+      : narrowedByKind;
+    const sorted = [...narrowedByStale].sort((a, b) =>
       a.lastConfirmedAt < b.lastConfirmedAt ? 1 : -1,
     );
     return sorted;
-  }, [searchEnabled, search.data, list.data, filters.pinnedOnly, filters.kinds, filters.statuses]);
+  }, [
+    searchEnabled,
+    search.data,
+    list.data,
+    filters.pinnedOnly,
+    filters.kinds,
+    filters.statuses,
+    filters.staleOnly,
+  ]);
+
+  // Count of rows in the current view that have stale
+  // embeddings — drives both the "Stale only" filter chip's
+  // dim-when-zero state and the rebuild banner. Computed
+  // off `rows` so it respects every other active filter (a
+  // user viewing only `decision`s wouldn't expect the count
+  // to spike to "all stale across all kinds").
+  const staleCount = useMemo(
+    () => rows.filter((m) => m.embeddingStatus === 'stale').length,
+    [rows],
+  );
+
+  const rebuild = useEmbeddingRebuild();
 
   const isLoading = searchEnabled ? search.isLoading : list.isLoading;
   const error = searchEnabled ? search.error : list.error;
@@ -255,8 +297,71 @@ export function MemoryListPage(): JSX.Element {
             <span aria-hidden>★</span>
             <span className="ml-1">pinned only</span>
           </Chip>
+          <Chip
+            active={filters.staleOnly}
+            onClick={() => setFilters((f) => ({ ...f, staleOnly: !f.staleOnly }))}
+          >
+            <span aria-hidden>↺</span>
+            <span className="ml-1">stale embeddings only</span>
+          </Chip>
         </div>
       </form>
+
+      {/* Rebuild banner. Surfaces when at least one row in the
+          current view has a stale embedding — i.e. the stored
+          vector's model / dim mismatch the configured embedder.
+          The CTA calls `embedding.rebuild` which is batched and
+          idempotent server-side; on success the cache invalidator
+          inside the hook refreshes `memory.list` / `memory.search`
+          so the banner re-evaluates and dismisses itself when no
+          more stale rows are visible. */}
+      {staleCount > 0 ? (
+        <div className="flex flex-col gap-2 rounded border border-warn/40 bg-warn/5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="font-mono text-[12px] text-fg/90">
+            <span aria-hidden className="mr-2 text-warn">
+              ↺
+            </span>
+            {staleCount === 1
+              ? '1 memory in this view has a stale embedding'
+              : `${staleCount} memories in this view have stale embeddings`}
+            <span className="ml-1 text-muted">
+              (model / dimension mismatch the configured embedder)
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => rebuild.mutate({})}
+            disabled={rebuild.isPending}
+            className="self-start rounded border border-warn/60 bg-warn/10 px-3 py-1 font-mono text-[11px] uppercase tracking-widish text-fg hover:border-warn disabled:opacity-50 sm:self-auto"
+          >
+            {rebuild.isPending ? 'rebuilding…' : 'rebuild stale embeddings'}
+          </button>
+        </div>
+      ) : null}
+      {rebuild.isSuccess && rebuild.data !== undefined ? (
+        <div className="rounded border border-border bg-border/20 px-3 py-1.5 font-mono text-[11px] text-fg/80">
+          <span aria-hidden className="mr-2 text-accent">
+            ✓
+          </span>
+          rebuilt {rebuild.data.embedded.length} memor
+          {rebuild.data.embedded.length === 1 ? 'y' : 'ies'}; scanned {rebuild.data.scanned},
+          skipped {rebuild.data.skipped.length}.
+          {rebuild.data.skipped.length > 0 ? (
+            <span className="ml-1 text-muted">
+              (skip reasons: {[...new Set(rebuild.data.skipped.map((s) => s.reason))].join(', ')})
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {rebuild.isError ? (
+        <div className="rounded border border-warn/60 bg-warn/10 px-3 py-1.5 font-mono text-[11px] text-fg">
+          <span aria-hidden className="mr-2 text-warn">
+            ✕
+          </span>
+          rebuild failed:{' '}
+          {(rebuild.error as { message?: string })?.message ?? String(rebuild.error)}
+        </div>
+      ) : null}
 
       {/* Results meta row — only the cap hint, no row count. The
           count was misleading because the page mixes engine-paged
@@ -329,7 +434,7 @@ function MemoryRowItem({ memory }: { readonly memory: MemoryRow }): JSX.Element 
           'flex flex-col gap-1.5 sm:flex-row sm:items-baseline sm:gap-3',
         )}
       >
-        {/* First line: kind, scope, pinned, tags. */}
+        {/* First line: kind, scope, pinned, tags, embedding state. */}
         <div className="flex flex-shrink-0 items-baseline gap-2 font-mono text-[11px]">
           <KindBadge kind={memory.kind.type as MemoryKindName} />
           <span className="text-muted">{formatScope(memory.scope)}</span>
@@ -342,6 +447,9 @@ function MemoryRowItem({ memory }: { readonly memory: MemoryRow }): JSX.Element 
             <span aria-label="sensitive" className="text-warn">
               ⚠
             </span>
+          ) : null}
+          {memory.embeddingStatus !== undefined && memory.embeddingStatus !== 'present' ? (
+            <EmbeddingBadge status={memory.embeddingStatus} />
           ) : null}
           {memory.tags.length > 0 ? (
             <span className="text-muted/80 truncate">[{memory.tags.join(',')}]</span>
@@ -361,6 +469,61 @@ function MemoryRowItem({ memory }: { readonly memory: MemoryRow }): JSX.Element 
       </Link>
     </li>
   );
+}
+
+/**
+ * Surface the row's embedding state when it's anything other
+ * than `'present'`. `'present'` is the silent default — calling
+ * it out on every row would crowd the line.
+ *
+ * Tones (one per status):
+ *
+ * - `stale`    — warn (yellow). The row has an embedding but
+ *                the configured embedder changed; the vector
+ *                arm of search is skipping it until
+ *                `embedding.rebuild` re-embeds.
+ * - `pending`  — muted (grey). Embedder is on but hasn't caught
+ *                up yet. Usually milliseconds after a write.
+ * - `disabled` — muted (grey). `retrieval.vector.enabled` is
+ *                off — FTS only.
+ *
+ * Title attributes carry the long-form explanation so a hover
+ * teaches the user what the badge means without a click-through.
+ */
+function EmbeddingBadge({ status }: { readonly status: EmbeddingStatus }): JSX.Element {
+  if (status === 'stale') {
+    return (
+      <span
+        className="inline-block rounded border border-warn/60 bg-warn/10 px-1.5 py-0.5 text-[10px] text-warn"
+        title="Stale: stored embedding's model / dimension mismatches the configured embedder. Run `embedding rebuild` to re-embed."
+      >
+        stale
+      </span>
+    );
+  }
+  if (status === 'pending') {
+    return (
+      <span
+        className="inline-block rounded border border-border bg-border/30 px-1.5 py-0.5 text-[10px] text-muted"
+        title="Pending: vector retrieval is enabled but the embedder hasn't caught up yet (usually milliseconds after a write)."
+      >
+        pending
+      </span>
+    );
+  }
+  if (status === 'disabled') {
+    return (
+      <span
+        className="inline-block rounded border border-border bg-border/30 px-1.5 py-0.5 text-[10px] text-muted"
+        title="Disabled: `retrieval.vector.enabled` is off — only the FTS arm of search is active."
+      >
+        no vec
+      </span>
+    );
+  }
+  // 'present' renders nothing (the silent default — see the
+  // caller's `!== 'present'` guard).
+  return <span aria-hidden />;
 }
 
 function KindBadge({ kind }: { readonly kind: MemoryKindName }): JSX.Element {

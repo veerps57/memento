@@ -27,6 +27,8 @@ import { unwrap } from '../lib/query.js';
  * Zod-branded `Path` / `RepoRemote` types (which the API client
  * erases on the wire).
  */
+export type EmbeddingStatus = 'present' | 'stale' | 'pending' | 'disabled';
+
 export interface MemoryRow {
   readonly id: string;
   readonly createdAt: string;
@@ -43,7 +45,26 @@ export interface MemoryRow {
   readonly lastConfirmedAt: string;
   readonly supersedes: string | null;
   readonly supersededBy: string | null;
-  readonly embedding: unknown;
+  /**
+   * The raw embedding row, when the engine response carried it
+   * (typically `null` for list/search/context — those projections
+   * strip the 768 floats by default). When non-null, the
+   * `{model, dimension}` pair is what `embeddingStatus` is
+   * compared against to decide `'present'` vs `'stale'`.
+   */
+  readonly embedding: {
+    readonly model: string;
+    readonly dimension: number;
+    readonly vector?: readonly number[];
+    readonly createdAt?: string;
+  } | null;
+  /**
+   * Wire-level projection of "is this row's vector usable by the
+   * vector arm of search?" Set on every memory output (list,
+   * search, context, read, write, etc.). See the engine's
+   * `computeEmbeddingStatus` for the full semantics.
+   */
+  readonly embeddingStatus?: EmbeddingStatus;
   readonly sensitive: boolean;
   readonly redacted?: boolean;
 }
@@ -252,6 +273,61 @@ export function useForgetMemory(): UseMutationResult<MemoryRow, Error, ForgetMem
       void qc.invalidateQueries({ queryKey: ['memory.events'] });
       void qc.invalidateQueries({ queryKey: ['system.info'] });
       void qc.invalidateQueries({ queryKey: ['system.list_scopes'] });
+    },
+  });
+}
+
+export interface EmbeddingRebuildResult {
+  readonly scanned: number;
+  readonly embedded: readonly string[];
+  readonly skipped: readonly {
+    readonly id: string;
+    readonly reason: string;
+  }[];
+}
+
+/**
+ * Trigger `embedding.rebuild` — re-embed memories whose stored
+ * vector mismatches the configured embedder (`embeddingStatus:
+ * 'stale'`). Returns a per-call summary (`scanned` / `embedded`
+ * / `skipped`).
+ *
+ * The engine command is batched server-side and idempotent.
+ * Successive calls drain the stale set; the caller may need to
+ * call again if the stale set is larger than one batch (the
+ * engine's `embedding.rebuild.defaultBatchSize` config, default
+ * `100`). The UI surfaces this by re-invalidating
+ * `memory.list` / `memory.search` queries on success — the
+ * banner-with-rebuild-button re-evaluates whether stale rows
+ * remain after the next refetch.
+ */
+export interface EmbeddingRebuildArgs {
+  readonly batchSize?: number;
+}
+
+export function useEmbeddingRebuild(): UseMutationResult<
+  EmbeddingRebuildResult,
+  Error,
+  EmbeddingRebuildArgs
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args) =>
+      unwrap(
+        await callCommand<EmbeddingRebuildResult>('embedding.rebuild', {
+          ...(args.batchSize !== undefined ? { batchSize: args.batchSize } : {}),
+        }),
+      ) as EmbeddingRebuildResult,
+    onSuccess: () => {
+      // Re-embed events bump `lastConfirmedAt` audit trail and
+      // update per-row `embeddingStatus` from `'stale'` to
+      // `'present'`. Invalidate the read paths so the banner +
+      // table reflect the new state on the next refetch.
+      void qc.invalidateQueries({ queryKey: ['memory.list'] });
+      void qc.invalidateQueries({ queryKey: ['memory.search'] });
+      void qc.invalidateQueries({ queryKey: ['memory.read'] });
+      void qc.invalidateQueries({ queryKey: ['memory.events'] });
+      void qc.invalidateQueries({ queryKey: ['system.info'] });
     },
   });
 }

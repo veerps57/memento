@@ -23,14 +23,17 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useState } from 'react';
 
 import {
+  type EmbeddingStatus,
   type MemoryEventRow,
   type MemoryRow,
   useConfirmMemory,
+  useEmbeddingRebuild,
   useForgetMemory,
   useMemoryEvents,
   useMemoryRead,
   useUpdateMemory,
 } from '../hooks/useMemory.js';
+import { useSystemInfo } from '../hooks/useSystemInfo.js';
 import { cn } from '../lib/cn.js';
 import { effectiveConfidence } from '../lib/decay.js';
 import { formatScope, relativeTime } from '../lib/format.js';
@@ -43,6 +46,8 @@ export function MemoryDetailPage(): JSX.Element {
   const update = useUpdateMemory();
   const forget = useForgetMemory();
   const confirm = useConfirmMemory();
+  const rebuild = useEmbeddingRebuild();
+  const systemInfo = useSystemInfo();
   const [reveal, setReveal] = useState(false);
 
   if (memory.isLoading) {
@@ -120,6 +125,24 @@ export function MemoryDetailPage(): JSX.Element {
           <StatusPill status={m.status} />
           {m.pinned ? <Pill tone="accent">★ pinned</Pill> : null}
           {m.sensitive ? <Pill tone="warn">⚠ sensitive</Pill> : null}
+          {m.embeddingStatus !== undefined && m.embeddingStatus !== 'present' ? (
+            <EmbeddingPill
+              status={m.embeddingStatus}
+              stored={
+                m.embedding !== null
+                  ? { model: m.embedding.model, dimension: m.embedding.dimension }
+                  : null
+              }
+              configured={
+                systemInfo.data?.embedder.configured === true
+                  ? {
+                      model: systemInfo.data.embedder.model,
+                      dimension: systemInfo.data.embedder.dimension,
+                    }
+                  : null
+              }
+            />
+          ) : null}
         </div>
         {/* Action row */}
         <div className="flex flex-wrap gap-2">
@@ -146,12 +169,20 @@ export function MemoryDetailPage(): JSX.Element {
                 : 'Move to status=forgotten (memory.forget)'
             }
           />
+          {m.embeddingStatus === 'stale' ? (
+            <ActionButton
+              onClick={() => rebuild.mutate({})}
+              pending={rebuild.isPending}
+              label="rebuild"
+              title="Re-embed this memory (and any other stale rows) against the configured embedder (embedding.rebuild)"
+            />
+          ) : null}
         </div>
-        {(update.error ?? forget.error ?? confirm.error) ? (
+        {(update.error ?? forget.error ?? confirm.error ?? rebuild.error) ? (
           <p className="font-mono text-xs text-warn">
             action failed:{' '}
-            {(update.error ?? forget.error ?? confirm.error) instanceof Error
-              ? ((update.error ?? forget.error ?? confirm.error) as Error).message
+            {(update.error ?? forget.error ?? confirm.error ?? rebuild.error) instanceof Error
+              ? ((update.error ?? forget.error ?? confirm.error ?? rebuild.error) as Error).message
               : 'unknown error'}
           </p>
         ) : null}
@@ -323,6 +354,41 @@ function ScopePill({
   return (
     <span className="rounded border border-border bg-border/20 px-1.5 py-0.5 font-mono text-[11px] text-fg/80">
       {formatScope(scope)}
+    </span>
+  );
+}
+
+/**
+ * Surfaces the row's embedding state. Renders nothing for
+ * `'present'` (the silent default — the caller's guard skips
+ * the component in that case). For `'stale'` the `title`
+ * attribute carries the stored model/dim vs configured
+ * model/dim so a hover answers "why is this stale" without a
+ * click-through.
+ */
+function EmbeddingPill({
+  status,
+  stored,
+  configured,
+}: {
+  readonly status: EmbeddingStatus;
+  readonly stored: { readonly model: string; readonly dimension: number } | null;
+  readonly configured: { readonly model: string; readonly dimension: number } | null;
+}): JSX.Element {
+  const title =
+    status === 'stale'
+      ? `Stale: stored ${stored !== null ? `${stored.model}@${stored.dimension}d` : '(no row)'} mismatches configured ${configured !== null ? `${configured.model}@${configured.dimension}d` : '(no embedder wired)'}. Click 'rebuild' below to re-embed.`
+      : status === 'pending'
+        ? "Pending: vector retrieval is enabled but the embedder hasn't caught up yet (usually milliseconds after a write)."
+        : 'Disabled: `retrieval.vector.enabled` is off — only the FTS arm of search is active.';
+  const tone = status === 'stale' ? 'border-warn/40 text-warn' : 'border-border text-muted';
+  const label = status === 'disabled' ? 'no vec' : status;
+  return (
+    <span
+      className={cn('rounded border bg-border/20 px-1.5 py-0.5 font-mono text-[11px]', tone)}
+      title={title}
+    >
+      ↺ {label}
     </span>
   );
 }

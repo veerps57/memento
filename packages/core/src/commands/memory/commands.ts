@@ -34,6 +34,7 @@ import {
 } from '@psraghuveer/memento-schema';
 import { z } from 'zod';
 import type { ConfigStore } from '../../config/index.js';
+import { isEmbeddingFresh } from '../../embedding/freshness.js';
 import type { EventRepository } from '../../repository/event-repository.js';
 import type { MemoryRepository } from '../../repository/memory-repository.js';
 import { repoErrorToMementoError } from '../errors.js';
@@ -302,7 +303,9 @@ export function createMemoryCommands(
       );
       if (result.ok) {
         fireAfterWrite(hooks, result.value, ctx);
-        return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+        return ok(
+          projectMemoryForOutput(result.value, deps?.configStore, false, deps?.configuredEmbedder),
+        );
       }
       return result;
     },
@@ -434,7 +437,12 @@ export function createMemoryCommands(
         return result;
       }
       return ok(
-        projectMemoryForOutput(result.value, deps?.configStore, input.includeEmbedding === true),
+        projectMemoryForOutput(
+          result.value,
+          deps?.configStore,
+          input.includeEmbedding === true,
+          deps?.configuredEmbedder,
+        ),
       );
     },
   };
@@ -473,7 +481,11 @@ export function createMemoryCommands(
       return ok(
         result.value.map((m) => {
           const view = projectMemoryView(m, redact);
-          const embeddingStatus = computeEmbeddingStatus(m, deps?.configStore);
+          const embeddingStatus = computeEmbeddingStatus(
+            m,
+            deps?.configStore,
+            deps?.configuredEmbedder,
+          );
           if (stripEmbedding) {
             return { ...view, embedding: null, embeddingStatus };
           }
@@ -545,8 +557,18 @@ export function createMemoryCommands(
           // filtered out by the detector's status check.
           fireAfterWrite(hooks, result.value.current, ctx);
           return ok({
-            previous: projectMemoryForOutput(result.value.previous, deps?.configStore, false),
-            current: projectMemoryForOutput(result.value.current, deps?.configStore, false),
+            previous: projectMemoryForOutput(
+              result.value.previous,
+              deps?.configStore,
+              false,
+              deps?.configuredEmbedder,
+            ),
+            current: projectMemoryForOutput(
+              result.value.current,
+              deps?.configStore,
+              false,
+              deps?.configuredEmbedder,
+            ),
           });
         }
         return result;
@@ -568,7 +590,9 @@ export function createMemoryCommands(
         repo.confirm(input.id, ctxToRepoCtx(ctx)),
       );
       if (!result.ok) return result;
-      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+      return ok(
+        projectMemoryForOutput(result.value, deps?.configStore, false, deps?.configuredEmbedder),
+      );
     },
   };
 
@@ -628,7 +652,9 @@ export function createMemoryCommands(
         ),
       );
       if (!result.ok) return result;
-      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+      return ok(
+        projectMemoryForOutput(result.value, deps?.configStore, false, deps?.configuredEmbedder),
+      );
     },
   };
 
@@ -647,7 +673,9 @@ export function createMemoryCommands(
         repo.forget(input.id, input.reason, ctxToRepoCtx(ctx)),
       );
       if (!result.ok) return result;
-      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+      return ok(
+        projectMemoryForOutput(result.value, deps?.configStore, false, deps?.configuredEmbedder),
+      );
     },
   };
 
@@ -666,7 +694,9 @@ export function createMemoryCommands(
         repo.restore(input.id, ctxToRepoCtx(ctx)),
       );
       if (!result.ok) return result;
-      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+      return ok(
+        projectMemoryForOutput(result.value, deps?.configStore, false, deps?.configuredEmbedder),
+      );
     },
   };
 
@@ -686,7 +716,9 @@ export function createMemoryCommands(
         repo.archive(input.id, ctxToRepoCtx(ctx)),
       );
       if (!result.ok) return result;
-      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+      return ok(
+        projectMemoryForOutput(result.value, deps?.configStore, false, deps?.configuredEmbedder),
+      );
     },
   };
 
@@ -890,7 +922,9 @@ export function createMemoryCommands(
       if (!result.ok) return result;
       // Operators of this command supplied the vector themselves;
       // echoing it back would just be redundant payload.
-      return ok(projectMemoryForOutput(result.value, deps?.configStore, false));
+      return ok(
+        projectMemoryForOutput(result.value, deps?.configStore, false, deps?.configuredEmbedder),
+      );
     },
   };
 
@@ -985,23 +1019,37 @@ export function projectMemoryView(memory: Memory, redact: boolean): MemoryView {
 /**
  * Compute the wire-level `embeddingStatus` projection field.
  *
- * The embedder runs asynchronously after a write (or as a
- * dedicated reembed pass), so a freshly-created memory typically
- * has `embedding === null` for a beat or two. Without this field
- * an assistant reading the write response would have to guess
- * whether `null` means "not computed yet," "embedder is off," or
- * "this command stripped the vector for payload size."
+ * Four states, in order of "is this row searchable via the
+ * vector arm?":
  *
- * Pure projection. No I/O. The vector-enabled signal comes from
- * the live `ConfigStore` — reembedding-after-config-flip is
- * outside this command's frame and is handled by `embedding
- * rebuild`.
+ * - `'present'` — embedding row exists AND its `model` /
+ *   `dimension` match the configured embedder. The vector arm
+ *   will use it.
+ * - `'stale'` — embedding row exists but its `model` /
+ *   `dimension` mismatch the configured embedder. The vector
+ *   arm skips it; `memento embedding rebuild` re-embeds it on
+ *   the next pass. Only emitted when `configuredEmbedder` is
+ *   supplied (hosts without an active embedder can't compute
+ *   staleness — there's nothing to compare against).
+ * - `'pending'` — no embedding row yet, but
+ *   `retrieval.vector.enabled` is true. Common for milliseconds
+ *   after a write while the async embed pipeline catches up.
+ * - `'disabled'` — `retrieval.vector.enabled` is false. The
+ *   vector arm is off; the row will be searched by FTS only.
+ *
+ * Pure projection — no I/O. The vector-enabled signal comes
+ * from the live `ConfigStore`; the staleness check uses the
+ * same helper (`isEmbeddingFresh`) the bulk re-embed driver
+ * uses, so the two never drift on what counts as fresh.
  */
 export function computeEmbeddingStatus(
   memory: Pick<Memory, 'embedding'>,
   configStore: ConfigStore | undefined,
-): 'present' | 'pending' | 'disabled' {
-  if (memory.embedding !== null) return 'present';
+  configuredEmbedder?: { readonly model: string; readonly dimension: number },
+): 'present' | 'stale' | 'pending' | 'disabled' {
+  if (memory.embedding !== null) {
+    return isEmbeddingFresh(memory.embedding, configuredEmbedder) ? 'present' : 'stale';
+  }
   const vectorEnabled = configStore?.get('retrieval.vector.enabled') ?? false;
   return vectorEnabled ? 'pending' : 'disabled';
 }
@@ -1023,8 +1071,9 @@ function projectMemoryForOutput(
   memory: Memory,
   configStore: ConfigStore | undefined,
   includeEmbedding: boolean,
+  configuredEmbedder?: { readonly model: string; readonly dimension: number },
 ): Memory {
-  const embeddingStatus = computeEmbeddingStatus(memory, configStore);
+  const embeddingStatus = computeEmbeddingStatus(memory, configStore, configuredEmbedder);
   if (includeEmbedding) {
     return { ...memory, embeddingStatus };
   }

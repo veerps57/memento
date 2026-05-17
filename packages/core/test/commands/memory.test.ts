@@ -55,6 +55,15 @@ const fixedClock = '2025-01-01T00:00:00.000Z';
 
 async function fixture(opts?: {
   configOverrides?: Parameters<typeof createConfigStore>[0];
+  /**
+   * Optional `{model, dimension}` of the host's active embedder.
+   * When supplied, `computeEmbeddingStatus` distinguishes
+   * `'present'` (model + dim match a stored embedding) from
+   * `'stale'` (mismatch). When omitted, embedded rows fall
+   * back to `'present'` regardless of model — the legacy
+   * "no host embedder wired" semantics.
+   */
+  configuredEmbedder?: { readonly model: string; readonly dimension: number };
 }): Promise<{
   repo: MemoryRepository;
   byName: Map<string, AnyCommand>;
@@ -69,7 +78,12 @@ async function fixture(opts?: {
     eventIdFactory: counterFactory('E0'),
   });
   const configStore = createConfigStore(opts?.configOverrides);
-  const commands = createMemoryCommands(repo, undefined, { configStore });
+  const commands = createMemoryCommands(repo, undefined, {
+    configStore,
+    ...(opts?.configuredEmbedder !== undefined
+      ? { configuredEmbedder: opts.configuredEmbedder }
+      : {}),
+  });
   const byName = new Map(commands.map((c) => [c.name, c]));
   return { repo, byName, configStore };
 }
@@ -452,6 +466,90 @@ describe('createMemoryCommands', () => {
       if (!writeRes.ok) return;
       expect(writeRes.value.embedding).toBeNull();
       expect(writeRes.value.embeddingStatus).toBe('pending');
+    });
+
+    it('read returns embeddingStatus=stale when the stored embedding mismatches the configured embedder', async () => {
+      // Simulates the post-model-swap case: a memory was embedded
+      // with `bge-small` (dim 384) and the host has since been
+      // reconfigured to `bge-base` (dim 768). The row still has
+      // a vector, but the vector arm of search would skip it
+      // until `embedding.rebuild` re-embeds against the new
+      // provider. The wire-level status must call this out so
+      // dashboards (and assistants) can surface "X rows need
+      // rebuilding".
+      //
+      // We plant the stale vector via the repository directly to
+      // bypass `memory.set_embedding`'s configured-embedder
+      // validation — the command layer correctly rejects a
+      // post-swap mismatched write, so we go around it to get
+      // the row we want.
+      const { byName, repo } = await fixture({
+        configuredEmbedder: { model: 'bge-base-en-v1.5', dimension: 768 },
+      });
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+      await repo.setEmbedding(
+        writeRes.value.id,
+        {
+          model: 'bge-small-en-v1.5',
+          dimension: 384,
+          vector: Array.from({ length: 384 }, (_, i) => i / 384),
+        },
+        ctx,
+      );
+
+      const read = await executeCommand(get(byName, 'memory.read'), { id: writeRes.value.id }, ctx);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.value?.embeddingStatus).toBe('stale');
+
+      // A matching-provider write is `'present'` from the same
+      // fixture — sanity check that the staleness path is not
+      // a degenerate "always stale" bug.
+      const writeFresh = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeFresh.ok) throw new Error('seed failed');
+      await executeCommand(
+        get(byName, 'memory.set_embedding'),
+        {
+          id: writeFresh.value.id,
+          model: 'bge-base-en-v1.5',
+          dimension: 768,
+          vector: Array.from({ length: 768 }, (_, i) => i / 768),
+        },
+        ctx,
+      );
+      const readFresh = await executeCommand(
+        get(byName, 'memory.read'),
+        { id: writeFresh.value.id },
+        ctx,
+      );
+      expect(readFresh.ok && readFresh.value?.embeddingStatus).toBe('present');
+    });
+
+    it('embeddingStatus falls back to present when no configured embedder is supplied (legacy host shape)', async () => {
+      // `MemoryCommandDeps.configuredEmbedder` is optional; hosts
+      // that do not wire a provider (test fixtures, the doc
+      // generator, a process that adopted a db without an
+      // embedder) get the pre-staleness behaviour — every
+      // non-null embedding row reads as `'present'`. Otherwise
+      // every embedded row in those hosts would suddenly read
+      // as `'stale'` with no remediation path (there's no
+      // provider to rebuild against).
+      const { byName } = await fixture();
+      const writeRes = await executeCommand(get(byName, 'memory.write'), writeInput, ctx);
+      if (!writeRes.ok) throw new Error('seed failed');
+      await executeCommand(
+        get(byName, 'memory.set_embedding'),
+        {
+          id: writeRes.value.id,
+          model: 'some-historical-model',
+          dimension: 3,
+          vector: [0.1, 0.2, 0.3],
+        },
+        ctx,
+      );
+      const read = await executeCommand(get(byName, 'memory.read'), { id: writeRes.value.id }, ctx);
+      expect(read.ok && read.value?.embeddingStatus).toBe('present');
     });
 
     it('read defaults to stripped output; opts back in via includeEmbedding=true', async () => {

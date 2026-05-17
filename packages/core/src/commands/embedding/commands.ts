@@ -12,7 +12,12 @@ import { repoErrorToMementoError } from '../errors.js';
 import type { AnyCommand, Command } from '../types.js';
 import { EmbeddingRebuildInputSchema } from './inputs.js';
 
-const SURFACES = ['mcp', 'cli'] as const;
+// `embedding.rebuild` is dashboard-surfaced so the
+// `/memory` page can trigger a rebuild when stale rows
+// are present (the wire-level `embeddingStatus: 'stale'`
+// projection surfaces the candidates; this command is the
+// remediation).
+const SURFACES = ['mcp', 'cli', 'dashboard'] as const;
 
 const ReembedSkipOutputSchema = z
   .object({
