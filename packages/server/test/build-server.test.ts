@@ -21,6 +21,9 @@
 //      `MementoError` on `_meta.error`. Unknown tools resolve
 //      the same way.
 
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
@@ -33,6 +36,7 @@ import { err, ok } from '@psraghuveer/memento-schema';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { buildMementoServer } from '../src/build-server.js';
+import { MEMENTO_INSTRUCTIONS } from '../src/instructions.js';
 
 const ctx: CommandContext = { actor: { type: 'cli' } };
 
@@ -409,6 +413,88 @@ describe('buildMementoServer', () => {
     expect(client.getServerVersion()).toEqual({
       name: 'memento-test',
       version: '9.9.9',
+    });
+  });
+
+  describe('initialize instructions (ADR-0026)', () => {
+    it('emits the canonical MEMENTO_INSTRUCTIONS spine by default', async () => {
+      const server = buildMementoServer({ registry: buildTestRegistry(), ctx });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: 'test-client', version: '0.0.0' });
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      expect(client.getInstructions()).toBe(MEMENTO_INSTRUCTIONS);
+    });
+
+    it('replaces the spine when info.instructions is supplied', async () => {
+      const override = 'Custom org addendum only — replaces spine entirely.';
+      const server = buildMementoServer({
+        registry: buildTestRegistry(),
+        ctx,
+        info: { name: 'memento-test', version: '9.9.9', instructions: override },
+      });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: 'test-client', version: '0.0.0' });
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      expect(client.getInstructions()).toBe(override);
+    });
+
+    it('spine names the binding tools, surfaces, and rules an assistant needs at session start', () => {
+      // The spine's job is to teach an assistant — without the
+      // skill — what to call and what to avoid. Pin the tools and
+      // rules the assistant must see in the first system-prompt
+      // injection so a casual rewrite cannot quietly drop them.
+      const required = [
+        'get_memory_context',
+        'info_system',
+        'write_memory',
+        'extract_memory',
+        'confirm_memory',
+        'supersede_memory',
+        'topic: value',
+        'safety.requireTopicLine',
+        'secrets',
+      ];
+      for (const phrase of required) {
+        expect(MEMENTO_INSTRUCTIONS).toContain(phrase);
+      }
+    });
+
+    it('does not drift from skills/memento/SKILL.md (the load-on-intent enrichment surface)', () => {
+      // ADR-0026 commits the spine and the skill to teach the
+      // same binding rules. The phrasing differs (the skill is
+      // long-form), but every rule a session-start spine emits
+      // must also appear in the skill that loads on intent — a
+      // contradiction between the two would surface as
+      // assistant-side confusion that's hard to debug.
+      //
+      // Read the SKILL.md from the repo root via a relative walk
+      // up from this test file. Falls back gracefully if the
+      // repo layout changes — we'd rather skip than fail with a
+      // confusing message about an unrelated layout change.
+      const here = path.dirname(fileURLToPath(import.meta.url));
+      const skillPath = path.resolve(here, '..', '..', '..', 'skills', 'memento', 'SKILL.md');
+      let skill: string;
+      try {
+        skill = readFileSync(skillPath, 'utf8');
+      } catch {
+        // Skip gracefully in environments where the repo root
+        // isn't reachable (e.g. a packed tarball test run).
+        return;
+      }
+      // These are the binding rules. Phrasing tolerant: we look
+      // for the load-bearing nouns / verbs, not exact wording.
+      const bindingRules = [
+        'get_memory_context',
+        'confirm_memory',
+        'supersede_memory',
+        'topic: value',
+        'extract_memory',
+      ];
+      for (const rule of bindingRules) {
+        expect(skill, `SKILL.md missing binding rule "${rule}" referenced by the spine`).toContain(
+          rule,
+        );
+      }
     });
   });
 

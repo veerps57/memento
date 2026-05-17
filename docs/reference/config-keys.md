@@ -8,7 +8,7 @@ The defaults below are the values the runtime starts with when no override is pr
 
 Keys marked **immutable** may not be changed after server start — `config.set` against them returns an `IMMUTABLE` error.
 
-Total: 99 keys.
+Total: 100 keys.
 
 ## `decay.*`
 
@@ -161,7 +161,8 @@ Total: 99 keys.
 | `extraction.defaultConfidence` | `0.8` | yes | Default `storedConfidence` for memories written via `memory.extract`. Lower than manual writes so extracted memories decay faster. |
 | `extraction.autoTag` | `"source:extracted"` | yes | Tag automatically added to memories written via `memory.extract`. Empty string to disable. |
 | `extraction.maxCandidatesPerCall` | `20` | yes | Maximum number of candidates accepted by a single `memory.extract` call. |
-| `extraction.processing` | `"async"` | yes | Processing mode for `memory.extract`. `async` (default) returns a receipt immediately and processes in background; `sync` blocks until all candidates are processed and returns the full results. |
+| `extraction.processing` | `"auto"` | yes | Processing mode for `memory.extract`. `auto` (default) runs sync when `candidates.length <= extraction.syncThreshold`, async above. `sync` blocks until all candidates are processed; `async` returns a receipt immediately and processes in background. The response carries a `mode` field (`"sync"` or `"async"`) that callers can branch on without reading config. |
+| `extraction.syncThreshold` | `10` | yes | Candidate-count cutoff for `auto` mode in `memory.extract`. Batches at or below this run synchronously; larger batches go to background. Ignored when `extraction.processing` is `sync` or `async`. Default 10 covers typical session-end sweeps; raise it on hosts with stronger embedding throughput. |
 
 ## `context.*`
 

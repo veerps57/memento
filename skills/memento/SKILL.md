@@ -57,24 +57,23 @@ Call `extract_memory` with a batch of candidates for anything durable that came 
 
 When in doubt, include the candidate. The server is the gatekeeper, not you.
 
-**The candidate shape is different from `write_memory`.** `extract_memory` uses a flat candidate: `kind` is a plain string, `rationale` and `language` are top-level fields. `write_memory` uses a discriminated-union object (`kind: {type: "decision", rationale: "..."}`). Copying the write shape into an extract candidate produces `INVALID_INPUT` and rejects the entire batch, not just the offending item.
+**The candidate shape is identical to `write_memory` (ADR-0027).** `kind` is a discriminated-union object on both surfaces — one shape to learn. Per-kind fields (`rationale` on `decision`, `language` on `snippet`) live INSIDE the kind object, never as top-level siblings.
 
 ```json
 {
   "candidates": [
-    {"kind": "preference", "content": "node-package-manager: pnpm\n\nRaghu prefers pnpm over npm for Node projects."},
-    {"kind": "fact", "content": "The staging cluster lives at gke-staging."},
-    {"kind": "decision",
-     "content": "storage-engine: SQLite\n\nChosen for the single-file local-first story.",
-     "rationale": "No daemon, FTS5 built in, prebuilt binaries on every common platform."},
-    {"kind": "snippet", "content": "memento read <id>", "language": "shell"}
+    {"kind": {"type": "preference"}, "content": "node-package-manager: pnpm\n\nRaghu prefers pnpm over npm for Node projects."},
+    {"kind": {"type": "fact"}, "content": "The staging cluster lives at gke-staging."},
+    {"kind": {"type": "decision", "rationale": "No daemon, FTS5 built in, prebuilt binaries on every common platform."},
+     "content": "storage-engine: SQLite\n\nChosen for the single-file local-first story."},
+    {"kind": {"type": "snippet", "language": "shell"}, "content": "memento read <id>"}
   ]
 }
 ```
 
-Same `topic: value\n\nprose` rule applies to `preference` and `decision` candidates inside `extract_memory` as for `write_memory`. The conflict detector parses the first line; an offending candidate fails validation for the whole batch.
+The same `topic: value\n\nprose` rule applies to `preference` and `decision` candidates as for `write_memory`. The conflict detector parses the first line; the server rejects offending writes with `INVALID_INPUT` (governed by `safety.requireTopicLine`, default true). The whole batch is rejected on the first offending candidate, not just the bad item.
 
-`extract_memory` returns a `mode` field: `'sync'` means the response arrays are authoritative (you can tell the user "I saved 3 things and skipped 1 duplicate" directly); `'async'` (the default per `extraction.processing` config) means the server accepted the batch and is processing in background — the response will look empty (`written: [], skipped: [], superseded: []`) but a `hint` field tells you what to do next, and the work lands as memories within ~1–5 seconds. Don't retry on an async response — it's a fire-and-forget receipt, not an error.
+`extract_memory` returns a `mode` field: `'sync'` means the response arrays are authoritative (you can tell the user "I saved 3 things and skipped 1 duplicate" directly). `'async'` means the server accepted the batch and is processing in background — the response will be empty (`written: [], skipped: [], superseded: []`) with a `hint` field telling you what to do next; work lands as memories within ~1–5 seconds. The default config is `extraction.processing: 'auto'` (sync for batches ≤ `extraction.syncThreshold`, default 10; async above). Don't retry on an async response — it's a fire-and-forget receipt, not an error.
 
 ### Distillation craft: preserve specifics, bias toward inclusion
 
@@ -221,10 +220,10 @@ When the four most-touched judgement calls come up, fall back to these one-line 
 | --- | --- | --- |
 | User explicitly states one durable thing ("remember X"). | `write_memory` | One round-trip. Explicit attribution. Synchronous — the response is the receipt. |
 | User explicitly states several durable things in one breath ("remember A, B, and C"). | N × `write_memory` (sequential) | Each is independently true; one failing shouldn't roll the others back. Prefer this over `write_many_memories` unless you actually need atomicity. |
-| End-of-session sweep — things the user mentioned in passing but didn't say "remember". | `extract_memory` | Server dedups, scrubs, lowers confidence (0.8). Async by default — the response arrays will be empty by design; the work lands within ~1–5 s. **Candidate shape is flat (`kind: "fact"`), unlike write_memory's nested kind object.** |
-| Bulk-loading from a paste / doc / migration where atomicity matters. | `write_many_memories` | Programmatic surface — rare in normal AI use; reach for it only when you genuinely need "all-or-nothing" semantics. Same nested `kind` shape as `write_memory`. |
+| End-of-session sweep — things the user mentioned in passing but didn't say "remember". | `extract_memory` | Server dedups, scrubs, lowers confidence (0.8). Default `extraction.processing: 'auto'` runs sync for ≤10 candidates (response arrays are authoritative) and async above (response arrays empty, work lands in ~1–5 s). |
+| Bulk-loading from a paste / doc / migration where atomicity matters. | `write_many_memories` | Programmatic surface — rare in normal AI use; reach for it only when you genuinely need "all-or-nothing" semantics. |
 
-**Common confusion**: `write_memory` and `extract_memory` accept different candidate shapes for the same conceptual fields. Write uses a discriminated-union `kind`; extract uses a flat `kind` string with `rationale` / `language` at the top level. The tool descriptions in `tools/list` spell this out — if you're unsure, check them before composing the payload.
+All four tools share one candidate shape (ADR-0027): `kind` is a discriminated-union object, with per-kind fields (`rationale`, `language`) nested inside. No shape-divergence to memorise.
 
 ### Which kind?
 

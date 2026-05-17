@@ -14,15 +14,21 @@ Memento is one place where that memory lives. It runs an [MCP](https://modelcont
 
 ## Quickstart
 
-Three steps from zero to a working memory layer:
+Two steps from zero to a working memory layer:
 
-### 1. Initialize Memento
+### 1. Run `init` (interactive on a TTY)
 
 ```bash
 npx @psraghuveer/memento init
 ```
 
-Creates the database under the XDG default (`$XDG_DATA_HOME/memento/memento.db`, typically `~/.local/share/memento/memento.db` on POSIX), runs migrations, and prints copy-paste MCP snippets for every supported client. Idempotent — re-run any time to reprint the snippets.
+Creates the database under the XDG default (`$XDG_DATA_HOME/memento/memento.db`, typically `~/.local/share/memento/memento.db` on POSIX), runs migrations, and — on a TTY — walks you through three one-keystroke setup questions:
+
+- **Your preferred name.** Stored as the `user.preferredName` config key so memories read "Raghu prefers …" instead of "The user prefers …".
+- **Install the bundled skill?** One y/N. Copies [`skills/memento/`](skills/memento/SKILL.md) into `~/.claude/skills/` for clients that load Anthropic-format skills.
+- **Seed with a starter pack?** Pick one of four bundled packs (`engineering-simplicity`, `pragmatic-programmer`, `twelve-factor-app`, `google-sre`) so your store has useful memories on day one. Skip to start empty.
+
+Then prints copy-paste MCP snippets for every supported client. Idempotent — re-run any time to reprint the snippets and re-ask anything you skipped. Pass `--no-prompt` to suppress the interactive flow (CI, scripts).
 
 ### 2. Connect your AI client
 
@@ -30,14 +36,9 @@ Creates the database under the XDG default (`$XDG_DATA_HOME/memento/memento.db`,
 
 The full per-client walkthrough lives in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md).
 
-### 3. Teach your assistant when to use Memento
+That's it. Memento's MCP server emits a [session-start teaching spine](packages/server/src/instructions.ts) on every `initialize` handshake (ADR-0026), so every spec-compliant client gets the contract — when to load context, when to write, when to confirm — injected into the assistant's system prompt with no further wiring. The bundled skill (if installed) layers on the deeper distillation curriculum when the user's intent triggers it; the persona snippet in [docs/guides/teach-your-assistant.md](docs/guides/teach-your-assistant.md) is the fallback for the rare client that honours neither.
 
-Memento exposes the MCP tools, but the assistant still needs to know *when* to call them. Two paths, depending on your client:
-
-- **If your client loads Anthropic-format skills:** install the bundled [Memento skill](skills/memento/SKILL.md). One `cp -R` command, printed by `init`, copies it into `~/.claude/skills/` — the path most skill-capable clients read from. (A few use a client-specific directory; check your client's docs and re-target the `cp` if the skill doesn't pick up after a restart.) Restart the client; the skill auto-loads on intent match.
-- **If your client doesn't support skills:** paste the persona snippet from [docs/guides/teach-your-assistant.md](docs/guides/teach-your-assistant.md) into your client's persona file (`.cursorrules`, custom system prompt, etc.).
-
-That's it. Verify with `npx @psraghuveer/memento doctor --mcp` (scans known client configs and flags shape mismatches) and try a fresh session: *"Remember that I prefer pnpm over npm for Node projects."* In the next session, ask *"What's my preferred package manager?"* and the assistant should recall it without you re-explaining.
+Verify the whole loop end-to-end with `npx @psraghuveer/memento verify-setup` — it round-trips a write/search/cleanup through the MCP transport and confirms your assistant can actually use Memento. Then try a fresh session: *"Remember that I prefer pnpm over npm for Node projects."* In the next session, ask *"What's my preferred package manager?"* and the assistant should recall it without you re-explaining.
 
 ## Seed your store with a pack
 
@@ -169,6 +170,6 @@ Memento is a small workspace of focused packages. The architecture is documented
 | [`@psraghuveer/memento-core`](packages/core)                     | Storage and migrations, memory + event repositories, scope resolver, scrubber, decay engine with `compact` archival pass, conflict detection + supersession workflow, embedding hook + bulk re-embed driver, `EmbeddingProvider` interface, FTS + brute-force vector retrieval pipeline + ranker, and the command registry with validating execute path (ADR 0003).    |
 | [`@psraghuveer/memento-server`](packages/server)                 | MCP adapter — `buildMementoServer` projects the `@psraghuveer/memento-core` command registry as MCP tools; `serveStdio` wires it to stdio. Used by `memento serve`.                                                                                                                                                                                                                |
 | [`@psraghuveer/memento-embedder-local`](packages/embedder-local) | Local `EmbeddingProvider` backed by transformers.js + `bge-base-en-v1.5`. Ships as a regular dependency; lazy single-flight init downloads the model on first use. See ADR [0006](docs/adr/0006-local-embeddings-only-in-v1.md).                                                                                                             |
-| [`@psraghuveer/memento`](packages/cli) (CLI)         | The published `memento` binary (`npx @psraghuveer/memento` or `npm i -g @psraghuveer/memento`). Lifecycle commands (`init`, `serve`, `dashboard`, `context`, `doctor`, `status`, `ping`, `backup`, `export`, `import`, `pack`, `store migrate`, `completions`, `explain`, `skill-path`, `uninstall`) plus a generic projection of the registry surface (`memento <namespace> <verb>`). See [docs/reference/cli.md](docs/reference/cli.md).                                                                              |
+| [`@psraghuveer/memento`](packages/cli) (CLI)         | The published `memento` binary (`npx @psraghuveer/memento` or `npm i -g @psraghuveer/memento`). Lifecycle commands (`init`, `serve`, `dashboard`, `context`, `doctor`, `verify-setup`, `status`, `ping`, `backup`, `export`, `import`, `pack`, `store migrate`, `completions`, `explain`, `skill-path`, `uninstall`) plus a generic projection of the registry surface (`memento <namespace> <verb>`). See [docs/reference/cli.md](docs/reference/cli.md).                                                                              |
 | [`@psraghuveer/memento-dashboard`](packages/dashboard) | Local-first web dashboard. Hono server in-process with the engine + Vite-built React SPA. Launched by `memento dashboard`; binds `127.0.0.1` only. See [ADR-0018](docs/adr/0018-dashboard-package.md) and [docs/guides/dashboard.md](docs/guides/dashboard.md). |
 | [`@psraghuveer/memento-landing`](packages/landing) | Marketing landing page. Static SPA, deployed to GitHub Pages on every push to main that touches `packages/landing/**`. Mirrors the dashboard's design tokens; light/dark toggle. Private (not published to npm). |

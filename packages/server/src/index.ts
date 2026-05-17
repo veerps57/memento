@@ -12,4 +12,5 @@ export {
   type BuildMementoServerOptions,
   type ServerInfo,
 } from './build-server.js';
+export { MEMENTO_INSTRUCTIONS } from './instructions.js';
 export { serveStdio } from './serve-stdio.js';

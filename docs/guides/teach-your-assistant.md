@@ -2,15 +2,23 @@
 
 Memento exposes a set of MCP tools (`write_memory`, `search_memory`, `confirm_memory`, `get_memory_context`, etc.) but it does not, by itself, teach an AI assistant *when* to use them. That part is up to you.
 
-This guide is a starter pack of prompt fragments you can drop into your assistant's persona file (`CLAUDE.md`, `.cursorrules`, `copilot-instructions.md`, OpenCode prompt, custom system prompt) so the assistant uses Memento well from the first conversation.
+There are three teaching surfaces, in priority order. **You only need the first one** — the others are enrichment for clients that load them.
+
+## 1. Server-emitted `instructions` (every client, automatic) — ADR-0026
+
+Memento's MCP server returns a ~60-line `instructions` string on the `initialize` handshake. Every spec-compliant MCP client (Claude Code, Claude Desktop, Cursor, VS Code Agent, OpenCode, Cline, …) injects this string into the assistant's system prompt verbatim, with no user action. You wired this when you pasted the MCP-server snippet from `memento init`.
+
+The spine covers the session-start contract: when to load context, when to write, when to confirm, when to supersede, the `topic: value` first-line rule, the silent-plumbing rule, and the secrets prohibition. If your client honours the field, your assistant already has the contract. The canonical text lives in [`packages/server/src/instructions.ts`](../../packages/server/src/instructions.ts) — operators who want to override it can pass `info.instructions` when constructing the server, or prepend / append their own addendum via string concatenation.
+
+## 2. The bundled skill (Anthropic-format clients, on-intent) — load-on-demand enrichment
+
+If your AI client loads [Anthropic-format skills](https://docs.claude.com/en/docs/agents/skills), install [`skills/memento/`](../../skills/memento/SKILL.md). The skill carries the deeper distillation curriculum — named-participant attribution, dated-event capture, precursor-action capture, kind / scope decision trees, the worked end-to-end example — that does not need to load every session. `memento init` will prompt to install the skill into `~/.claude/skills/` interactively; you can also run `cp -R "$(npx -y @psraghuveer/memento skill-path)" ~/.claude/skills/` by hand. Most skill-capable clients read from `~/.claude/skills/<name>/SKILL.md`; a few use a client-specific path (check your client's skill docs and re-target the install if the skill doesn't pick up after a restart). See [`skills/README.md`](../../skills/README.md) for install detail.
+
+## 3. The persona snippet (last resort, clients that load neither) — manual paste
+
+A handful of clients honour neither the MCP `instructions` field nor Anthropic-format skills. For those, the persona snippet below is the supported alternative. Paste it into the client's persona file (`CLAUDE.md`, `.cursorrules`, `copilot-instructions.md`, OpenCode prompt, custom system prompt). It mirrors the spine — kept here so you can paste-and-forget rather than discovering the rules empirically.
 
 The fragments below are deliberately short and opinionated. Adapt them to your usage.
-
-## Shortcut: use the bundled skill
-
-If your AI client loads [Anthropic-format skills](https://docs.claude.com/en/docs/agents/skills), install [`skills/memento/`](../../skills/memento/SKILL.md) and you can skip most of this guide. Most skill-capable clients read user-scope skills from `~/.claude/skills/<name>/SKILL.md`; a few use a client-specific path (check your client's skill docs and re-target the install if the skill doesn't pick up after a restart). The skill encodes the same rules as this doc, loads automatically on intent match, and stays versioned with the rest of Memento. See [`skills/README.md`](../../skills/README.md) for install steps.
-
-For clients that don't load skills, the persona snippet below is the supported alternative.
 
 ## Core directive
 
@@ -250,22 +258,22 @@ memory; treat chat as ephemeral.
   candidates for anything worth remembering that wasn't written
   explicitly during the conversation. The server deduplicates
   automatically — when in doubt, include it. The default
-  configuration is async: the response will be `{written:[],
-  skipped:[], superseded:[], mode:"async", batchId, hint, status:
-  "accepted"}` — that is the receipt, not a failure. Writes land
-  as memories within seconds; do not retry.
-- `extract_memory`'s candidate shape is **flat** — `kind` is a
-  string (`"kind":"fact"`) and `rationale` / `language` are
-  top-level fields. This differs from `write_memory`, which uses
-  a discriminated-union `kind` object (`"kind":{"type":"fact"}`)
-  with those fields nested inside. Copying the write_memory shape
-  into an extract candidate produces `INVALID_INPUT` and rejects
-  the whole batch.
+  configuration is `auto` (ADR-0027): batches of ≤10 candidates
+  run sync (the response arrays are authoritative); larger
+  batches go async (response arrays empty, work lands in
+  ~1–5 s). The `mode` field on the response discriminates.
+- `write_memory` and `extract_memory` share one candidate shape
+  (ADR-0027): `kind` is a discriminated-union object, with
+  per-kind fields nested inside. Use
+  `{"type":"fact"}`, `{"type":"preference"}`,
+  `{"type":"decision","rationale":"..."}`,
+  `{"type":"todo","due":null}`,
+  `{"type":"snippet","language":"shell"}`.
 - For preferences and decisions, start `content` with a single
   `topic: value` line followed by prose. Conflict detection
-  parses that line; without it, contradictory preferences
-  silently coexist. The same rule applies to both `write_memory`
-  and `extract_memory`.
+  parses that line; the server rejects offending writes with
+  `INVALID_INPUT` (governed by `safety.requireTopicLine`,
+  default true).
 - Distillation is **retrieval indexing**, not summarisation. The
   future question may ask about any specific date, named entity,
   proper noun, action, or object that came up — index every

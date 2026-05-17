@@ -648,7 +648,7 @@ describe('reserved tag enforcement', () => {
       {
         candidates: [
           {
-            kind: 'fact',
+            kind: { type: 'fact' },
             content: 'attempt',
             tags: ['pack:forged:1.0.0'],
           },

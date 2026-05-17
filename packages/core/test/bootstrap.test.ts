@@ -348,7 +348,7 @@ describe('createMementoApp', () => {
     const result = await executeCommand(
       extract,
       {
-        candidates: [{ kind: 'fact', content: 'extracted fact for embed test' }],
+        candidates: [{ kind: { type: 'fact' }, content: 'extracted fact for embed test' }],
       },
       ctx,
     );

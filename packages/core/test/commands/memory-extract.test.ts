@@ -78,8 +78,8 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: 'User prefers dark mode' },
-          { kind: 'preference', content: 'Always use pnpm' },
+          { kind: { type: 'fact' }, content: 'User prefers dark mode' },
+          { kind: { type: 'preference' }, content: 'Always use pnpm' },
         ],
       },
       ctx,
@@ -110,7 +110,7 @@ describe('memory.extract', () => {
       const { command } = await fixture({ 'extraction.processing': 'async' });
       const result = await executeCommand(
         command,
-        { candidates: [{ kind: 'fact', content: 'Some durable fact' }] },
+        { candidates: [{ kind: { type: 'fact' }, content: 'Some durable fact' }] },
         ctx,
       );
       expect(result.ok).toBe(true);
@@ -129,7 +129,7 @@ describe('memory.extract', () => {
       const { command } = await fixture({ 'extraction.processing': 'async' });
       const result = await executeCommand(
         command,
-        { candidates: [{ kind: 'fact', content: 'preview only' }], dryRun: true },
+        { candidates: [{ kind: { type: 'fact' }, content: 'preview only' }], dryRun: true },
         ctx,
       );
       expect(result.ok).toBe(true);
@@ -139,11 +139,89 @@ describe('memory.extract', () => {
     });
   });
 
+  // ADR-0027: the new `auto` mode (default) picks sync for small
+  // batches (≤ `extraction.syncThreshold`) and async above. This
+  // removes the "empty-arrays receipt looks like a failure" UX
+  // for typical session-end sweeps while keeping the always-async
+  // option for operators with large batches.
+  describe('auto mode (ADR-0027)', () => {
+    it('runs sync when batch is at or below extraction.syncThreshold', async () => {
+      const { command } = await fixture({
+        'extraction.processing': 'auto',
+        'extraction.syncThreshold': 3,
+      });
+      const result = await executeCommand(
+        command,
+        {
+          candidates: [
+            { kind: { type: 'fact' }, content: 'one' },
+            { kind: { type: 'fact' }, content: 'two' },
+            { kind: { type: 'fact' }, content: 'three' },
+          ],
+        },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.mode).toBe('sync');
+      expect(result.value.written.length).toBe(3);
+      expect(result.value.batchId).toBeUndefined();
+    });
+
+    it('switches to async when batch exceeds extraction.syncThreshold', async () => {
+      const { command } = await fixture({
+        'extraction.processing': 'auto',
+        'extraction.syncThreshold': 2,
+      });
+      const result = await executeCommand(
+        command,
+        {
+          candidates: [
+            { kind: { type: 'fact' }, content: 'one' },
+            { kind: { type: 'fact' }, content: 'two' },
+            { kind: { type: 'fact' }, content: 'three' },
+          ],
+        },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.mode).toBe('async');
+      expect(result.value.written).toEqual([]);
+      expect(typeof result.value.batchId).toBe('string');
+    });
+
+    it('respects explicit sync override even for large batches', async () => {
+      // An operator who configured `extraction.processing: sync`
+      // wants always-sync regardless of size. The auto cutoff
+      // doesn't override an explicit choice.
+      const { command } = await fixture({
+        'extraction.processing': 'sync',
+        'extraction.syncThreshold': 1,
+      });
+      const result = await executeCommand(
+        command,
+        {
+          candidates: [
+            { kind: { type: 'fact' }, content: 'one' },
+            { kind: { type: 'fact' }, content: 'two' },
+            { kind: { type: 'fact' }, content: 'three' },
+          ],
+        },
+        ctx,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.mode).toBe('sync');
+      expect(result.value.written.length).toBe(3);
+    });
+  });
+
   it('applies autoTag to written memories', async () => {
     const { repo, command } = await fixture();
     const result = await executeCommand(
       command,
-      { candidates: [{ kind: 'fact', content: 'A tagged fact' }] },
+      { candidates: [{ kind: { type: 'fact' }, content: 'A tagged fact' }] },
       ctx,
     );
     expect(result.ok).toBe(true);
@@ -157,7 +235,7 @@ describe('memory.extract', () => {
     const { repo, command } = await fixture({ 'extraction.defaultConfidence': 0.7 });
     const result = await executeCommand(
       command,
-      { candidates: [{ kind: 'fact', content: 'Low confidence fact' }] },
+      { candidates: [{ kind: { type: 'fact' }, content: 'Low confidence fact' }] },
       ctx,
     );
     expect(result.ok).toBe(true);
@@ -170,7 +248,7 @@ describe('memory.extract', () => {
     const { command } = await fixture({ 'extraction.enabled': false });
     const result = await executeCommand(
       command,
-      { candidates: [{ kind: 'fact', content: 'Should fail' }] },
+      { candidates: [{ kind: { type: 'fact' }, content: 'Should fail' }] },
       ctx,
     );
     expect(result.ok).toBe(false);
@@ -184,9 +262,9 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: 'One' },
-          { kind: 'fact', content: 'Two' },
-          { kind: 'fact', content: 'Three' },
+          { kind: { type: 'fact' }, content: 'One' },
+          { kind: { type: 'fact' }, content: 'Two' },
+          { kind: { type: 'fact' }, content: 'Three' },
         ],
       },
       ctx,
@@ -219,8 +297,8 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: 'Existing fact' },
-          { kind: 'fact', content: 'New fact' },
+          { kind: { type: 'fact' }, content: 'Existing fact' },
+          { kind: { type: 'fact' }, content: 'New fact' },
         ],
       },
       ctx,
@@ -248,9 +326,9 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: phrase },
-          { kind: 'fact', content: phrase },
-          { kind: 'fact', content: phrase },
+          { kind: { type: 'fact' }, content: phrase },
+          { kind: { type: 'fact' }, content: phrase },
+          { kind: { type: 'fact' }, content: phrase },
         ],
       },
       ctx,
@@ -274,8 +352,8 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: phrase },
-          { kind: 'preference', content: phrase },
+          { kind: { type: 'fact' }, content: phrase },
+          { kind: { type: 'preference' }, content: phrase },
         ],
       },
       ctx,
@@ -292,9 +370,9 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: 'Same payload, byte-different' },
-          { kind: 'fact', content: 'same payload, byte-different   ' },
-          { kind: 'fact', content: 'SAME PAYLOAD, BYTE-DIFFERENT' },
+          { kind: { type: 'fact' }, content: 'Same payload, byte-different' },
+          { kind: { type: 'fact' }, content: 'same payload, byte-different   ' },
+          { kind: { type: 'fact' }, content: 'SAME PAYLOAD, BYTE-DIFFERENT' },
         ],
       },
       ctx,
@@ -312,9 +390,8 @@ describe('memory.extract', () => {
       {
         candidates: [
           {
-            kind: 'decision',
+            kind: { type: 'decision', rationale: 'Faster, native ESM support' },
             content: 'Use Vitest over Jest',
-            rationale: 'Faster, native ESM support',
           },
         ],
       },
@@ -335,9 +412,8 @@ describe('memory.extract', () => {
       {
         candidates: [
           {
-            kind: 'snippet',
+            kind: { type: 'snippet', language: 'typescript' },
             content: 'const x = 42;',
-            language: 'typescript',
           },
         ],
       },
@@ -355,7 +431,7 @@ describe('memory.extract', () => {
     const result = await executeCommand(
       command,
       {
-        candidates: [{ kind: 'fact', content: 'Should not persist' }],
+        candidates: [{ kind: { type: 'fact' }, content: 'Should not persist' }],
         dryRun: true,
       },
       ctx,
@@ -374,7 +450,7 @@ describe('memory.extract', () => {
     const result = await executeCommand(
       command,
       {
-        candidates: [{ kind: 'fact', content: 'Repo-scoped fact' }],
+        candidates: [{ kind: { type: 'fact' }, content: 'Repo-scoped fact' }],
         scope,
       },
       ctx,
@@ -391,7 +467,11 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: 'Tagged candidate', tags: ['area:infra', 'priority:high'] },
+          {
+            kind: { type: 'fact' },
+            content: 'Tagged candidate',
+            tags: ['area:infra', 'priority:high'],
+          },
         ],
       },
       ctx,
@@ -410,8 +490,8 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: 'First' },
-          { kind: 'fact', content: 'Second' },
+          { kind: { type: 'fact' }, content: 'First' },
+          { kind: { type: 'fact' }, content: 'Second' },
         ],
       },
       ctx,
@@ -437,8 +517,8 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: 'Valid candidate one' },
-          { kind: 'fact', content: 'Valid candidate two' },
+          { kind: { type: 'fact' }, content: 'Valid candidate one' },
+          { kind: { type: 'fact' }, content: 'Valid candidate two' },
         ],
       },
       ctx,
@@ -453,7 +533,9 @@ describe('memory.extract', () => {
     const result = await executeCommand(
       command,
       {
-        candidates: [{ kind: 'fact', content: 'Already tagged', tags: ['source:extracted'] }],
+        candidates: [
+          { kind: { type: 'fact' }, content: 'Already tagged', tags: ['source:extracted'] },
+        ],
       },
       ctx,
     );
@@ -518,9 +600,9 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: 'Fact alpha' },
-          { kind: 'fact', content: 'Fact beta' },
-          { kind: 'fact', content: 'Fact gamma' },
+          { kind: { type: 'fact' }, content: 'Fact alpha' },
+          { kind: { type: 'fact' }, content: 'Fact beta' },
+          { kind: { type: 'fact' }, content: 'Fact gamma' },
         ],
       },
       ctx,
@@ -577,7 +659,7 @@ describe('memory.extract', () => {
     const result = await executeCommand(
       command,
       {
-        candidates: [{ kind: 'fact', content: 'Still works despite embed failure' }],
+        candidates: [{ kind: { type: 'fact' }, content: 'Still works despite embed failure' }],
       },
       ctx,
     );
@@ -616,8 +698,8 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: 'Async fact alpha' },
-          { kind: 'fact', content: 'Async fact beta' },
+          { kind: { type: 'fact' }, content: 'Async fact alpha' },
+          { kind: { type: 'fact' }, content: 'Async fact beta' },
         ],
       },
       ctx,
@@ -663,8 +745,8 @@ describe('memory.extract', () => {
       command,
       {
         candidates: [
-          { kind: 'fact', content: 'Background fact one' },
-          { kind: 'fact', content: 'Background fact two' },
+          { kind: { type: 'fact' }, content: 'Background fact one' },
+          { kind: { type: 'fact' }, content: 'Background fact two' },
         ],
       },
       ctx,
@@ -741,7 +823,9 @@ describe('memory.extract', () => {
 
     const result = await executeCommand(
       command,
-      { candidates: [{ kind: 'fact', content: 'User likes dark themes in all editors' }] },
+      {
+        candidates: [{ kind: { type: 'fact' }, content: 'User likes dark themes in all editors' }],
+      },
       ctx,
     );
     expect(result.ok).toBe(true);
@@ -805,7 +889,7 @@ describe('memory.extract', () => {
 
     const result = await executeCommand(
       command,
-      { candidates: [{ kind: 'fact', content: 'User prefers dark mode' }] },
+      { candidates: [{ kind: { type: 'fact' }, content: 'User prefers dark mode' }] },
       ctx,
     );
     expect(result.ok).toBe(true);
@@ -874,7 +958,11 @@ describe('memory.extract', () => {
 
     const result = await executeCommand(
       command,
-      { candidates: [{ kind: 'decision', content: 'Use TypeScript strict mode' }] },
+      {
+        candidates: [
+          { kind: { type: 'decision', rationale: null }, content: 'Use TypeScript strict mode' },
+        ],
+      },
       ctx,
     );
     expect(result.ok).toBe(true);
@@ -924,7 +1012,7 @@ describe('memory.extract', () => {
     // Should fall back to FTS exact match, find nothing, and write.
     const result = await executeCommand(
       command,
-      { candidates: [{ kind: 'fact', content: 'Fallback test' }] },
+      { candidates: [{ kind: { type: 'fact' }, content: 'Fallback test' }] },
       ctx,
     );
     expect(result.ok).toBe(true);
@@ -954,7 +1042,7 @@ describe('memory.extract', () => {
     const result = await executeCommand(
       command,
       {
-        candidates: [{ kind: 'fact', content: 'Brand new fact' }],
+        candidates: [{ kind: { type: 'fact' }, content: 'Brand new fact' }],
         dryRun: true,
       },
       ctx,
@@ -974,7 +1062,7 @@ describe('memory.extract', () => {
       {
         candidates: [
           {
-            kind: 'preference',
+            kind: { type: 'preference' },
             content: 'User loves dark mode. Free-form prose.',
           },
         ],

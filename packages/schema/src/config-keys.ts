@@ -804,12 +804,28 @@ export const CONFIG_KEYS = {
     mutable: true,
     description: 'Maximum number of candidates accepted by a single `memory.extract` call.',
   }),
+  // ADR-0027: `auto` is the new default. The async receipt
+  // (empty arrays + a hint) was the single most-mistaken response
+  // in the surface — assistants read it as a failure and retried.
+  // `auto` runs sync when the caller's batch is ≤
+  // `extraction.syncThreshold` (default 10, sized for typical
+  // session-end sweeps); larger batches stay async so callers
+  // aren't blocked on N × embedding work. The explicit `sync` and
+  // `async` overrides remain for operators with strict
+  // requirements either way.
   'extraction.processing': defineKey({
-    schema: z.enum(['sync', 'async']),
-    default: 'async' as const,
+    schema: z.enum(['auto', 'sync', 'async']),
+    default: 'auto' as const,
     mutable: true,
     description:
-      'Processing mode for `memory.extract`. `async` (default) returns a receipt immediately and processes in background; `sync` blocks until all candidates are processed and returns the full results.',
+      'Processing mode for `memory.extract`. `auto` (default) runs sync when `candidates.length <= extraction.syncThreshold`, async above. `sync` blocks until all candidates are processed; `async` returns a receipt immediately and processes in background. The response carries a `mode` field (`"sync"` or `"async"`) that callers can branch on without reading config.',
+  }),
+  'extraction.syncThreshold': defineKey({
+    schema: PositiveInt,
+    default: 10,
+    mutable: true,
+    description:
+      'Candidate-count cutoff for `auto` mode in `memory.extract`. Batches at or below this run synchronously; larger batches go to background. Ignored when `extraction.processing` is `sync` or `async`. Default 10 covers typical session-end sweeps; raise it on hosts with stronger embedding throughput.',
   }),
 
   // — Context —

@@ -14,7 +14,7 @@ Memento is one place where that memory lives. It runs an [MCP](https://modelcont
 npx @psraghuveer/memento init
 ```
 
-`init` creates the SQLite database under the XDG default (`$XDG_DATA_HOME/memento/memento.db`, typically `~/.local/share/memento/memento.db` on POSIX), runs migrations, and prints copy-paste MCP snippets for every supported client. Idempotent — re-run any time to reprint the snippets.
+On a TTY, `init` walks you through three one-keystroke setup questions: your preferred display name, whether to install the bundled skill into `~/.claude/skills/`, and whether to seed your store with a starter pack. Then prints copy-paste MCP snippets for every supported client. Idempotent — re-run any time. Pass `--no-prompt` to suppress the interactive flow (CI, scripts).
 
 For a persistent `memento` on your `$PATH` instead of `npx`:
 
@@ -26,13 +26,15 @@ Requires Node.js >= 22.11.
 
 ## Quickstart
 
-Three steps from zero to a working memory layer:
+Two steps from zero to a working memory layer:
 
-### 1. Initialize Memento
+### 1. Run `init`
 
 ```bash
 npx @psraghuveer/memento init
 ```
+
+Creates the SQLite database under the XDG default, runs migrations, walks you through three interactive setup questions on a TTY, and prints copy-paste MCP snippets for every supported client.
 
 ### 2. Connect your AI client
 
@@ -40,15 +42,15 @@ npx @psraghuveer/memento init
 
 Per-client walkthrough: [docs/guides/mcp-client-setup.md](https://github.com/veerps57/memento/blob/main/docs/guides/mcp-client-setup.md).
 
-### 3. Teach your assistant when to use Memento
+That's it. Memento's MCP server emits a [session-start teaching spine](https://github.com/veerps57/memento/blob/main/packages/server/src/instructions.ts) on the `initialize` handshake (ADR-0026) — every spec-compliant MCP client injects it into the assistant's system prompt with no further wiring. The bundled skill (installed during `init`) layers on the deeper distillation curriculum when the client supports Anthropic-format skills. The persona snippet in [teach-your-assistant.md](https://github.com/veerps57/memento/blob/main/docs/guides/teach-your-assistant.md) is the fallback for the rare client that honours neither.
 
-If your client loads Anthropic-format skills, copy the bundled skill into `~/.claude/skills/`:
+Verify the wiring end-to-end:
 
 ```bash
-cp -R "$(npx -y @psraghuveer/memento skill-path)" ~/.claude/skills/
+npx @psraghuveer/memento verify-setup
 ```
 
-If your client doesn't load skills, paste the [persona snippet](https://github.com/veerps57/memento/blob/main/docs/guides/teach-your-assistant.md) into your client's persona file. Without a skill or persona, the assistant has the MCP tools but no instinct to use them.
+This round-trips a write/search/cleanup through the MCP transport and confirms your assistant can actually use Memento.
 
 ## What Memento gives you
 
@@ -72,6 +74,6 @@ Plus: **MCP-native** (standard MCP server over stdio — Claude Desktop, Claude 
 
 ## About this package
 
-The package is `@psraghuveer/memento`; the binary it installs is `memento`. The CLI is a structural mirror of [`@psraghuveer/memento-server`](https://www.npmjs.com/package/@psraghuveer/memento-server) — both are adapters over the [`@psraghuveer/memento-core`](https://www.npmjs.com/package/@psraghuveer/memento-core) command registry; see [ADR-0003](https://github.com/veerps57/memento/blob/main/docs/adr/0003-single-command-registry.md). Lifecycle commands (`init`, `serve`, `dashboard`, `context`, `doctor`, `status`, `ping`, `backup`, `export`, `import`, `pack`, `store migrate`, `completions`, `explain`, `skill-path`, `uninstall`) sit alongside a generic projection of the registry surface (`memento <namespace> <verb>`); the full surface is documented in the [CLI reference](https://github.com/veerps57/memento/blob/main/docs/reference/cli.md).
+The package is `@psraghuveer/memento`; the binary it installs is `memento`. The CLI is a structural mirror of [`@psraghuveer/memento-server`](https://www.npmjs.com/package/@psraghuveer/memento-server) — both are adapters over the [`@psraghuveer/memento-core`](https://www.npmjs.com/package/@psraghuveer/memento-core) command registry; see [ADR-0003](https://github.com/veerps57/memento/blob/main/docs/adr/0003-single-command-registry.md). Lifecycle commands (`init`, `serve`, `dashboard`, `context`, `doctor`, `verify-setup`, `status`, `ping`, `backup`, `export`, `import`, `pack`, `store migrate`, `completions`, `explain`, `skill-path`, `uninstall`) sit alongside a generic projection of the registry surface (`memento <namespace> <verb>`); the full surface is documented in the [CLI reference](https://github.com/veerps57/memento/blob/main/docs/reference/cli.md).
 
 Apache-2.0 licensed. Contributions welcome — see [CONTRIBUTING.md](https://github.com/veerps57/memento/blob/main/CONTRIBUTING.md).

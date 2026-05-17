@@ -34,6 +34,11 @@ const SNAPSHOT = (overrides: Partial<InitSnapshot> = {}): InitSnapshot => ({
     source: '/abs/path/to/skills/memento',
     suggestedTarget: SUGGESTED_TARGET,
   },
+  // ADR-0028: every InitSnapshot carries the per-prompt outcome
+  // shape. `null` on each field models the non-interactive
+  // (print-only / `--no-prompt`) path the existing render
+  // tests cover.
+  prompts: { preferredName: null, installSkill: null, starterPack: null },
   ...overrides,
 });
 
@@ -242,6 +247,196 @@ describe('renderInitText', () => {
       );
       // The cp command's target uses the bare `~`.
       expect(out).toMatch(/cp -R "[^"]+" ~\//);
+    });
+  });
+
+  // ADR-0028: per-prompt outcome rendering. Each outcome branch
+  // produces a distinct line in the "What we just set up" block,
+  // and the skill section is trimmed when the skill is resolved.
+  describe('prompt outcomes (ADR-0028)', () => {
+    it("renders the 'set' preferredName outcome with the value", () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: { kind: 'set', value: 'Raghu' },
+            installSkill: null,
+            starterPack: null,
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('preferred name set to "Raghu"');
+      expect(out).toContain('What we just set up');
+    });
+
+    it("renders the 'skip' preferredName outcome with a how-to-set-later hint", () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: { kind: 'skip' },
+            installSkill: null,
+            starterPack: null,
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('preferred name left unset');
+      expect(out).toContain('user.preferredName');
+    });
+
+    it("renders the 'failed' preferredName outcome with the error message", () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: { kind: 'failed', message: 'invalid name' },
+            installSkill: null,
+            starterPack: null,
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('preferred name not set: invalid name');
+    });
+
+    it("renders the 'installed' skill outcome and trims the skill section", () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: null,
+            installSkill: {
+              kind: 'installed',
+              target: path.join(os.homedir(), '.claude', 'skills'),
+            },
+            starterPack: null,
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('Memento skill installed at');
+      // The detailed "Install with:" copy-paste block is suppressed
+      // when the skill was just installed.
+      expect(out).not.toContain('mkdir -p');
+    });
+
+    it("renders the 'already-current' skill outcome", () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: null,
+            installSkill: {
+              kind: 'already-current',
+              target: path.join(os.homedir(), '.claude', 'skills'),
+            },
+            starterPack: null,
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('Memento skill already up to date');
+    });
+
+    it("renders the 'skip' skill outcome", () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: null,
+            installSkill: { kind: 'skip' },
+            starterPack: null,
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('skill install skipped');
+    });
+
+    it("renders the 'unavailable' skill outcome with the reason", () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: null,
+            installSkill: { kind: 'unavailable', reason: 'no source bundled' },
+            starterPack: null,
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('skill bundle unavailable: no source bundled');
+    });
+
+    it("renders the 'failed' skill outcome with the message", () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: null,
+            installSkill: { kind: 'failed', message: 'permission denied' },
+            starterPack: null,
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('skill install failed: permission denied');
+    });
+
+    it("renders the 'installed' starter-pack outcome with the count", () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: null,
+            installSkill: null,
+            starterPack: { kind: 'installed', packId: 'engineering-simplicity', itemCount: 11 },
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('starter pack `engineering-simplicity` installed (11 memories)');
+    });
+
+    it('pluralises the starter-pack count line correctly for 1 memory', () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: null,
+            installSkill: null,
+            starterPack: { kind: 'installed', packId: 'tiny-pack', itemCount: 1 },
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('1 memory');
+      expect(out).not.toContain('1 memories');
+    });
+
+    it("renders the 'skip' starter-pack outcome", () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: null,
+            installSkill: null,
+            starterPack: { kind: 'skip' },
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('starter pack declined');
+    });
+
+    it("renders the 'failed' starter-pack outcome with packId + message", () => {
+      const out = renderInitText(
+        SNAPSHOT({
+          prompts: {
+            preferredName: null,
+            installSkill: null,
+            starterPack: { kind: 'failed', packId: 'broken-pack', message: 'embed timeout' },
+          },
+        }),
+        { color: false },
+      );
+      expect(out).toContain('pack install failed (`broken-pack`): embed timeout');
+    });
+
+    it('suppresses the "What we just set up" header when every prompt is null', () => {
+      const out = renderInitText(SNAPSHOT(), { color: false });
+      expect(out).not.toContain('What we just set up');
     });
   });
 });
