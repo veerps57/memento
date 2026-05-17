@@ -143,7 +143,7 @@ Spawn the MCP server and round-trip a write/read to prove the wiring works
 
 ## Registry commands
 
-Total: 37 commands.
+Total: 38 commands.
 
 ### `memento compact run`
 
@@ -212,6 +212,12 @@ Resolve an open conflict. Writes a `resolved` event with the chosen resolution.
 Run conflict detection. In `memory` mode, evaluates per-kind policies for one hydrated memory. In `since` mode, replays detection over every active memory created at or after the given timestamp — used to recover from missed post-write hooks.
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
+
+### `memento embedding rebuild`
+
+Rebuild embeddings for active memories whose stored embedding does not match the configured provider. Page by re-invoking with the same options; per-row provider errors are recorded as skips and do not halt the batch.
+
+- **Side-effect:** `admin` — Operational / introspection.
 
 ### `memento memory archive`
 

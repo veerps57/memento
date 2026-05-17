@@ -70,7 +70,32 @@ async function buildDocs() {
   // The registry needs a live app instance because commands are
   // built from repositories. An in-memory database is sufficient
   // — we never touch the data plane, only the metadata.
-  const app = await createMementoApp({ dbPath: ':memory:' });
+  //
+  // We also wire a stub `EmbeddingProvider` so the `embedding.*`
+  // command set registers in the doc-time registry. `bootstrap.ts`
+  // gates `createEmbeddingCommands` on `embeddingProvider !==
+  // undefined`; without this stub, `rebuild_embeddings` silently
+  // disappears from `mcp-tools.md` and `cli.md`. The stub never
+  // gets called (the doc generator only reads command metadata,
+  // not handlers), so the `embed`/`embedBatch`/`dispose` bodies
+  // can throw — but providing real-shaped values for `model` and
+  // `dimension` keeps any future doc-time renderer happy if it
+  // reads them.
+  const docTimeEmbeddingProvider = {
+    model: 'doc-generator-stub',
+    dimension: 1,
+    embed: async () => {
+      throw new Error('docs.mjs stub embedder must not be called');
+    },
+    embedBatch: async () => {
+      throw new Error('docs.mjs stub embedder must not be called');
+    },
+    dispose: async () => {},
+  };
+  const app = await createMementoApp({
+    dbPath: ':memory:',
+    embeddingProvider: docTimeEmbeddingProvider,
+  });
   try {
     const commands = app.registry.list();
     const lifecycle = Object.values(LIFECYCLE_COMMANDS).map((cmd) => ({

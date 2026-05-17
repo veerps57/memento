@@ -10,7 +10,7 @@ Input and output schemas are defined in source as Zod schemas and validated by t
 
 this reference lists names, descriptions, side-effect class, and the MCP annotation hints each command declares.
 
-Total: 37 tools.
+Total: 38 tools.
 
 ## `run_compact`
 
@@ -101,6 +101,14 @@ Registry name: `conflict.scan` — CLI: `memento conflict scan`
 Run conflict detection. In `memory` mode, evaluates per-kind policies for one hydrated memory. In `since` mode, replays detection over every active memory created at or after the given timestamp — used to recover from missed post-write hooks.
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
+
+## `rebuild_embeddings`
+
+Registry name: `embedding.rebuild` — CLI: `memento embedding rebuild`
+
+Rebuild embeddings for active memories whose stored embedding does not match the configured provider. Page by re-invoking with the same options; per-row provider errors are recorded as skips and do not halt the batch.
+
+- **Side-effect:** `admin` — Operational / introspection; not part of the data plane.
 
 ## `archive_memory`
 
