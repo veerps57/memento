@@ -14,7 +14,7 @@ The fastest path is to let Memento generate every snippet for you, with the reso
 npx @psraghuveer/memento init
 ```
 
-`init` creates the database under the XDG default (`$XDG_DATA_HOME/memento/memento.db`, typically `~/.local/share/memento/memento.db` on POSIX and `%LOCALAPPDATA%\memento\memento.db` on Windows), runs migrations, and prints copy-paste MCP snippets for every supported client. Idempotent — re-run any time to reprint the snippets. To pick a non-default location, pass `--db /custom/path/memento.db` or set `MEMENTO_DB` in your environment before running `init`.
+`init` creates the database under the XDG default (`$XDG_DATA_HOME/memento/memento.db`, typically `~/.local/share/memento/memento.db` on POSIX and `%LOCALAPPDATA%\memento\memento.db` on Windows), runs migrations, and prints copy-paste MCP snippets for every supported client. On a TTY, it also walks you through four one-keystroke setup questions before printing the snippets: your preferred display name, whether to install the bundled skill into `~/.claude/skills/`, whether to seed your store with a starter pack, and whether to auto-install the persona snippet into every detected file-based AI client's user-scope custom-instructions file (`~/.claude/CLAUDE.md` for Claude Code, `~/.config/opencode/AGENTS.md` for OpenCode, `~/Documents/Cline/Rules/memento.md` for Cline). Pass `--no-prompt` to skip the interactive flow for CI / scripts. Idempotent — re-run any time to reprint the snippets and re-ask anything you skipped. To pick a non-default location, pass `--db /custom/path/memento.db` or set `MEMENTO_DB` in your environment before running `init`.
 
 To target a subset of clients, pass `--client` (csv): `npx @psraghuveer/memento init --client claude-code,opencode`.
 

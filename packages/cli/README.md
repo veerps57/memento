@@ -14,7 +14,7 @@ Memento is one place where that memory lives. It runs an [MCP](https://modelcont
 npx @psraghuveer/memento init
 ```
 
-On a TTY, `init` walks you through three one-keystroke setup questions: your preferred display name, whether to install the bundled skill into `~/.claude/skills/`, and whether to seed your store with a starter pack. Then prints copy-paste MCP snippets for every supported client. Idempotent — re-run any time. Pass `--no-prompt` to suppress the interactive flow (CI, scripts).
+On a TTY, `init` walks you through four one-keystroke setup questions: your preferred display name, whether to install the bundled skill into `~/.claude/skills/`, whether to seed your store with a starter pack, and whether to auto-install the persona snippet into every detected file-based AI client's user-scope custom-instructions file (`~/.claude/CLAUDE.md` for Claude Code, `~/.config/opencode/AGENTS.md` for OpenCode, `~/Documents/Cline/Rules/memento.md` for Cline). Then prints copy-paste MCP snippets for every supported client, plus per-client paste instructions for UI-only clients (Cowork, Claude Desktop, Claude Chat, Cursor User Rules). Idempotent — re-run any time. Pass `--no-prompt` to suppress the interactive flow (CI, scripts).
 
 For a persistent `memento` on your `$PATH` instead of `npx`:
 
@@ -34,7 +34,7 @@ Three steps from zero to a working memory layer:
 npx @psraghuveer/memento init
 ```
 
-Creates the SQLite database under the XDG default, runs migrations, walks you through three interactive setup questions on a TTY, and prints copy-paste MCP snippets for every supported client.
+Creates the SQLite database under the XDG default, runs migrations, walks you through four interactive setup questions on a TTY (preferred name, install the bundled skill, seed a starter pack, auto-install the persona snippet into detected file-based clients), and prints copy-paste MCP snippets for every supported client.
 
 ### 2. Connect your AI client
 
@@ -42,9 +42,11 @@ Creates the SQLite database under the XDG default, runs migrations, walks you th
 
 Per-client walkthrough: [docs/guides/mcp-client-setup.md](https://github.com/veerps57/memento/blob/main/docs/guides/mcp-client-setup.md).
 
-### 3. Paste the persona snippet into your client's custom-instructions slot
+### 3. Confirm the persona snippet reaches your assistant
 
-Memento ships three teaching surfaces — an MCP `instructions` spine on the wire (ADR-0026), a bundled skill for skill-capable clients, and the persona snippet. Of the three, **only the persona snippet is guaranteed to reach the assistant's system prompt on every message** — the MCP spec leaves `instructions` optional and current client implementations vary in whether they surface it; the skill is intent-triggered so it doesn't fire on neutral first messages. Copy the persona snippet from [teach-your-assistant.md](https://github.com/veerps57/memento/blob/main/docs/guides/teach-your-assistant.md) and paste it into your client's custom-instructions / system-prompt slot (the field's name varies — `CLAUDE.md`, `.cursorrules`, "Custom Instructions" in the client's settings UI, etc.).
+Memento ships three teaching surfaces — an MCP `instructions` spine on the wire (ADR-0026), a bundled skill for skill-capable clients, and the persona snippet. Of the three, **only the persona snippet is guaranteed to reach the assistant's system prompt on every message** — the MCP spec leaves `instructions` optional and current client implementations vary in whether they surface it; the skill is intent-triggered so it doesn't fire on neutral first messages.
+
+If you said `Y` to the persona auto-install prompt in step 1, this is already done for every file-based AI client detected on your machine — the snippet was written to `~/.claude/CLAUDE.md`, `~/.config/opencode/AGENTS.md`, and/or `~/Documents/Cline/Rules/memento.md` as applicable. For **UI-only clients** (Cowork, Claude Desktop, Claude Chat at `claude.ai`, Cursor User Rules) and any client you have where the auto-installer didn't fire, copy the persona snippet from [teach-your-assistant.md](https://github.com/veerps57/memento/blob/main/docs/guides/teach-your-assistant.md) and paste it into the client's custom-instructions / system-prompt slot (the field's name varies — "Custom Instructions" in the client's settings UI, etc.).
 
 Verify the wiring end-to-end:
 

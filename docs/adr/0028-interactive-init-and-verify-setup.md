@@ -26,13 +26,14 @@ Two changes ship together as one onboarding revamp:
 
 ### 1. `memento init` becomes interactive by default
 
-On a TTY, `init` prompts for three y/N questions after the existing pre-flight checks, before printing the client snippets:
+On a TTY, `init` prompts for four one-keystroke questions after the existing pre-flight checks, before printing the client snippets:
 
 1. **`user.preferredName`** — "What should the assistant call you? (press Enter to skip)" — if a non-empty value is entered, `config set user.preferredName "..."` runs immediately.
 2. **Install the skill** — "Install the Memento skill into `~/.claude/skills/`? [Y/n]" — on `y` (default), runs the `cp -R` for the bundled skill source. Idempotent: re-running `init` re-checks and skips if the skill is already current.
 3. **Seed with a starter pack** — "Seed your store with a starter pack? [`engineering-simplicity`/`pragmatic-programmer`/`google-sre`/`twelve-factor-app`/N]" — on selection, runs `memento pack install <id>` in the same process.
+4. **Auto-install the persona snippet** — "Auto-install the persona snippet into detected file-based clients? [Y/n]" — on `y` (default), writes the marker-wrapped persona block to every detected file-based client's user-scope custom-instructions file (`~/.claude/CLAUDE.md` for Claude Code, `~/.config/opencode/AGENTS.md` for OpenCode, `~/Documents/Cline/Rules/memento.md` for Cline). Idempotent and removable; added as a fourth prompt in 0.9.0 (see the persona-installer details in that release's changeset). UI-only clients (Cowork, Claude Desktop, Claude Chat, Cursor User Rules) surface as per-target paste hints in the rendered walkthrough instead.
 
-All three are skipped silently when stdout is not a TTY (pipes, redirects, CI). A new `--no-prompt` flag forces the print-only behavior on a TTY for users who want to script `init` without changing their shell setup. A new `--prompt-all` flag (default behavior on TTY) makes the intent explicit and is what scripts can pass when they want interactivity in a non-TTY context (rare).
+All four are skipped silently when stdout is not a TTY (pipes, redirects, CI). A new `--no-prompt` flag forces the print-only behavior on a TTY for users who want to script `init` without changing their shell setup. A new `--prompt-all` flag (default behavior on TTY) makes the intent explicit and is what scripts can pass when they want interactivity in a non-TTY context (rare).
 
 The walkthrough text trims accordingly: when the skill section has already been resolved (installed or declined) and the starter pack has been resolved, the printed walkthrough drops those sections rather than re-presenting them.
 
