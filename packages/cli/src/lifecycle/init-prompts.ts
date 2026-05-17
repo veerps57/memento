@@ -1,10 +1,11 @@
 // Interactive prompts for `memento init`.
 //
 // ADR-0028: `init` enters interactive mode on a TTY and asks the
-// user three y/N questions after the pre-flight checks pass —
-// preferredName, install-skill, starter-pack. Each prompt
-// closes one of the post-install drop-offs that historically
-// kept first-time installs in a half-set-up state.
+// user four one-keystroke questions after the pre-flight checks
+// pass — preferredName, install-skill, starter-pack, and (added
+// in 0.9.0) install-persona. Each prompt closes one of the
+// post-install drop-offs that historically kept first-time
+// installs in a half-set-up state.
 //
 // The {@link InitPrompter} interface is the test seam, mirroring
 // the pattern used by `pack-prompts.ts`. The production factory
@@ -86,12 +87,12 @@ export interface InstallPersonaOutcome {
 }
 
 /**
- * Test seam for the three interactive prompts. The production
+ * Test seam for the four interactive prompts. The production
  * implementation in {@link createClackInitPrompter} wraps the
  * `@clack/prompts` UI; tests pass a scripted prompter that
  * returns canned answers without touching a TTY.
  *
- * All three methods are independently called by `runInit`; a
+ * All four methods are independently called by `runInit`; a
  * prompter that returns `cancelled` from one prompt stops the
  * interactive flow but does not abort the entire `init` command
  * — the already-completed snapshot still flows through the

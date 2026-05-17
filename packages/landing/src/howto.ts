@@ -33,13 +33,13 @@ export const HOWTO: {
 } = {
   name: 'Install Memento',
   description:
-    "Install Memento on your machine in three steps: run init (interactive on a TTY — sets your name, installs the skill, seeds a starter pack), paste the printed MCP-server snippet into your AI client and restart it, then paste the persona snippet into the client's custom-instructions slot so the teaching contract reaches your assistant on every message.",
+    'Install Memento on your machine in three steps: run init (interactive on a TTY — sets your name, installs the skill, seeds a starter pack, and auto-installs the persona snippet into detected AI clients), paste the printed MCP-server snippet into your AI client and restart it, then for UI-only clients paste the persona snippet manually so the teaching contract reaches your assistant on every message.',
   // ISO-8601 duration. ~5 minutes end-to-end on a warm npx cache.
   totalTime: 'PT5M',
   steps: [
     {
-      name: 'Initialize Memento (interactive)',
-      text: "Run `npx @psraghuveer/memento init` in a terminal. On a TTY, init walks you through three one-keystroke setup questions: your preferred display name (so memories read 'Raghu prefers …' instead of 'The user prefers …'), whether to install the bundled Memento skill into ~/.claude/skills/, and whether to seed your store with one of four starter packs (engineering-simplicity, pragmatic-programmer, twelve-factor-app, google-sre). Then it prints copy-paste MCP-server snippets for every supported client. Idempotent — re-run any time. Pass --no-prompt to suppress the interactive flow for CI / scripts.",
+      name: 'Run init (interactive)',
+      text: "Run `npx @psraghuveer/memento init` in a terminal. On a TTY, init walks you through four one-keystroke setup questions: your preferred display name (so memories read 'Raghu prefers …' instead of 'The user prefers …'); whether to install the bundled Memento skill into ~/.claude/skills/; whether to seed your store with one of four starter packs (engineering-simplicity, pragmatic-programmer, twelve-factor-app, google-sre); and whether to auto-install the persona snippet into the user-scope custom-instructions file of every detected file-based AI client (Claude Code at ~/.claude/CLAUDE.md, OpenCode at ~/.config/opencode/AGENTS.md, Cline at ~/Documents/Cline/Rules/memento.md). Then it prints copy-paste MCP-server snippets for every supported client and the per-client paste instructions for UI-only clients (Cowork, Claude Desktop, Claude Chat, Cursor User Rules). Idempotent — re-run any time. Pass --no-prompt to suppress the interactive flow for CI / scripts.",
       command: 'npx @psraghuveer/memento init',
     },
     {
@@ -48,8 +48,8 @@ export const HOWTO: {
       command: 'npx @psraghuveer/memento verify-setup',
     },
     {
-      name: "Paste the persona snippet into your client's custom-instructions slot",
-      text: "Memento ships three teaching surfaces — an MCP `instructions` spine on the wire (ADR-0026), a bundled skill for skill-capable clients, and the persona snippet. The MCP spec leaves `instructions` optional on the client side and current implementations vary in whether they surface it; the skill is intent-triggered so it doesn't fire on neutral first messages. The persona snippet is the only surface guaranteed to reach the assistant's system prompt on every message — paste it into wherever your client stores user-defined system prompt content (the field name varies — CLAUDE.md, .cursorrules, a 'Custom Instructions' textarea in the client's settings UI, etc.). The full snippet lives in docs/guides/teach-your-assistant.md and is also rendered on this page below.",
+      name: 'Confirm the persona snippet reaches your assistant',
+      text: "Memento ships three teaching surfaces — an MCP `instructions` spine on the wire (ADR-0026), a bundled skill for skill-capable clients, and the persona snippet. The MCP spec leaves `instructions` optional on the client side and current implementations vary in whether they surface it; the skill is intent-triggered so it doesn't fire on neutral first messages. The persona snippet is the only surface guaranteed to reach the assistant's system prompt on every message. If you said `Y` to the persona auto-install prompt in step 1, this is already done for every file-based AI client detected on your machine. For UI-only clients (Cowork, Claude Desktop, Claude Chat at claude.ai, Cursor User Rules) and any setup you skipped, paste the snippet from docs/guides/teach-your-assistant.md (also rendered on this page below) into the client's custom-instructions / system-prompt slot.",
     },
   ],
 };

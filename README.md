@@ -22,11 +22,12 @@ Three steps from zero to a working memory layer:
 npx @psraghuveer/memento init
 ```
 
-Creates the database under the XDG default (`$XDG_DATA_HOME/memento/memento.db`, typically `~/.local/share/memento/memento.db` on POSIX), runs migrations, and — on a TTY — walks you through three one-keystroke setup questions:
+Creates the database under the XDG default (`$XDG_DATA_HOME/memento/memento.db`, typically `~/.local/share/memento/memento.db` on POSIX), runs migrations, and — on a TTY — walks you through four one-keystroke setup questions:
 
 - **Your preferred name.** Stored as the `user.preferredName` config key so memories read "Raghu prefers …" instead of "The user prefers …".
 - **Install the bundled skill?** One y/N. Copies [`skills/memento/`](skills/memento/SKILL.md) into `~/.claude/skills/` for clients that load Anthropic-format skills.
 - **Seed with a starter pack?** Pick one of four bundled packs (`engineering-simplicity`, `pragmatic-programmer`, `twelve-factor-app`, `google-sre`) so your store has useful memories on day one. Skip to start empty.
+- **Auto-install the persona snippet?** Detects AI clients on your machine and writes a marker-wrapped block to each one's user-scope custom-instructions file (`~/.claude/CLAUDE.md` for Claude Code, `~/.config/opencode/AGENTS.md` for OpenCode, `~/Documents/Cline/Rules/memento.md` for Cline). Idempotent and removable. UI-only clients (Cowork, Claude Desktop, Claude Chat, Cursor User Rules) get printed paste instructions instead.
 
 Then prints copy-paste MCP snippets for every supported client. Idempotent — re-run any time to reprint the snippets and re-ask anything you skipped. Pass `--no-prompt` to suppress the interactive flow (CI, scripts).
 
@@ -36,9 +37,11 @@ Then prints copy-paste MCP snippets for every supported client. Idempotent — r
 
 The full per-client walkthrough lives in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md).
 
-### 3. Paste the persona snippet into your client's custom-instructions slot
+### 3. Confirm the persona snippet reaches your assistant
 
-Memento ships three teaching surfaces — an MCP `instructions` spine on the wire, a bundled skill for skill-capable clients, and the persona snippet. Of the three, **only the persona snippet is guaranteed to reach the assistant's system prompt on every message** — the MCP spec leaves `instructions` optional and client implementations vary in whether they surface it; the skill is intent-triggered so it doesn't fire on neutral first messages. Copy the persona snippet from [`docs/guides/teach-your-assistant.md`](docs/guides/teach-your-assistant.md) and paste it into your client's custom-instructions / system-prompt slot (the field's name varies — `CLAUDE.md`, `.cursorrules`, "Custom Instructions" in the client's settings UI, etc.).
+Memento ships three teaching surfaces — an MCP `instructions` spine on the wire, a bundled skill for skill-capable clients, and the persona snippet. Of the three, **only the persona snippet is guaranteed to reach the assistant's system prompt on every message** — the MCP spec leaves `instructions` optional and client implementations vary in whether they surface it; the skill is intent-triggered so it doesn't fire on neutral first messages.
+
+If you said `Y` to the persona auto-install prompt in Step 1, this is already done for every file-based AI client detected on your machine — the snippet was written to `~/.claude/CLAUDE.md`, `~/.config/opencode/AGENTS.md`, and/or `~/Documents/Cline/Rules/memento.md` as applicable. For **UI-only clients** (Cowork, Claude Desktop, Claude Chat at `claude.ai`, Cursor User Rules) and for any client you have where the auto-installer didn't fire, copy the persona snippet from [`docs/guides/teach-your-assistant.md`](docs/guides/teach-your-assistant.md) and paste it into the client's custom-instructions / system-prompt slot (the field's name varies — "Custom Instructions" in the client's settings UI, etc.).
 
 That's it. Verify the wire works end-to-end with `npx @psraghuveer/memento verify-setup` — a write/search/cleanup round-trip that proves your assistant can actually call Memento.
 
@@ -84,7 +87,7 @@ You can also point at an existing database with the `MEMENTO_DB` environment var
 
 **Verify the install** by running `npx @psraghuveer/memento doctor` (add `--quick` to skip the DB and embedder probes; add `--mcp` to also scan known MCP client config files). For a one-screen summary of what's in your store, `npx @psraghuveer/memento status`. To inspect what your install can do — registered commands, current config, database location — without speaking MCP, run `npx @psraghuveer/memento context`. To smoke-test the MCP transport end-to-end, `npx @psraghuveer/memento ping`.
 
-**Wiring Memento into an MCP client** (Claude Desktop, Claude Code, Cursor, Cline, OpenCode, VS Code Agent mode, …) is covered step by step in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md). The TL;DR is the three-step quickstart above: `init`, paste the MCP-server snippet, paste the persona snippet.
+**Wiring Memento into an MCP client** (Claude Desktop, Claude Code, Cursor, Cline, OpenCode, VS Code Agent mode, …) is covered step by step in [docs/guides/mcp-client-setup.md](docs/guides/mcp-client-setup.md). The TL;DR is the three-step quickstart above: `init` (which auto-installs the persona snippet into detected file-based clients if you say `Y`), paste the MCP-server snippet into your client, then for UI-only clients paste the persona snippet manually.
 
 **Vector retrieval** (paraphrase matching on top of FTS) is on by default. The first search triggers a one-time model download (~110 MB) into `$XDG_CACHE_HOME/memento/models` (or `~/.cache/memento/models` / `%LOCALAPPDATA%\memento\Cache\models`); after that, both FTS and vector arms run automatically. If the model has not yet downloaded, search degrades gracefully to FTS-only. For configuration options and library-wiring details, see [docs/guides/embeddings.md](docs/guides/embeddings.md).
 

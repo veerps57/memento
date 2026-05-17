@@ -47,9 +47,13 @@ export function renderInitText(snapshot: InitSnapshot, options: InitRenderOption
   lines.push(renderBanner(version, { color: options.color }).replace(/\n$/u, ''));
   lines.push(`${green('✓', options)} memento ${version}`);
 
-  // ── Step 1 ── DB initialised + pre-flight checks. Numbered so
-  // the walkthrough mirrors README / landing / mcp-client-setup
-  // verbatim — one onboarding mental model across surfaces.
+  // ── Step 1 ── DB initialised + pre-flight checks. Numbered to
+  // mirror the three-step structure used by the README / landing /
+  // mcp-client-setup guide so the user sees one onboarding mental
+  // model across surfaces. The terminal heading is descriptive
+  // ("what just ran") rather than imperative ("what to run"),
+  // since the user has already invoked init by the time these
+  // lines render.
   lines.push('');
   lines.push(bold('Step 1 — Initialize Memento', options));
   if (memoryWarning) {
@@ -430,9 +434,16 @@ function renderPromptOutcomes(prompts: InitPromptOutcomes, options: InitRenderOp
  * is optional on the client side (implementations vary in
  * whether they surface it); the bundled skill is
  * intent-triggered (it doesn't fire on neutral first messages).
- * Paste-into-custom-instructions is therefore the recommended
- * primary step; the skill section that follows is on-intent
- * enrichment for skill-capable clients.
+ * Confirming the persona snippet reaches the assistant is
+ * therefore the recommended primary step; the skill section
+ * that follows is on-intent enrichment for skill-capable
+ * clients.
+ *
+ * The per-target persona-install outcomes (auto-installed vs
+ * paste-here-manually for UI-only clients) are rendered above
+ * this section by `renderPromptOutcomes` — this block frames
+ * the surface and points users at the manual-paste path for
+ * any client the auto-installer did not cover.
  *
  * Generic phrasing on purpose — we don't enumerate which clients
  * implement what, because the ecosystem moves faster than we can
@@ -441,7 +452,7 @@ function renderPromptOutcomes(prompts: InitPromptOutcomes, options: InitRenderOp
 function renderPersonaSnippetReco(options: InitRenderOptions): string[] {
   const lines: string[] = [];
   lines.push(
-    `${bold('Paste the persona snippet into your client', options)}'${bold('s custom-instructions slot', options)} ${dim('(universal, always-on)', options)}`,
+    `${bold('Confirm the persona snippet reaches your assistant', options)} ${dim('(universal, always-on)', options)}`,
   );
   lines.push('');
   lines.push('The MCP `instructions` spine that ships with the server is optional on the client');
@@ -454,12 +465,15 @@ function renderPersonaSnippetReco(options: InitRenderOptions): string[] {
   );
   lines.push("the assistant's system prompt on every message.");
   lines.push('');
+  lines.push('If you said `Y` to the persona auto-install prompt above, every detected file-based');
+  lines.push('client is already done — the per-target outcomes are listed above. For UI-only');
+  lines.push('clients (Cowork, Claude Desktop, Claude Chat, Cursor User Rules) and any client');
   lines.push(
-    `Copy the snippet from ${dim('docs/guides/teach-your-assistant.md', options)} and paste it into`,
+    `the auto-installer did not cover, copy the snippet from ${dim('docs/guides/teach-your-assistant.md', options)}`,
   );
-  lines.push("wherever your client stores user-defined system prompt content — the field's name");
-  lines.push("varies by client (`CLAUDE.md`, `.cursorrules`, a 'Custom Instructions' textarea in");
-  lines.push("the client's settings UI, etc.).");
+  lines.push('and paste it into wherever your client stores user-defined system prompt content');
+  lines.push("(the field's name varies — `CLAUDE.md`, `.cursorrules`, a 'Custom Instructions'");
+  lines.push("textarea in the client's settings UI, etc.).");
   lines.push('');
   return lines;
 }

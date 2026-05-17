@@ -366,17 +366,22 @@ export async function runInit(
 }
 
 /**
- * Run the three interactive prompts and apply each opted-in
+ * Run the four interactive prompts and apply each opted-in
  * side effect. Errors are captured per-prompt — a failure in
  * one prompt (e.g. config.set rejecting the supplied name)
- * does not skip the next two. The outcomes object is what the
- * renderer uses to suppress already-resolved sections.
+ * does not skip the remaining prompts. The outcomes object is
+ * what the renderer uses to suppress already-resolved sections.
  *
  * Side effects per prompt:
  *
  *   - preferredName / 'set' → `config.set user.preferredName <value>`
  *   - installSkill / 'install' → `cp -R <source> <target>/`
  *   - starterPack / 'install' → `pack.install` for the picked id
+ *   - installPersona / 'install' → write marker-wrapped persona
+ *     block into every detected file-based client's user-scope
+ *     custom-instructions file (`~/.claude/CLAUDE.md`,
+ *     `~/.config/opencode/AGENTS.md`,
+ *     `~/Documents/Cline/Rules/memento.md`) via the persona-installer.
  *
  * Each side-effect is best-effort: a failure surfaces as a
  * `failed` outcome on that field, but `init`'s success path

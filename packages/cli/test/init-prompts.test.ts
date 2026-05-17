@@ -115,11 +115,12 @@ describe('createScriptedInitPrompter', () => {
 });
 
 describe('createClackInitPrompter', () => {
-  it('exposes the three prompt methods plus intro/outro hooks', () => {
+  it('exposes the four prompt methods plus intro/outro hooks', () => {
     const prompter = createClackInitPrompter();
     expect(typeof prompter.promptPreferredName).toBe('function');
     expect(typeof prompter.promptInstallSkill).toBe('function');
     expect(typeof prompter.promptStarterPack).toBe('function');
+    expect(typeof prompter.promptInstallPersona).toBe('function');
     expect(typeof prompter.intro).toBe('function');
     expect(typeof prompter.outro).toBe('function');
   });
