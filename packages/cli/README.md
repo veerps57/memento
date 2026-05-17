@@ -42,7 +42,7 @@ Creates the SQLite database under the XDG default, runs migrations, walks you th
 
 Per-client walkthrough: [docs/guides/mcp-client-setup.md](https://github.com/veerps57/memento/blob/main/docs/guides/mcp-client-setup.md).
 
-That's it. Memento's MCP server emits a [session-start teaching spine](https://github.com/veerps57/memento/blob/main/packages/server/src/instructions.ts) on the `initialize` handshake (ADR-0026) — every spec-compliant MCP client injects it into the assistant's system prompt with no further wiring. The bundled skill (installed during `init`) layers on the deeper distillation curriculum when the client supports Anthropic-format skills. The persona snippet in [teach-your-assistant.md](https://github.com/veerps57/memento/blob/main/docs/guides/teach-your-assistant.md) is the fallback for the rare client that honours neither.
+That's it. Memento's MCP server emits a [session-start teaching spine](https://github.com/veerps57/memento/blob/main/packages/server/src/instructions.ts) on the `initialize` handshake (ADR-0026). MCP clients that honour the field inject it into the assistant's system prompt; others (including Claude Chat at `claude.ai` web today) ignore it and fall back to schema-embedded session-start hints. The bundled skill (installed during `init`) layers on the deeper distillation curriculum when your client supports Anthropic-format skills. The persona snippet in [teach-your-assistant.md](https://github.com/veerps57/memento/blob/main/docs/guides/teach-your-assistant.md) is the **universal fallback** — paste it into your client's custom-instructions or system-prompt slot if the spine + skill don't reach your assistant.
 
 Verify the wiring end-to-end:
 

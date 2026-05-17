@@ -418,7 +418,7 @@ function Quickstart(): JSX.Element {
           <Step
             n={2}
             title="Connect your AI client"
-            body="Paste the JSON snippet into your client's MCP config (Claude Desktop, Cursor, Cline, OpenCode, VS Code Agent…) — or use the one-line subcommand init prints for Claude Code. Restart the client. The session-start teaching spine ships with the MCP server and is injected into the assistant's system prompt automatically (ADR-0026), so the assistant knows when to call Memento from its first message — no skill or persona-paste required."
+            body="Paste the JSON snippet into your client's MCP config (Claude Desktop, Cursor, Cline, OpenCode, VS Code Agent…) — or use the one-line subcommand init prints for Claude Code. Restart the client. The session-start teaching spine ships with the MCP server (ADR-0026); clients that honour the optional `instructions` field inject it into the assistant's system prompt automatically. For clients that ignore the field (Claude Chat web today), paste the persona snippet below into the client's custom-instructions slot to land the same contract."
             command={null}
             preview={<SnippetPreview />}
           />
@@ -611,10 +611,12 @@ function PersonaSnippet(): JSX.Element {
         </a>
       </div>
       <p className="mt-2 max-w-prose text-sm text-muted">
-        Most spec-compliant MCP clients pick up Memento's server-emitted teaching spine
-        automatically (ADR-0026). The bundled skill layers on the deeper distillation curriculum for
-        clients that load Anthropic-format skills. If your client honours neither, paste this near
-        the top of its persona file.
+        Some MCP clients pick up Memento's server-emitted teaching spine automatically (ADR-0026);
+        others — including Claude Chat at <code className="text-fg">claude.ai</code> web today —
+        silently ignore the field. The bundled skill layers on the deeper distillation curriculum
+        for clients that load Anthropic-format skills (Claude Code, Claude Desktop). Paste this
+        snippet into your client's custom-instructions slot to guarantee the contract reaches your
+        assistant regardless of which surfaces it honours — this is the universal fallback.
       </p>
       <div className="mt-4">
         <JsonBlock json={PERSONA_SNIPPET} />

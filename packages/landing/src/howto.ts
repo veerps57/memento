@@ -33,7 +33,7 @@ export const HOWTO: {
 } = {
   name: 'Install Memento',
   description:
-    'Install Memento on your machine in two steps: run init (interactive on a TTY — sets your name, installs the skill, seeds a starter pack), then paste the printed MCP-server snippet into your AI client and restart it. The session-start teaching spine ships with the MCP server itself, so the assistant learns when to call Memento as soon as it connects.',
+    'Install Memento on your machine in two steps: run init (interactive on a TTY — sets your name, installs the skill, seeds a starter pack), then paste the printed MCP-server snippet into your AI client and restart it. The session-start teaching spine ships with the MCP server and is picked up by clients that honour the field; the bundled skill and the optional persona snippet cover the gap for clients that ignore it.',
   // ISO-8601 duration. ~3 minutes end-to-end on a warm npx cache.
   totalTime: 'PT3M',
   steps: [
@@ -44,7 +44,7 @@ export const HOWTO: {
     },
     {
       name: 'Connect your AI client',
-      text: "Paste the MCP-server snippet that init printed for your client into that client's MCP config (Claude Desktop's claude_desktop_config.json, Cursor's mcp.json, Cline's settings, OpenCode's config, VS Code Agent's mcp.json), or run the one-line subcommand init prints for Claude Code. Then restart the client so it loads the new MCP server. The session-start teaching spine — when to load context, when to write, when to confirm, the topic:value rule for preferences — ships with the server and is injected into the assistant's system prompt automatically on every connect (ADR-0026). Verify with `npx @psraghuveer/memento verify-setup` — a write/search/cleanup round-trip that proves your assistant can actually use Memento end-to-end.",
+      text: "Paste the MCP-server snippet that init printed for your client into that client's MCP config (Claude Desktop's claude_desktop_config.json, Cursor's mcp.json, Cline's settings, OpenCode's config, VS Code Agent's mcp.json), or run the one-line subcommand init prints for Claude Code. Then restart the client so it loads the new MCP server. The session-start teaching spine — when to load context, when to write, when to confirm, the topic:value rule for preferences — ships with the server (ADR-0026). Clients that honour the optional `instructions` field (Claude Code, Claude Desktop) inject the spine into the assistant's system prompt; clients that ignore it (Claude Chat web today) fall back to schema-embedded session-start hints or the persona snippet you paste into the client's custom-instructions slot. Verify your assistant can round-trip a write/search end-to-end with `npx @psraghuveer/memento verify-setup`.",
       command: 'npx @psraghuveer/memento verify-setup',
     },
   ],

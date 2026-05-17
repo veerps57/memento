@@ -4,11 +4,23 @@ Memento exposes a set of MCP tools (`write_memory`, `search_memory`, `confirm_me
 
 There are three teaching surfaces, in priority order. **You only need the first one** — the others are enrichment for clients that load them.
 
-## 1. Server-emitted `instructions` (every client, automatic) — ADR-0026
+## 1. Server-emitted `instructions` (best-effort, varies by client) — ADR-0026
 
-Memento's MCP server returns a ~60-line `instructions` string on the `initialize` handshake. Every spec-compliant MCP client (Claude Code, Claude Desktop, Cursor, VS Code Agent, OpenCode, Cline, …) injects this string into the assistant's system prompt verbatim, with no user action. You wired this when you pasted the MCP-server snippet from `memento init`.
+Memento's MCP server returns a ~60-line `instructions` string on the `initialize` handshake. Clients that honour the field — observed today in Claude Code and Claude Desktop — inject the spine into the assistant's system prompt with no user action. **Other clients silently ignore it.** The MCP spec makes the field optional on the client side, so implementations vary:
 
-The spine covers the session-start contract: when to load context, when to write, when to confirm, when to supersede, the `topic: value` first-line rule, the silent-plumbing rule, and the secrets prohibition. If your client honours the field, your assistant already has the contract. The canonical text lives in [`packages/server/src/instructions.ts`](../../packages/server/src/instructions.ts) — operators who want to override it can pass `info.instructions` when constructing the server, or prepend / append their own addendum via string concatenation.
+| Client | Honours `instructions`? | Notes |
+| --- | --- | --- |
+| Claude Code | ✅ Likely (verified the spine reaches the wire; behaviour in real sessions is the only un-isolated variable) | Skill is also loaded, so isolated attribution is hard |
+| Claude Desktop | ✅ Likely | Same MCP architecture as Claude Code |
+| Claude Chat (`claude.ai` web/mobile) | ❌ Verified: does not inject into system prompt | Use the persona snippet below |
+| Cursor | ⚠️ Untested | Run the disambiguating test below |
+| VS Code Agent | ⚠️ Untested | Run the disambiguating test below |
+| OpenCode | ⚠️ Untested | Run the disambiguating test below |
+| Cline | ⚠️ Untested | Run the disambiguating test below |
+
+**Disambiguating test for any client**: paste the MCP config, restart the client, then in a brand-new conversation send a task-shaped neutral first message (e.g. *"What's a good approach for organising a TypeScript monorepo?"*). If the assistant's first 1–2 tool calls are `info_system` + `get_memory_context`, the spine is reaching the system prompt. If it jumps straight to answering with no memento tool calls, the spine is being ignored — fall back to the persona snippet path below.
+
+The spine covers the session-start contract: when to load context, when to write, when to confirm, when to supersede, the `topic: value` first-line rule, the silent-plumbing rule, and the secrets prohibition. The canonical text lives in [`packages/server/src/instructions.ts`](../../packages/server/src/instructions.ts) — operators who want to override it can pass `info.instructions` when constructing the server, or prepend / append their own addendum via string concatenation.
 
 ## 2. The bundled skill (Anthropic-format clients, on-intent) — load-on-demand enrichment
 
