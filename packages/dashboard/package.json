@@ -1,6 +1,6 @@
 {
   "name": "@psraghuveer/memento-dashboard",
-  "version": "0.4.7",
+  "version": "0.5.0",
   "description": "Local-first web dashboard for Memento. Read your memories, audit history, triage conflicts, tune config — all in your browser, against your local SQLite store.",
   "keywords": ["memento", "memory", "dashboard", "ui", "local-first"],
   "license": "Apache-2.0",
