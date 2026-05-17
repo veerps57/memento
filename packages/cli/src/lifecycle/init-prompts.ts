@@ -60,6 +60,32 @@ export interface StarterPackOutcome {
 }
 
 /**
+ * One client surfaced by the persona-install prompt's enumeration.
+ * The prompt shows the user what would be auto-written (file-kind
+ * targets) and what they'd need to paste manually (ui-kind
+ * targets) before asking for consent.
+ */
+export interface PersonaInstallTargetSummary {
+  readonly displayName: string;
+  readonly kind: 'file' | 'ui';
+  /** Resolved file path (kind=file) or human-readable UI path (kind=ui). */
+  readonly path: string;
+}
+
+/**
+ * Outcome of the persona-install prompt. `install` means the
+ * user consented to auto-writing the file-based targets; `skip`
+ * means they declined; `cancelled` means user interrupt.
+ *
+ * The actual install (marker-wrapped append-or-replace) happens
+ * in `runInit` after the prompt returns — see
+ * `packages/cli/src/persona-installer.ts`.
+ */
+export interface InstallPersonaOutcome {
+  readonly kind: 'install' | 'skip' | 'cancelled';
+}
+
+/**
  * Test seam for the three interactive prompts. The production
  * implementation in {@link createClackInitPrompter} wraps the
  * `@clack/prompts` UI; tests pass a scripted prompter that
@@ -98,6 +124,22 @@ export interface InitPrompter {
    * without picking one.
    */
   promptStarterPack(choices: readonly StarterPackChoice[]): Promise<StarterPackOutcome>;
+  /**
+   * Ask whether to auto-install the Memento persona snippet into
+   * the user-scope custom-instructions files for the AI clients
+   * detected on this machine. `fileTargets` enumerates files that
+   * will be written with marker-wrapped, idempotent blocks;
+   * `uiTargets` enumerates clients whose persona slot is UI-only
+   * and require a manual copy-paste step (the renderer prints the
+   * UI paths regardless of this prompt's outcome).
+   *
+   * The prompt is suppressed entirely when both lists are empty —
+   * no detected clients, no question to ask.
+   */
+  promptInstallPersona(opts: {
+    readonly fileTargets: readonly PersonaInstallTargetSummary[];
+    readonly uiTargets: readonly PersonaInstallTargetSummary[];
+  }): Promise<InstallPersonaOutcome>;
   /**
    * Optional structured intro shown once before the prompt
    * sequence begins. Production renders a heading;  tests
@@ -178,6 +220,34 @@ export function createClackInitPrompter(): InitPrompter {
       if (response === SKIP) return { kind: 'skip' };
       return { kind: 'install', packId: response as string };
     },
+    async promptInstallPersona({ fileTargets, uiTargets }) {
+      // Enumerate the user's detected clients so the consent
+      // ask is concrete: "we'd write into these two files and
+      // print a paste-instruction for these three." A vague
+      // "install the persona snippet?" hides the actual file
+      // writes from the user and would be presumptuous.
+      const lines: string[] = [];
+      lines.push('The persona snippet is the only teaching surface guaranteed to reach your');
+      lines.push('assistant on every message. Auto-install it into your detected clients?');
+      if (fileTargets.length > 0) {
+        lines.push('');
+        lines.push('Will write a marker-wrapped block to (idempotent, removable):');
+        for (const target of fileTargets) lines.push(`  • ${target.path}  (${target.displayName})`);
+      }
+      if (uiTargets.length > 0) {
+        lines.push('');
+        lines.push('Print copy-paste instructions for (UI-only — you paste manually):');
+        for (const target of uiTargets) {
+          lines.push(`  • ${target.displayName} → ${target.path}`);
+        }
+      }
+      const response = await clack.confirm({
+        message: lines.join('\n'),
+        initialValue: true,
+      });
+      if (clack.isCancel(response)) return { kind: 'cancelled' };
+      return response ? { kind: 'install' } : { kind: 'skip' };
+    },
   };
 }
 
@@ -209,6 +279,11 @@ export interface InitScriptedAnswers {
     | { readonly kind: 'install'; readonly packId: string }
     | { readonly kind: 'skip' }
     | { readonly kind: 'cancelled' };
+  /** Override for `promptInstallPersona`. */
+  readonly installPersona?:
+    | { readonly kind: 'install' }
+    | { readonly kind: 'skip' }
+    | { readonly kind: 'cancelled' };
 }
 
 export function createScriptedInitPrompter(script: InitScriptedAnswers = {}): InitPrompter {
@@ -221,6 +296,9 @@ export function createScriptedInitPrompter(script: InitScriptedAnswers = {}): In
     },
     async promptStarterPack() {
       return script.starterPack ?? { kind: 'skip' };
+    },
+    async promptInstallPersona() {
+      return script.installPersona ?? { kind: 'skip' };
     },
   };
 }

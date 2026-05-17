@@ -376,6 +376,51 @@ function renderPromptOutcomes(prompts: InitPromptOutcomes, options: InitRenderOp
     }
   }
 
+  const persona = prompts.installPersona;
+  if (persona !== null) {
+    if (persona.kind === 'install') {
+      // Per-target ack lines. File-based outcomes render with the
+      // path that was written; ui-only outcomes render with the
+      // manual paste path the user still needs to action.
+      for (const result of persona.results) {
+        const outcome = result.outcome;
+        if (outcome.kind === 'installed') {
+          lines.push(
+            `${green('✓', options)} persona installed for ${result.displayName} (${displayHomePath(outcome.target)}).`,
+          );
+        } else if (outcome.kind === 'updated') {
+          const fromV =
+            outcome.previousVersion !== null ? ` (was v${outcome.previousVersion})` : '';
+          lines.push(
+            `${green('✓', options)} persona refreshed for ${result.displayName}${fromV} (${displayHomePath(outcome.target)}).`,
+          );
+        } else if (outcome.kind === 'already-current') {
+          lines.push(
+            `${green('✓', options)} persona already current for ${result.displayName} (${displayHomePath(outcome.target)}).`,
+          );
+        } else if (outcome.kind === 'ui-only') {
+          lines.push(
+            `${dim('→', options)} ${result.displayName}: paste the persona snippet at ${dim(outcome.uiPath, options)}.`,
+          );
+        } else if (outcome.kind === 'failed') {
+          lines.push(
+            `${yellow('!', options)} persona install failed for ${result.displayName} (${displayHomePath(outcome.target)}): ${outcome.message}`,
+          );
+        }
+      }
+    } else if (persona.kind === 'skip') {
+      lines.push(
+        `${dim('•', options)} persona auto-install declined (paste the snippet from docs/guides/teach-your-assistant.md yourself).`,
+      );
+    } else if (persona.kind === 'cancelled') {
+      lines.push(
+        `${dim('•', options)} persona auto-install cancelled by user (paste the snippet manually later).`,
+      );
+    } else if (persona.kind === 'failed') {
+      lines.push(`${yellow('!', options)} persona auto-install failed: ${persona.message}`);
+    }
+  }
+
   return lines;
 }
 

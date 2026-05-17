@@ -75,6 +75,7 @@ import path from 'node:path';
 import type { MementoApp } from '@psraghuveer/memento-core';
 import { executeCommand } from '@psraghuveer/memento-core';
 import { type Result, err, ok } from '@psraghuveer/memento-schema';
+import { MEMENTO_INSTRUCTIONS } from '@psraghuveer/memento-server';
 
 import { resolveDefaultDbPath } from '../db-path.js';
 import {
@@ -84,6 +85,11 @@ import {
   isInitClientId,
   renderClientSnippets,
 } from '../init-clients.js';
+import {
+  type PersonaInstallResult,
+  detectPersonaTargets,
+  installPersona,
+} from '../persona-installer.js';
 import { resolveSkillSourceDir, suggestedSkillTargetDir } from '../skill-source.js';
 import { resolveVersion } from '../version.js';
 import type { InitPrompter, StarterPackChoice } from './init-prompts.js';
@@ -152,6 +158,24 @@ export interface InitPromptOutcomes {
     | { readonly kind: 'skip' }
     | { readonly kind: 'cancelled' }
     | { readonly kind: 'failed'; readonly packId: string; readonly message: string }
+    | null;
+  /**
+   * Outcome of the persona-snippet auto-install prompt. When the
+   * user consents, the installer writes a marker-wrapped block
+   * to every detected file-based target's custom-instructions
+   * file (idempotent — re-runs no-op when the content matches).
+   * UI-only targets (Cowork, Claude Desktop, Claude Chat, Cursor
+   * User Rules) appear as `ui-only` per-target outcomes carrying
+   * the manual paste path for the renderer to surface.
+   */
+  readonly installPersona:
+    | {
+        readonly kind: 'install';
+        readonly results: readonly PersonaInstallResult[];
+      }
+    | { readonly kind: 'skip' }
+    | { readonly kind: 'cancelled' }
+    | { readonly kind: 'failed'; readonly message: string }
     | null;
 }
 
@@ -269,6 +293,7 @@ export async function runInit(
     preferredName: null,
     installSkill: null,
     starterPack: null,
+    installPersona: null,
   };
 
   // Interactive flow: enabled when stdout is a TTY, the operator
@@ -288,6 +313,7 @@ export async function runInit(
         skillSource,
         suggestedTarget,
         showSkillPrompt: capableClients.length > 0,
+        version: resolveVersion(),
       });
       prompter.outro?.('Ready. Snippets below.');
     } catch (cause) {
@@ -303,6 +329,7 @@ export async function runInit(
         // a prompter crash we don't know which pack was picked,
         // so attribute to '(unknown)'.
         starterPack: { kind: 'failed', packId: '(unknown)', message },
+        installPersona: { kind: 'failed', message },
       };
     }
   }
@@ -364,8 +391,10 @@ async function runInteractivePrompts(opts: {
   readonly suggestedTarget: string;
   /** Suppress the skill prompt when no capable client is in the rendered set. */
   readonly showSkillPrompt: boolean;
+  /** Memento version to stamp into the persona-snippet marker block. */
+  readonly version: string;
 }): Promise<InitPromptOutcomes> {
-  const { app, prompter, skillSource, suggestedTarget, showSkillPrompt } = opts;
+  const { app, prompter, skillSource, suggestedTarget, showSkillPrompt, version } = opts;
 
   // — preferredName —
   const existingNameRaw = app.configStore.get('user.preferredName');
@@ -456,7 +485,60 @@ async function runInteractivePrompts(opts: {
     }
   }
 
-  return { preferredName, installSkill, starterPack };
+  // — installPersona —
+  // Detect AI clients on this host and ask whether to auto-write
+  // the persona snippet into each one's user-scope
+  // custom-instructions file. The persona snippet is the only
+  // teaching surface guaranteed to reach the assistant on every
+  // message — file-based targets get a marker-wrapped block;
+  // UI-only targets get a `ui-only` outcome the renderer surfaces
+  // as a paste-here instruction.
+  //
+  // The prompt is suppressed when no targets are detected at all,
+  // which is the rare "no AI client on this machine" case.
+  let installPersonaOutcome: InitPromptOutcomes['installPersona'];
+  const detected = detectPersonaTargets();
+  const fileTargets = detected.filter((t) => t.kind === 'file');
+  const uiTargets = detected.filter((t) => t.kind === 'ui');
+  if (detected.length === 0) {
+    installPersonaOutcome = null;
+  } else {
+    const summarise = (kind: 'file' | 'ui') =>
+      detected
+        .filter((t) => t.kind === kind)
+        .map((t) => ({
+          displayName: t.displayName,
+          kind,
+          path: t.kind === 'file' ? t.path : t.uiPath,
+        }));
+    const response = await prompter.promptInstallPersona({
+      fileTargets: summarise('file'),
+      uiTargets: summarise('ui'),
+    });
+    if (response.kind === 'cancelled') {
+      installPersonaOutcome = { kind: 'cancelled' };
+    } else if (response.kind === 'skip') {
+      installPersonaOutcome = { kind: 'skip' };
+    } else {
+      // Run the installer against all detected targets. File-based
+      // targets get the marker-wrapped write; UI-only targets pass
+      // through with `ui-only` outcomes so the renderer prints the
+      // paste-here instructions either way.
+      try {
+        const installable: typeof detected = [...fileTargets, ...uiTargets];
+        const results = await installPersona({
+          targets: installable,
+          personaContent: MEMENTO_INSTRUCTIONS,
+          version,
+        });
+        installPersonaOutcome = { kind: 'install', results };
+      } catch (cause) {
+        installPersonaOutcome = { kind: 'failed', message: describe(cause) };
+      }
+    }
+  }
+
+  return { preferredName, installSkill, starterPack, installPersona: installPersonaOutcome };
 }
 
 async function runConfigSet(app: MementoApp, key: string, value: string): Promise<Result<unknown>> {

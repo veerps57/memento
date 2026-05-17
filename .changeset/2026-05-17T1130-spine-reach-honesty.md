@@ -1,26 +1,53 @@
 ---
-'@psraghuveer/memento': patch
+'@psraghuveer/memento': minor
 '@psraghuveer/memento-server': patch
 ---
 
-docs: client-neutral calibration of teaching surfaces; persona-first three-step pitch
+feat(cli): auto-install the persona snippet into detected clients; client-neutral docs reframe
 
-Post-launch testing across multiple MCP clients showed that the optional `instructions` field on the initialize response (ADR-0026) is typically not surfaced to the assistant's system prompt by current client implementations. The spine reaches the wire but rarely reaches the model. Separately, the bundled skill is intent-triggered by design — it doesn't fire on neutral first messages. The persona snippet (pasted into the client's custom-instructions slot) is therefore the only teaching surface guaranteed to land in the assistant's system prompt on every message.
+Two coupled changes shipping together. The reframe (docs + init walkthrough) acknowledges what testing showed — the MCP `instructions` field (ADR-0026) is optional on the client side and current implementations typically don't surface it to the assistant's system prompt. The new auto-installer collapses the manual "paste this into your client's custom-instructions slot" step into a `y/N` during `memento init` for the subset of clients whose persona slot is a file on disk.
 
-This patch reframes every user-facing doc and the `init` walkthrough to match that reality. The framing is now **persona-first, skill-second, spine-third** — ordered by reliability of reach. Language is client-neutral throughout: no surface is labelled by which specific clients honour it, since client implementations vary and the per-client matrix drifts faster than docs.
+**Auto-installer (new `packages/cli/src/persona-installer.ts`)**
 
-**Files touched (docs + init prose only — no behaviour change):**
+A fourth interactive prompt in `memento init` offers to write the persona snippet — sourced from the same `MEMENTO_INSTRUCTIONS` constant the MCP server emits — into every detected file-based client's user-scope custom-instructions file. UI-only clients (Cowork, Claude Desktop, Claude Chat, Cursor User Rules) surface as copy-paste instructions in the renderer.
 
-- Root `README.md`, `packages/cli/README.md`, `packages/server/README.md` — three-step quickstart (init → paste MCP snippet → paste persona snippet); explicit framing of the spine as best-effort future-proofing.
-- `docs/guides/teach-your-assistant.md` — surfaces reordered into reliability order (persona first); the per-client honours/doesn't matrix is removed in favour of a neutral, single-paragraph framing per surface. The disambiguating test users can run on their own client stays.
-- `packages/landing/src/App.tsx` + `howto.ts` — quickstart grid expands from two cards to three; persona snippet header re-titled as "the universal always-on teaching surface"; copy throughout reframed to avoid client-specific honours/doesn't claims.
-- `docs/adr/0026-mcp-instructions-as-session-teaching-spine.md` — prose updates; the **decision is unchanged** (still emit the spine; still treat as future-proofing). Per the convention that ADR-immutability protects the decision, not the wording.
-- `packages/cli/src/init-render.ts` — the rendered text walkthrough now opens Step 3 with a universal "paste the persona snippet" recommendation regardless of skill state; the skill section follows as on-intent enrichment for skill-capable clients. The persona-only legacy branch is removed because the universal recommendation always renders.
+Detected targets, by canonical user-scope path:
 
-**The framing now is:**
+- Claude Code → `~/.claude/CLAUDE.md` (loaded into every session per Anthropic's docs)
+- OpenCode → `~/.config/opencode/AGENTS.md`
+- Cline → `~/Documents/Cline/Rules/memento.md`
 
-- **Persona snippet** — universal, always-on. The only teaching surface guaranteed to reach the assistant on every message. The mandatory step for guaranteed behaviour.
-- **Bundled skill** — load-on-intent enrichment for skill-capable clients. Layers richer distillation rules when memory-relevant intent is detected.
-- **MCP `instructions` spine** — best-effort future-proofing on the wire. Optional on the client side; implementations vary in whether they surface it. Harmless when ignored, free win when honoured.
+Each write is wrapped in HTML-comment markers (`<!-- memento:persona BEGIN v<version> -->` / `<!-- memento:persona END -->`), making the install:
 
-No code change beyond the init walkthrough's rendered prose. `pnpm verify` still passes (1600 tests / 117 files). Test fixtures asserting on the renderer's output are updated to match the new persona-first opening of Step 3.
+- **Idempotent.** Re-running `init` with identical content reports `already-current` and no-ops the write.
+- **Updatable in place.** Re-running with new content splices the block out and rewrites — no accumulated drift, no duplicate blocks.
+- **Removable.** The marker bounds let a future `memento persona uninstall` strip the block while leaving surrounding user content intact.
+
+Detection is filesystem-only — no network calls. A client whose canonical directory doesn't exist on the host is simply skipped (no write, no spurious "if you also use X…" line). The persona content itself reuses `MEMENTO_INSTRUCTIONS` exported from `@psraghuveer/memento-server` so the spine on the wire and the persona on disk never drift.
+
+The prompt defaults to `Y` and presents an explicit per-target enumeration before asking for consent — the user sees exactly which files will be written and which UI surfaces still need manual paste before confirming.
+
+**Docs + walkthrough reframe (client-neutral)**
+
+Every user-facing doc reordered into reliability order — persona first, skill second, spine third — with all client-specific honours/doesn't claims removed. The framing now is:
+
+- **Persona snippet** = universal, always-on. The only teaching surface guaranteed to land in every client. **Now optionally auto-installed** during `memento init` for file-based clients.
+- **Bundled skill** = load-on-intent enrichment for skill-capable clients.
+- **MCP `instructions` spine** = best-effort future-proofing on the wire. Optional on the client side; implementations vary.
+
+Files touched (docs + init prose):
+
+- Root `README.md`, `packages/cli/README.md`, `packages/server/README.md` — three-step quickstart; spine framed as best-effort future-proofing.
+- `docs/guides/teach-your-assistant.md` — surfaces reordered into reliability order; the per-client honours/doesn't matrix removed in favour of neutral single-paragraph framing per surface.
+- `packages/landing/src/App.tsx` + `howto.ts` — quickstart grid expands to three cards; persona snippet block re-titled "the universal always-on teaching surface".
+- `docs/adr/0026-mcp-instructions-as-session-teaching-spine.md` — prose updates; the decision is unchanged. ADR-immutability protects the decision, not the wording.
+- `packages/cli/src/init-render.ts` — Step 3 now opens with the universal persona recommendation; per-target persona-install outcomes render below the existing skill / pack ack block.
+
+Language is client-neutral throughout — no surface is labelled by which specific clients honour it.
+
+**Bump rationale**
+
+- `@psraghuveer/memento` (CLI): **minor** — coherent feature addition (auto-installer) on top of the docs sweep.
+- `@psraghuveer/memento-server`: **patch** — docs-only changes; no behaviour change.
+
+`pnpm verify` clean. **1612 tests passing** across 118 files (+12 new persona-installer tests on top of the 1600 baseline).

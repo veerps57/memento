@@ -413,6 +413,9 @@ describe('runInit interactive prompts (ADR-0028)', () => {
           async promptStarterPack() {
             throw new Error('pack prompt must not run on non-TTY');
           },
+          async promptInstallPersona() {
+            throw new Error('persona prompt must not run on non-TTY');
+          },
         }),
       },
       { env: cliEnv(), subargs: [], io: NULL_IO },
@@ -423,6 +426,7 @@ describe('runInit interactive prompts (ADR-0028)', () => {
       preferredName: null,
       installSkill: null,
       starterPack: null,
+      installPersona: null,
     });
   });
 
@@ -441,6 +445,9 @@ describe('runInit interactive prompts (ADR-0028)', () => {
           },
           async promptStarterPack() {
             throw new Error('pack prompt must not run with --no-prompt');
+          },
+          async promptInstallPersona() {
+            throw new Error('persona prompt must not run with --no-prompt');
           },
         }),
       },
@@ -468,6 +475,9 @@ describe('runInit interactive prompts (ADR-0028)', () => {
               return { kind: 'skip' };
             },
             async promptStarterPack() {
+              return { kind: 'skip' };
+            },
+            async promptInstallPersona() {
               return { kind: 'skip' };
             },
           }),
@@ -516,6 +526,9 @@ describe('runInit interactive prompts (ADR-0028)', () => {
               async promptStarterPack() {
                 return { kind: 'skip' };
               },
+              async promptInstallPersona() {
+                return { kind: 'skip' };
+              },
             }),
           },
           { env: cliEnv({ dbPath }), subargs: [], io: TTY_IO },
@@ -555,6 +568,9 @@ describe('runInit interactive prompts (ADR-0028)', () => {
               async promptStarterPack() {
                 return { kind: 'skip' };
               },
+              async promptInstallPersona() {
+                return { kind: 'skip' };
+              },
             }),
           },
           { env: cliEnv({ dbPath }), subargs: [], io: TTY_IO },
@@ -576,6 +592,9 @@ describe('runInit interactive prompts (ADR-0028)', () => {
                 throw new Error('install prompt must not run when skill is already current');
               },
               async promptStarterPack() {
+                return { kind: 'skip' };
+              },
+              async promptInstallPersona() {
                 return { kind: 'skip' };
               },
             }),
@@ -630,6 +649,9 @@ describe('runInit interactive prompts (ADR-0028)', () => {
             async promptStarterPack() {
               throw new Error('starter-pack prompt must not run on a non-empty store');
             },
+            async promptInstallPersona() {
+              return { kind: 'skip' };
+            },
           }),
         },
         { env: cliEnv({ dbPath }), subargs: [], io: TTY_IO },
@@ -683,6 +705,9 @@ describe('runInit interactive prompts (ADR-0028)', () => {
               async promptStarterPack() {
                 return { kind: 'cancelled' };
               },
+              async promptInstallPersona() {
+                return { kind: 'cancelled' };
+              },
             }),
           },
           { env: cliEnv(), subargs: [], io: TTY_IO },
@@ -714,6 +739,9 @@ describe('runInit interactive prompts (ADR-0028)', () => {
           async promptStarterPack() {
             return { kind: 'install', packId: 'no-such-pack-id-anywhere' };
           },
+          async promptInstallPersona() {
+            return { kind: 'skip' };
+          },
         }),
       },
       { env: cliEnv(), subargs: [], io: TTY_IO },
@@ -741,6 +769,9 @@ describe('runInit interactive prompts (ADR-0028)', () => {
             return { kind: 'skip' };
           },
           async promptStarterPack() {
+            return { kind: 'skip' };
+          },
+          async promptInstallPersona() {
             return { kind: 'skip' };
           },
         }),
@@ -784,6 +815,9 @@ describe('runInit interactive prompts (ADR-0028)', () => {
             throw new Error('skill prompt must not run when no capable client is rendered');
           },
           async promptStarterPack() {
+            return { kind: 'skip' };
+          },
+          async promptInstallPersona() {
             return { kind: 'skip' };
           },
         }),
