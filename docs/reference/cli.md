@@ -143,7 +143,7 @@ Spawn the MCP server and round-trip a write/read to prove the wiring works
 
 ## Registry commands
 
-Total: 37 commands.
+Total: 38 commands.
 
 ### `memento compact run`
 
@@ -213,6 +213,12 @@ Run conflict detection. In `memory` mode, evaluates per-kind policies for one hy
 
 - **Side-effect:** `write` — Mutates state and emits an audit-log event.
 
+### `memento embedding rebuild`
+
+Rebuild embeddings for active memories whose stored embedding does not match the configured provider. Page by re-invoking with the same options; per-row provider errors are recorded as skips and do not halt the batch.
+
+- **Side-effect:** `admin` — Operational / introspection.
+
 ### `memento memory archive`
 
 Move a memory to long-term storage. Idempotent on already-archived rows. Requires confirm: true.
@@ -267,7 +273,7 @@ Load the most relevant memories for the current session without a search query. 
 
 Call at the start of a task to load context. No arguments required — returns the top memories from config-driven defaults.
 
-Every result's memory carries an `embeddingStatus` field (`"present"` | `"pending"` | `"disabled"`) so callers can tell whether a row contributed via vector similarity at all.
+Every result's memory carries an `embeddingStatus` field (`"present"` | `"stale"` | `"pending"` | `"disabled"`) so callers can tell whether a row contributed via vector similarity at all. `stale` means the embedding exists but its model/dim mismatches the configured embedder (run `embedding.rebuild` to refresh).
 
 Examples:
 
@@ -372,7 +378,7 @@ Search memories by free text using FTS5 + the configured linear ranker.
 
 Query text is treated as a term bag: FTS5 syntax (AND / OR / NOT / NEAR / phrase / prefix) is NOT parsed — sigils are stripped and tokens are ranked via BM25 + vector similarity.
 
-Every result's memory carries an `embeddingStatus` field (`"present"` | `"pending"` | `"disabled"`) so a vector score of 0 can be distinguished between "the row has no embedding yet" (`pending`) and "the content was not similar" (`present`).
+Every result's memory carries an `embeddingStatus` field (`"present"` | `"stale"` | `"pending"` | `"disabled"`) so a vector score of 0 can be distinguished between "the row has no embedding yet" (`pending`), "the embedding exists but the model/dim mismatches the configured embedder so the vector arm skipped it" (`stale` — run `embedding.rebuild` to fix), and "the content was not similar" (`present`).
 
 Examples:
 

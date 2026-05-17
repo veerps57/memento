@@ -362,11 +362,16 @@ describe('createConflictCommands', () => {
 });
 
 describe('createEmbeddingCommands', () => {
-  it('exposes embedding.rebuild as an admin command on both surfaces', async () => {
+  it('exposes embedding.rebuild as an admin command on mcp+cli+dashboard surfaces', async () => {
+    // Dashboard surface added so the `/memory` page's stale-row
+    // banner can trigger a rebuild without a fresh per-command
+    // wire-up — the existing `embeddingStatus: 'stale'`
+    // projection surfaces the candidates and this command is
+    // the remediation.
     const { byName } = await fixture();
     const cmd = get(byName, 'embedding.rebuild');
     expect(cmd.sideEffect).toBe('admin');
-    expect(cmd.surfaces).toEqual(['mcp', 'cli']);
+    expect(cmd.surfaces).toEqual(['mcp', 'cli', 'dashboard']);
   });
 
   it('embeds active memories and reports counts', async () => {

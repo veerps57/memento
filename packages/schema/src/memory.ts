@@ -162,17 +162,25 @@ const MemoryBaseSchema = z
      * storage / repository layers do not produce it — it's
      * computed at the command-output projection boundary by
      * {@link projectMemoryForOutput} so an assistant reading a
-     * single-memory response can tell whether the vector is
-     * `'present'` (computed and indexed), `'pending'` (the
-     * embedder hasn't caught up yet — common right after a
-     * `memory.write`), or `'disabled'` (`retrieval.vector.enabled`
-     * is `false`).
+     * single-memory response can tell whether the vector is:
+     *
+     * - `'present'` — embedding row exists AND its `model` /
+     *   `dimension` match the configured embedding provider.
+     *   The vector arm of the ranker will use it.
+     * - `'stale'` — embedding row exists but `model` /
+     *   `dimension` mismatch the configured provider. The vector
+     *   arm skips it; `memento embedding rebuild` will re-embed
+     *   it on the next pass.
+     * - `'pending'` — no embedding row yet; vector retrieval is
+     *   enabled but the embedder hasn't caught up. Common for
+     *   ~milliseconds right after `memory.write`.
+     * - `'disabled'` — `retrieval.vector.enabled` is `false`.
      *
      * The field is also why the wire output now strips the raw
-     * vector by default: callers that need to know "is there an
-     * embedding?" no longer have to inspect 768 floats.
+     * vector by default: callers that need to know "is there a
+     * usable embedding?" no longer have to inspect 768 floats.
      */
-    embeddingStatus: z.enum(['present', 'pending', 'disabled']).optional(),
+    embeddingStatus: z.enum(['present', 'stale', 'pending', 'disabled']).optional(),
   })
   .strict();
 

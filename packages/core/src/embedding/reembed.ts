@@ -34,6 +34,7 @@ import type { ActorRef, Memory, MemoryId } from '@psraghuveer/memento-schema';
 import { CONFIG_KEYS } from '@psraghuveer/memento-schema';
 
 import type { MemoryRepository } from '../repository/memory-repository.js';
+import { isEmbeddingFresh } from './freshness.js';
 import type { EmbeddingProvider } from './provider.js';
 import { embedBatchFallback } from './provider.js';
 
@@ -113,7 +114,7 @@ export async function reembedAll(
   // Partition into stale (need re-embed) and fresh (skip).
   const staleMemories: Memory[] = [];
   for (const memory of memories) {
-    if (!options.force && isFresh(memory, provider)) {
+    if (!options.force && isEmbeddingFresh(memory.embedding, provider)) {
       skipped.push({ id: memory.id, reason: 'up-to-date' });
     } else {
       staleMemories.push(memory);
@@ -182,14 +183,6 @@ export async function reembedAll(
   }
 
   return { scanned: memories.length, embedded, skipped };
-}
-
-function isFresh(memory: Memory, provider: EmbeddingProvider): boolean {
-  const e = memory.embedding;
-  if (e === null) {
-    return false;
-  }
-  return e.model === provider.model && e.dimension === provider.dimension;
 }
 
 function clampBatchSize(raw: number | undefined): number {

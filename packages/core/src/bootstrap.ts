@@ -331,6 +331,14 @@ export async function createMementoApp(options: CreateMementoAppOptions): Promis
     db: db.db,
     memoryRepository,
     configStore,
+    ...(embeddingProvider !== undefined
+      ? {
+          configuredEmbedder: {
+            model: embeddingProvider.model,
+            dimension: embeddingProvider.dimension,
+          },
+        }
+      : {}),
   });
   const extractCommand = createMemoryExtractCommand({
     db: db.db,
