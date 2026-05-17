@@ -412,7 +412,7 @@ function Quickstart(): JSX.Element {
           <Step
             n={1}
             title="Run init (interactive)"
-            body="Creates the SQLite database, runs migrations, then walks you through three one-keystroke questions on a TTY — your preferred name, install the bundled skill into ~/.claude/skills/, and seed a starter pack so your store is non-empty on day one. Then prints copy-paste MCP snippets for every supported client. Pass --no-prompt for CI."
+            body="Creates the SQLite database, runs migrations, then walks you through four one-keystroke questions on a TTY — your preferred name, install the bundled skill, seed a starter pack, and auto-install the persona snippet into every file-based AI client detected on your machine (Claude Code, OpenCode, Cline). Then prints copy-paste MCP snippets for every supported client. Pass --no-prompt for CI."
             command="npx @psraghuveer/memento init"
           />
           <Step
@@ -424,8 +424,8 @@ function Quickstart(): JSX.Element {
           />
           <Step
             n={3}
-            title="Paste the persona snippet into custom instructions"
-            body="The persona snippet below is the one teaching surface guaranteed to reach the assistant's system prompt on every message — the MCP `instructions` spine (ADR-0026) is optional on the client side and current implementations vary in whether they surface it; the bundled skill is intent-triggered so it doesn't fire on neutral first messages. Paste the snippet into wherever your client stores user-defined system prompt content — CLAUDE.md, .cursorrules, a 'Custom Instructions' textarea, etc."
+            title="Confirm the persona reaches your assistant"
+            body="The persona snippet below is the one teaching surface guaranteed to reach the assistant's system prompt on every message — the MCP `instructions` spine (ADR-0026) is optional on the client side and current implementations vary in whether they surface it; the bundled skill is intent-triggered so it doesn't fire on neutral first messages. If init's auto-install prompt fired in step 1, file-based clients are already done. For UI-only clients (Cowork, Claude Desktop, Claude Chat, Cursor User Rules) paste the snippet below into the client's custom-instructions slot."
             command={null}
           />
         </ol>
